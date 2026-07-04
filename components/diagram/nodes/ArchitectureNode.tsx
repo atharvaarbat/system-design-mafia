@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useEffect, useState } from 'react'
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
+import { Handle, Position, useEdges, type NodeProps, type Node } from '@xyflow/react'
 import type { SystemDesignNode } from '@/types/diagram'
 import { CATEGORY_SHAPE_PATH, resolveNodeKind } from '@/lib/diagram/registry'
 
@@ -27,7 +27,11 @@ function useShapeAvailable(path: string): boolean {
   return available
 }
 
-function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlowNode>) {
+function ArchitectureNodeComponent({ data, selected, id }: NodeProps<ArchitectureFlowNode>) {
+  const edges = useEdges()
+  const hasIncoming = edges.some((e) => e.target === id)
+  const hasOutgoing = edges.some((e) => e.source === id)
+
   const kindDef = resolveNodeKind(data.kind)
   const Icon = kindDef.icon
   const label = data.name || kindDef.label
@@ -50,7 +54,9 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
       }}
       className="rounded-xl border-solid bg-white shadow-sm transition-shadow dark:bg-zinc-800 dark:shadow-black/20"
     >
-      <Handle type="target" position={Position.Top} className="bg-zinc-400! dark:bg-zinc-500!" />
+      {hasIncoming && (
+        <Handle type="target" position={Position.Left} className="bg-zinc-400! dark:bg-zinc-500!" />
+      )}
 
       <div className="flex items-start gap-3 px-3 py-3">
         <div className="relative h-11 w-11 shrink-0">
@@ -93,7 +99,9 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} className="bg-zinc-400! dark:bg-zinc-500!" />
+      {hasOutgoing && (
+        <Handle type="source" position={Position.Right} className="bg-zinc-400! dark:bg-zinc-500!" />
+      )}
     </div>
   )
 }
