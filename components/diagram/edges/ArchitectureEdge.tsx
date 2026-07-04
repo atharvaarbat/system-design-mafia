@@ -1,7 +1,7 @@
 'use client'
 
 import { memo } from 'react'
-import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer, type EdgeProps, type Edge } from '@xyflow/react'
+import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer, type EdgeProps, type Edge, getBezierPath } from '@xyflow/react'
 import { useTheme } from 'next-themes'
 
 interface EdgeData {
@@ -30,14 +30,14 @@ function ArchitectureEdgeComponent({
   const fallbackColor = isDark ? '#71717a' : '#64748b'
   const strokeColor = selected ? '#60a5fa' : (data?.color || fallbackColor)
 
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
+  const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
-    borderRadius: 12,
+    // borderRadius: 12,
   })
 
   const strokeDasharray =
