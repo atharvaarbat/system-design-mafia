@@ -4,37 +4,173 @@ export const sampleArchitecture: SystemDesign = {
   version: '1.0',
   title: 'E-Commerce Microservices',
   description: 'Cloud-native e-commerce platform on AWS',
+
   nodes: [
-    { id: 'mobile-app', type: 'client', label: 'Mobile App', x: 40, y: 260, icon: '📱' },
-    { id: 'web-browser', type: 'client', label: 'Web Browser', x: 40, y: 370, icon: '🌐' },
+    // Clients
+    { id: 'mobile-app', kind: 'mobile-app', name: 'Mobile App', x: 60, y: 240 },
+    { id: 'web-browser', kind: 'browser', name: 'Web Browser', x: 60, y: 420 },
 
-    { id: 'dns', type: 'dns', label: 'Route 53', x: 200, y: 315, icon: '🔗' },
-    { id: 'cdn', type: 'cdn', label: 'CloudFront', x: 350, y: 315, icon: '🌍', description: 'CDN & Edge Caching' },
-    { id: 'waf', type: 'firewall', label: 'WAF', x: 500, y: 315, icon: '🛡️', description: 'Web Application Firewall' },
-    { id: 'alb', type: 'load-balancer', label: 'ALB', x: 680, y: 315, icon: '⚖️', description: 'Application LB' },
-    { id: 'api-gateway', type: 'api-gateway', label: 'API Gateway', x: 880, y: 315, icon: '🚪', description: 'REST / GraphQL' },
+    // Edge Layer
+    { id: 'dns', kind: 'dns', name: 'Route 53', x: 280, y: 330 },
 
-    { id: 'user-svc', type: 'service', label: 'User Service', x: 1110, y: 150, icon: '👤', description: 'Auth & Profiles' },
-    { id: 'product-svc', type: 'service', label: 'Product Service', x: 1110, y: 315, icon: '📦', description: 'Catalog & Inventory' },
-    { id: 'order-svc', type: 'service', label: 'Order Service', x: 1110, y: 480, icon: '📋', description: 'Order Management' },
-    { id: 'payment-svc', type: 'service', label: 'Payment Service', x: 1380, y: 480, icon: '💳', description: 'Payment Processing' },
-    { id: 'notification-svc', type: 'service', label: 'Notification Svc', x: 1380, y: 650, icon: '📧', description: 'Email & Push' },
+    { id: 'cdn', kind: 'cdn', name: 'CloudFront', x: 540, y: 330, description: 'CDN & Edge Caching' },
 
-    { id: 'user-db', type: 'database', label: 'User DB (PgSQL)', x: 1380, y: 150, icon: '🗄️' },
-    { id: 'user-db-ro', type: 'database', label: 'User DB Read Replica', x: 1580, y: 150, icon: '🗄️' },
-    { id: 'product-db', type: 'database', label: 'Product DB (PgSQL)', x: 1380, y: 315, icon: '🗄️' },
-    { id: 'order-db', type: 'database', label: 'Order DB (Sharded)', x: 1380, y: 480, icon: '🗄️' },
+    { id: 'waf', kind: 'firewall', name: 'WAF', x: 800, y: 330, description: 'Web Application Firewall' },
 
-    { id: 'redis', type: 'cache', label: 'Redis Cluster', x: 1110, y: 650, icon: '⚡', description: 'Session & Cache' },
-    { id: 'queue', type: 'queue', label: 'SQS / Kafka', x: 1580, y: 650, icon: '📨', description: 'Message Broker' },
-    { id: 'search', type: 'search', label: 'Elasticsearch', x: 1580, y: 315, icon: '🔍', description: 'Full-Text Search' },
-    { id: 's3', type: 'storage', label: 'S3 Buckets', x: 1110, y: 800, icon: '☁️', description: 'Static Assets' },
+    { id: 'alb', kind: 'load-balancer', name: 'ALB', x: 1080, y: 330, description: 'Application LB' },
 
-    { id: 'sendgrid', type: 'external', label: 'SendGrid', x: 1780, y: 650, icon: '📤' },
+    {
+      id: 'api-gateway',
+      kind: 'api-gateway',
+      name: 'API Gateway',
+      x: 1380,
+      y: 330,
+      description: 'REST / GraphQL',
+      group: 'aws-cloud',
+    },
+
+    // Services
+    {
+      id: 'user-svc',
+      kind: 'rest-api',
+      name: 'User Service',
+      x: 1760,
+      y: 120,
+      description: 'Auth & Profiles',
+      group: 'aws-cloud',
+    },
+
+    {
+      id: 'product-svc',
+      kind: 'rest-api',
+      name: 'Product Service',
+      x: 1760,
+      y: 330,
+      description: 'Catalog & Inventory',
+      group: 'aws-cloud',
+    },
+
+    {
+      id: 'order-svc',
+      kind: 'rest-api',
+      name: 'Order Service',
+      x: 1760,
+      y: 540,
+      description: 'Order Management',
+      group: 'aws-cloud',
+    },
+
+    {
+      id: 'payment-svc',
+      kind: 'rest-api',
+      name: 'Payment Service',
+      x: 2140,
+      y: 540,
+      description: 'Payment Processing',
+      group: 'aws-cloud',
+    },
+
+    {
+      id: 'notification-svc',
+      kind: 'worker-service',
+      name: 'Notification Svc',
+      x: 2140,
+      y: 760,
+      description: 'Email & Push',
+      group: 'aws-cloud',
+    },
+
+    // Databases
+    {
+      id: 'user-db',
+      kind: 'postgres',
+      name: 'User DB',
+      x: 2520,
+      y: 120,
+      group: 'data-tier',
+    },
+
+    {
+      id: 'user-db-ro',
+      kind: 'postgres',
+      name: 'User DB Read Replica',
+      x: 2860,
+      y: 120,
+      group: 'data-tier',
+    },
+
+    {
+      id: 'product-db',
+      kind: 'postgres',
+      name: 'Product DB',
+      x: 2520,
+      y: 330,
+      group: 'data-tier',
+    },
+
+    {
+      id: 'order-db',
+      kind: 'dynamodb',
+      name: 'Order DB (Sharded)',
+      x: 2520,
+      y: 540,
+      group: 'data-tier',
+    },
+
+    // Shared Infrastructure
+    {
+      id: 'redis',
+      kind: 'redis',
+      name: 'Redis Cluster',
+      x: 1760,
+      y: 980,
+      description: 'Session & Cache',
+      group: 'data-tier',
+    },
+
+    {
+      id: 'queue',
+      kind: 'kafka',
+      name: 'Event Bus',
+      x: 2520,
+      y: 980,
+      description: 'Message Broker',
+      group: 'aws-cloud',
+    },
+
+    {
+      id: 'search',
+      kind: 'elasticsearch',
+      name: 'Elasticsearch',
+      x: 2860,
+      y: 330,
+      description: 'Full-Text Search',
+      group: 'data-tier',
+    },
+
+    {
+      id: 's3',
+      kind: 's3',
+      name: 'S3 Buckets',
+      x: 2140,
+      y: 1180,
+      description: 'Static Assets',
+      group: 'data-tier',
+    },
+
+    {
+      id: 'sendgrid',
+      kind: 'email-provider',
+      name: 'SendGrid',
+      x: 2860,
+      y: 760,
+    },
   ],
+
   edges: [
     { id: 'e-mobile-dns', source: 'mobile-app', target: 'dns', protocol: 'https', label: 'HTTPS' },
     { id: 'e-web-dns', source: 'web-browser', target: 'dns', protocol: 'https', label: 'HTTPS' },
+
     { id: 'e-dns-cdn', source: 'dns', target: 'cdn', protocol: 'https' },
     { id: 'e-cdn-waf', source: 'cdn', target: 'waf', protocol: 'https' },
     { id: 'e-waf-alb', source: 'waf', target: 'alb', protocol: 'https' },
@@ -64,24 +200,19 @@ export const sampleArchitecture: SystemDesign = {
     { id: 'e-notif-sendgrid', source: 'notification-svc', target: 'sendgrid', style: 'dotted', protocol: 'https' },
     { id: 'e-payment-order', source: 'payment-svc', target: 'order-svc', style: 'dashed', protocol: 'internal' },
   ],
+
   groups: [
     {
       id: 'aws-cloud',
       label: 'AWS Cloud',
-      children: [
-        'cdn', 'waf', 'alb', 'api-gateway',
-        'user-svc', 'product-svc', 'order-svc', 'payment-svc', 'notification-svc',
-        'user-db', 'user-db-ro', 'product-db', 'order-db',
-        'redis', 'queue', 'search', 's3',
-      ],
       style: 'dashed',
     },
     {
       id: 'data-tier',
       label: 'Data Tier',
-      children: ['user-db', 'user-db-ro', 'product-db', 'order-db', 'redis', 'search', 's3'],
       style: 'dashed',
       color: '#6366f1',
+      parent: 'aws-cloud',
     },
   ],
 }
