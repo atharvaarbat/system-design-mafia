@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "title": "CQRS Pattern",
+  "description": "Command Query Responsibility Segregation — separate read and write models for optimized performance and scalability.",
+  "nodes": [
+    { "id": "client", "kind": "browser", "name": "Client", "x": 100, "y": 300 },
+    { "id": "command-api", "kind": "rest-api", "name": "Command API", "x": 350, "y": 150, "description": "Handles writes (INSERT/UPDATE/DELETE)" },
+    { "id": "query-api", "kind": "rest-api", "name": "Query API", "x": 350, "y": 450, "description": "Handles reads (SELECT)" },
+    { "id": "write-db", "kind": "postgres", "name": "Write Database", "x": 600, "y": 150, "description": "Normalized OLTP" },
+    { "id": "read-db", "kind": "postgres", "name": "Read Database", "x": 600, "y": 450, "description": "Denormalized OLAP" },
+    { "id": "syncer", "kind": "worker-service", "name": "Sync Worker", "x": 600, "y": 300, "description": "Propagates changes" }
+  ],
+  "edges": [
+    { "id": "e-client-cmd", "source": "client", "target": "command-api", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https", "label": "Commands" },
+    { "id": "e-client-qry", "source": "client", "target": "query-api", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https", "label": "Queries" },
+    { "id": "e-cmd-db", "source": "command-api", "target": "write-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" },
+    { "id": "e-qry-db", "source": "query-api", "target": "read-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" },
+    { "id": "e-write-sync", "source": "write-db", "target": "syncer", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "style": "dotted" },
+    { "id": "e-sync-read", "source": "syncer", "target": "read-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed", "animated": true, "label": "Sync" }
+  ]
+}

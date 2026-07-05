@@ -1,10 +1,14 @@
-import Diagram from "@/components/diagram/diagram";
-import { sampleArchitecture } from "@/components/diagram/data/sample";
+'use client';
+import Navbar from "@/components/landing/navbar";
+import Hero from "@/components/landing/hero";
+import DiagramCards from "@/components/landing/diagram-cards";
 
 export default function Home() {
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-black">
-      <Diagram design={sampleArchitecture} editable={true} />
-    </div>
+    <main className="dark min-h-screen overflow-x-hidden bg-[#101010]">
+      <Navbar />
+      <Hero />
+      <DiagramCards />
+    </main>
   );
 }

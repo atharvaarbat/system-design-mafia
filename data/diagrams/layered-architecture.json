@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "title": "Layered Architecture",
+  "description": "Traditional n-tier architecture organizing code into horizontal layers with strict dependency flow.",
+  "nodes": [
+    { "id": "ui", "kind": "browser", "name": "Presentation Layer", "x": 300, "y": 80, "description": "UI / Controllers" },
+    { "id": "api", "kind": "api-gateway", "name": "API Layer", "x": 300, "y": 230, "description": "REST / GraphQL endpoints" },
+    { "id": "business", "kind": "rest-api", "name": "Business Logic Layer", "x": 300, "y": 380, "description": "Service layer" },
+    { "id": "persistence", "kind": "postgres", "name": "Persistence Layer", "x": 300, "y": 530, "description": "Data access / ORM" },
+    { "id": "db", "kind": "dynamodb", "name": "Database", "x": 300, "y": 700, "description": "Actual data store" }
+  ],
+  "edges": [
+    { "id": "e-ui-api", "source": "ui", "target": "api", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "https" },
+    { "id": "e-api-biz", "source": "api", "target": "business", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "internal" },
+    { "id": "e-biz-persist", "source": "business", "target": "persistence", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "internal", "style": "dashed" },
+    { "id": "e-persist-db", "source": "persistence", "target": "db", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "database", "style": "dashed" }
+  ],
+  "groups": [
+    { "id": "app-boundary", "label": "Application Boundary", "style": "dashed", "width": 500, "height": 560, "x": 50, "y": 50 }
+  ]
+}

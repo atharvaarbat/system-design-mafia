@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "title": "Hexagonal Architecture",
+  "description": "Ports and adapters pattern — core domain logic isolated from infrastructure concerns.",
+  "nodes": [
+    { "id": "client", "kind": "browser", "name": "Client", "x": 100, "y": 300 },
+    { "id": "in-adapter", "kind": "api-gateway", "name": "Inbound Adapter (REST)", "x": 300, "y": 130, "description": "Primary / driving adapter" },
+    { "id": "in-adapter-2", "kind": "worker-service", "name": "Inbound Adapter (Queue)", "x": 300, "y": 470, "description": "Primary / driving adapter" },
+    { "id": "core", "kind": "container", "name": "Domain Core", "x": 550, "y": 300, "description": "Business logic & ports" },
+    { "id": "out-adapter-1", "kind": "postgres", "name": "Outbound Adapter (DB)", "x": 800, "y": 150, "description": "Secondary / driven adapter" },
+    { "id": "out-adapter-2", "kind": "s3", "name": "Outbound Adapter (S3)", "x": 800, "y": 450, "description": "Secondary / driven adapter" }
+  ],
+  "edges": [
+    { "id": "e-c1-in1", "source": "client", "target": "in-adapter", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-c2-in2", "source": "client", "target": "in-adapter-2", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-in1-core", "source": "in-adapter", "target": "core", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "label": "Port call" },
+    { "id": "e-in2-core", "source": "in-adapter-2", "target": "core", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "label": "Port call" },
+    { "id": "e-core-out1", "source": "core", "target": "out-adapter-1", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" },
+    { "id": "e-core-out2", "source": "core", "target": "out-adapter-2", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "style": "dashed" }
+  ],
+  "groups": [
+    { "id": "hex-core", "label": "Hexagonal Boundary", "style": "dashed", "width": 320, "height": 220, "x": 460, "y": 190 }
+  ]
+}

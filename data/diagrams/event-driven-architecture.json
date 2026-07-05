@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "title": "Event-Driven Architecture",
+  "description": "Asynchronous event producers and consumers connected through a message broker for decoupled communication.",
+  "nodes": [
+    { "id": "client", "kind": "browser", "name": "Client App", "x": 100, "y": 300 },
+    { "id": "api-gw", "kind": "api-gateway", "name": "API Gateway", "x": 350, "y": 300 },
+    { "id": "producer", "kind": "rest-api", "name": "Event Producer", "x": 600, "y": 150, "description": "Publishes events" },
+    { "id": "broker", "kind": "kafka", "name": "Message Broker", "x": 600, "y": 400, "description": "Event Bus / Kafka" },
+    { "id": "consumer-1", "kind": "worker-service", "name": "Consumer A", "x": 900, "y": 150, "description": "Processes events" },
+    { "id": "consumer-2", "kind": "worker-service", "name": "Consumer B", "x": 900, "y": 400, "description": "Processes events" },
+    { "id": "db", "kind": "postgres", "name": "Database", "x": 900, "y": 650 }
+  ],
+  "edges": [
+    { "id": "e-client-gw", "source": "client", "target": "api-gw", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-gw-producer", "source": "api-gw", "target": "producer", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-producer-broker", "source": "producer", "target": "broker", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "message", "animated": true, "label": "Events" },
+    { "id": "e-broker-c1", "source": "broker", "target": "consumer-1", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "message", "animated": true },
+    { "id": "e-broker-c2", "source": "broker", "target": "consumer-2", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "message", "animated": true },
+    { "id": "e-c1-db", "source": "consumer-1", "target": "db", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "database", "style": "dashed" },
+    { "id": "e-c2-db", "source": "consumer-2", "target": "db", "sourceHandle": "bottom-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" }
+  ]
+}

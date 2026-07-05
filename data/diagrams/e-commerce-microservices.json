@@ -1,0 +1,427 @@
+{
+  "version": "1.0",
+  "title": "E-Commerce Microservices",
+  "description": "Cloud-native e-commerce platform on AWS",
+  "nodes": [
+    {
+      "id": "mobile-app",
+      "kind": "mobile-app",
+      "x": 576,
+      "y": 224,
+      "name": "Mobile App"
+    },
+    {
+      "id": "web-browser",
+      "kind": "browser",
+      "x": 576,
+      "y": 560,
+      "name": "Web Browser"
+    },
+    {
+      "id": "dns",
+      "kind": "dns",
+      "x": 584,
+      "y": 384,
+      "name": "Route 53"
+    },
+    {
+      "id": "cdn",
+      "kind": "cdn",
+      "x": 744,
+      "y": 432,
+      "name": "CloudFront",
+      "description": "CDN & Edge Caching"
+    },
+    {
+      "id": "waf",
+      "kind": "firewall",
+      "x": 952,
+      "y": 352,
+      "name": "WAF",
+      "description": "Web Application Firewall"
+    },
+    {
+      "id": "alb",
+      "kind": "load-balancer",
+      "x": 1136,
+      "y": 360,
+      "name": "ALB",
+      "description": "Application LB"
+    },
+    {
+      "id": "api-gateway",
+      "kind": "api-gateway",
+      "x": 1320,
+      "y": 360,
+      "name": "API Gateway",
+      "description": "REST / GraphQL",
+      "group": "aws-cloud"
+    },
+    {
+      "id": "user-svc",
+      "kind": "rest-api",
+      "x": 1600,
+      "y": 80,
+      "name": "User Service",
+      "description": "Auth & Profiles",
+      "group": "aws-cloud"
+    },
+    {
+      "id": "product-svc",
+      "kind": "rest-api",
+      "x": 1608,
+      "y": 360,
+      "name": "Product Service",
+      "description": "Catalog & Inventory",
+      "group": "aws-cloud"
+    },
+    {
+      "id": "order-svc",
+      "kind": "rest-api",
+      "x": 1608,
+      "y": 664,
+      "name": "Order Service",
+      "description": "Order Management",
+      "group": "aws-cloud"
+    },
+    {
+      "id": "payment-svc",
+      "kind": "rest-api",
+      "x": 1328,
+      "y": 824,
+      "name": "Payment Service",
+      "description": "Payment Processing",
+      "group": "aws-cloud"
+    },
+    {
+      "id": "notification-svc",
+      "kind": "worker-service",
+      "x": 2064,
+      "y": 832,
+      "name": "Notification Svc",
+      "description": "Email & Push",
+      "group": "aws-cloud"
+    },
+    {
+      "id": "user-db",
+      "kind": "postgres",
+      "x": 2080,
+      "y": 192,
+      "name": "User DB",
+      "group": "data-tier"
+    },
+    {
+      "id": "user-db-ro",
+      "kind": "postgres",
+      "x": 2056,
+      "y": 80,
+      "name": "User DB Read Replica",
+      "group": "data-tier"
+    },
+    {
+      "id": "product-db",
+      "kind": "postgres",
+      "x": 2072,
+      "y": 328,
+      "name": "Product DB",
+      "group": "data-tier"
+    },
+    {
+      "id": "order-db",
+      "kind": "dynamodb",
+      "x": 2048,
+      "y": 664,
+      "name": "Order DB (Sharded)",
+      "group": "data-tier"
+    },
+    {
+      "id": "redis",
+      "kind": "redis",
+      "x": 1912,
+      "y": 256,
+      "name": "Redis Cluster",
+      "description": "Session & Cache",
+      "group": "data-tier"
+    },
+    {
+      "id": "queue",
+      "kind": "kafka",
+      "x": 1912,
+      "y": 832,
+      "name": "Event Bus",
+      "description": "Message Broker",
+      "group": "aws-cloud"
+    },
+    {
+      "id": "search",
+      "kind": "elasticsearch",
+      "x": 2064,
+      "y": 424,
+      "name": "Elasticsearch",
+      "description": "Full-Text Search",
+      "group": "data-tier"
+    },
+    {
+      "id": "s3",
+      "kind": "s3",
+      "x": 2064,
+      "y": 544,
+      "name": "S3 Buckets",
+      "description": "Static Assets",
+      "group": "data-tier"
+    },
+    {
+      "id": "sendgrid",
+      "kind": "email-provider",
+      "x": 2296,
+      "y": 840,
+      "name": "SendGrid"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-dns-cdn",
+      "source": "dns",
+      "target": "cdn",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-cdn-waf",
+      "source": "cdn",
+      "target": "waf",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-waf-alb",
+      "source": "waf",
+      "target": "alb",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-alb-gw",
+      "source": "alb",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-gw-user",
+      "source": "api-gateway",
+      "target": "user-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc",
+      "animated": true
+    },
+    {
+      "id": "e-gw-product",
+      "source": "api-gateway",
+      "target": "product-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc",
+      "animated": true
+    },
+    {
+      "id": "e-gw-order",
+      "source": "api-gateway",
+      "target": "order-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc",
+      "animated": true
+    },
+    {
+      "id": "e-user-db",
+      "source": "user-svc",
+      "target": "user-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "SQL",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-user-ro",
+      "source": "user-svc",
+      "target": "user-db-ro",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Read",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-product-db",
+      "source": "product-svc",
+      "target": "product-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "SQL",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-order-db",
+      "source": "order-svc",
+      "target": "order-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "SQL",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-user-cache",
+      "source": "user-svc",
+      "target": "redis",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "e-order-cache",
+      "source": "order-svc",
+      "target": "redis",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "e-order-queue",
+      "source": "order-svc",
+      "target": "queue",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Order Events",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-payment-queue",
+      "source": "payment-svc",
+      "target": "queue",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Payment Events",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-queue-notif",
+      "source": "queue",
+      "target": "notification-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-cdn-s3",
+      "source": "cdn",
+      "target": "s3",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "e-notif-sendgrid",
+      "source": "notification-svc",
+      "target": "sendgrid",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "style": "dotted"
+    },
+    {
+      "id": "xy-edge__mobile-appbottom-source-dnstop-target",
+      "source": "mobile-app",
+      "target": "dns",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__web-browsertop-source-dnsbottom-target",
+      "source": "web-browser",
+      "target": "dns",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__payment-svctop-source-order-svcleft-target",
+      "source": "payment-svc",
+      "target": "order-svc",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__product-svcbottom-source-s3left-target",
+      "source": "product-svc",
+      "target": "s3",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__product-svctop-source-redisleft-target",
+      "source": "product-svc",
+      "target": "redis",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "xy-edge__product-svcright-source-searchleft-target",
+      "source": "product-svc",
+      "target": "search",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "aws-cloud",
+      "label": "AWS Cloud",
+      "style": "dashed",
+      "width": 1176,
+      "height": 1030,
+      "x": 1280,
+      "y": -30
+    },
+    {
+      "id": "data-tier",
+      "label": "Data Tier",
+      "color": "#6366f1",
+      "style": "dashed",
+      "parent": "aws-cloud",
+      "width": 384,
+      "height": 928,
+      "x": 1864,
+      "y": 30
+    }
+  ],
+  "summary": "### Overview\n\nThis diagram represents a **cloud-native e-commerce platform** built on AWS using a *microservices architecture*. Each business capability — users, products, orders, payments, notifications — is deployed as an **independent service** with its own dedicated data store. This design enables teams to develop, deploy, and scale services independently.\n\n### Request Flow\n\nTraffic flows through a layered network stack before reaching the application services:\n\n1. **DNS (Route 53)** resolves the domain and routes requests to **CloudFront (CDN)** for edge caching.\n2. CloudFront forwards to **WAF** (Web Application Firewall) for security filtering.\n3. Clean traffic reaches **ALB** (Application Load Balancer) which distributes across targets.\n4. **API Gateway** receives all requests and routes them to the appropriate internal service via **gRPC**.\n\nThis multilayered approach provides *defence in depth* — each layer adds caching, security, or routing capabilities without coupling to business logic.\n\n### Service Decomposition\n\n#### User Service\nHandles **authentication**, **authorization**, and **user profiles**. It owns a primary PostgreSQL database with a **read replica** for scaling read-heavy workloads like profile lookups. This is a common pattern — separate read replicas absorb query traffic without competing with write capacity.\n\n#### Product Service\nManages the **catalog** and **inventory**. It stores product data in PostgreSQL, caches frequently accessed data in **Redis**, writes static assets (images) to **S3**, and indexes product data in **Elasticsearch** for full-text search. This showcases the *database-per-service* pattern where a single service may own multiple storage types for different concerns.\n\n#### Order Service\nOrchestrates the **order lifecycle** — creation, validation, payment processing, and fulfilment. It writes to a **sharded DynamoDB** table for horizontal scalability and emits `Order Events` to the **Event Bus (Kafka)** whenever an order changes state. This decouples order processing from downstream consumers.\n\n#### Payment Service\nProcesses **payments** by integrating with external providers (via SendGrid for notifications). It also publishes `Payment Events` to the event bus. The payment service communicates with the order service over *internal protocol* for order status updates.\n\n#### Notification Service\nConsumes events from the **Event Bus** and sends **emails** and **push notifications** via SendGrid. By subscribing to events rather than being called directly, it can be scaled independently and doesn't block the critical checkout path.\n\n### Data Tier\n\nAll data services are grouped under a `data-tier` boundary:\n\n- **PostgreSQL**: User DB (with read replica), Product DB — relational data with ACID guarantees\n- **DynamoDB**: Order DB (sharded) — NoSQL for horizontal scaling\n- **Redis**: Session cache and shared state across services\n- **Elasticsearch**: Full-text search indexing\n- **S3**: Static asset storage for product images and content\n- **Kafka**: Event bus for asynchronous communication between services\n\n### Key Architectural Decisions\n\n- **gRPC over REST** for inter-service communication — *binary protocol* with better performance and strong typing via protocol buffers\n- **Event-driven** for order and payment flows — services don't wait for responses from downstream consumers\n- **Read replicas** for read-heavy workloads — keeps the primary database focused on writes\n- **Sharded DynamoDB** for the order service — anticipates high write throughput as the platform scales\n\n### Trade-offs\n\nThis architecture prioritizes *scalability* and *team autonomy* over simplicity. The trade-offs are:\n\n- **Operational complexity** — running many services requires mature DevOps practices (monitoring, deployment pipelines, incident response)\n- **Data consistency** — eventual consistency across services means the platform must handle scenarios like \"order confirmed but payment still processing\"\n- **Network latency** — inter-service calls add overhead compared to in-process calls in a monolith\n\nFor most early-stage products, a **modular monolith** is a better starting point. Migrate to microservices when you have clear evidence that team velocity or scalability demands it. This architecture is what a mature, high-traffic e-commerce platform looks like — it's a *target state*, not a starting point."
+}
+

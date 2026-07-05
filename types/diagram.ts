@@ -58,6 +58,7 @@ export interface SystemDesign {
   version: string
   title: string
   description?: string
+  summary?: string
   nodes: SystemDesignNode[]
   edges: SystemDesignEdge[]
   groups?: SystemDesignGroup[]

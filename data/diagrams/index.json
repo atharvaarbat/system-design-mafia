@@ -1,0 +1,49 @@
+{
+  "diagrams": [
+    {
+      "slug": "e-commerce-microservices",
+      "title": "E-Commerce Microservices",
+      "description": "Cloud-native e-commerce platform on AWS",
+      "tags": ["microservices", "aws", "ecommerce", "cloud-native"],
+      "difficulty": "intermediate",
+      "nodeCount": 21,
+      "edgeCount": 24
+    },
+    {
+      "slug": "event-driven-architecture",
+      "title": "Event-Driven Architecture",
+      "description": "Asynchronous event processing with message broker",
+      "tags": ["event-driven", "kafka", "async", "microservices"],
+      "difficulty": "advanced",
+      "nodeCount": 7,
+      "edgeCount": 7
+    },
+    {
+      "slug": "hexagonal-architecture",
+      "title": "Hexagonal Architecture",
+      "description": "Ports and adapters pattern for clean domain logic",
+      "tags": ["hexagonal", "ports-adapters", "ddd", "clean-architecture"],
+      "difficulty": "intermediate",
+      "nodeCount": 6,
+      "edgeCount": 6
+    },
+    {
+      "slug": "cqrs-pattern",
+      "title": "CQRS Pattern",
+      "description": "Command Query Responsibility Segregation",
+      "tags": ["cqrs", "command", "query", "event-sourcing"],
+      "difficulty": "advanced",
+      "nodeCount": 6,
+      "edgeCount": 6
+    },
+    {
+      "slug": "layered-architecture",
+      "title": "Layered Architecture",
+      "description": "Traditional n-tier architecture pattern",
+      "tags": ["layered", "n-tier", "monolith", "traditional"],
+      "difficulty": "beginner",
+      "nodeCount": 5,
+      "edgeCount": 4
+    }
+  ]
+}
