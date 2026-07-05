@@ -146,6 +146,9 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
         <Handle id="bottom-target" type="target" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('bottom') ? 1 : undefined }} />
         <Handle id="bottom-source" type="source" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('bottom') ? 1 : undefined }} />
       </div>
+      {/* <div>
+        x: {data.x}, y: {data.y}
+      </div> */}
       {menuState && createPortal(
         <div
           data-node-context-menu

@@ -8,44 +8,44 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "mobile-app",
       "kind": "mobile-app",
-      "x": 360,
-      "y": 128,
+      "x": 576,
+      "y": 224,
       "name": "Mobile App"
     },
     {
       "id": "web-browser",
       "kind": "browser",
-      "x": 312,
-      "y": 608,
+      "x": 576,
+      "y": 560,
       "name": "Web Browser"
     },
     {
       "id": "dns",
       "kind": "dns",
-      "x": 328,
-      "y": 416,
+      "x": 584,
+      "y": 384,
       "name": "Route 53"
     },
     {
       "id": "cdn",
       "kind": "cdn",
-      "x": 600,
-      "y": 360,
+      "x": 744,
+      "y": 432,
       "name": "CloudFront",
       "description": "CDN & Edge Caching"
     },
     {
       "id": "waf",
       "kind": "firewall",
-      "x": 864,
-      "y": 360,
+      "x": 952,
+      "y": 352,
       "name": "WAF",
       "description": "Web Application Firewall"
     },
     {
       "id": "alb",
       "kind": "load-balancer",
-      "x": 1128,
+      "x": 1136,
       "y": 360,
       "name": "ALB",
       "description": "Application LB"
@@ -53,7 +53,7 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "api-gateway",
       "kind": "api-gateway",
-      "x": 1392,
+      "x": 1320,
       "y": 360,
       "name": "API Gateway",
       "description": "REST / GraphQL",
@@ -62,8 +62,8 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "user-svc",
       "kind": "rest-api",
-      "x": 1680,
-      "y": 48,
+      "x": 1600,
+      "y": 80,
       "name": "User Service",
       "description": "Auth & Profiles",
       "group": "aws-cloud"
@@ -71,7 +71,7 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "product-svc",
       "kind": "rest-api",
-      "x": 1680,
+      "x": 1608,
       "y": 360,
       "name": "Product Service",
       "description": "Catalog & Inventory",
@@ -80,8 +80,8 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "order-svc",
       "kind": "rest-api",
-      "x": 1584,
-      "y": 776,
+      "x": 1608,
+      "y": 664,
       "name": "Order Service",
       "description": "Order Management",
       "group": "aws-cloud"
@@ -89,8 +89,8 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "payment-svc",
       "kind": "rest-api",
-      "x": 1680,
-      "y": 984,
+      "x": 1328,
+      "y": 824,
       "name": "Payment Service",
       "description": "Payment Processing",
       "group": "aws-cloud"
@@ -98,8 +98,8 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "notification-svc",
       "kind": "worker-service",
-      "x": 2256,
-      "y": 1200,
+      "x": 2064,
+      "y": 832,
       "name": "Notification Svc",
       "description": "Email & Push",
       "group": "aws-cloud"
@@ -107,15 +107,15 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "user-db",
       "kind": "postgres",
-      "x": 1952,
-      "y": 80,
+      "x": 2080,
+      "y": 192,
       "name": "User DB",
       "group": "data-tier"
     },
     {
       "id": "user-db-ro",
       "kind": "postgres",
-      "x": 2240,
+      "x": 2056,
       "y": 80,
       "name": "User DB Read Replica",
       "group": "data-tier"
@@ -123,24 +123,24 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "product-db",
       "kind": "postgres",
-      "x": 1952,
-      "y": 392,
+      "x": 2072,
+      "y": 328,
       "name": "Product DB",
       "group": "data-tier"
     },
     {
       "id": "order-db",
       "kind": "dynamodb",
-      "x": 1952,
-      "y": 704,
+      "x": 2048,
+      "y": 664,
       "name": "Order DB (Sharded)",
       "group": "data-tier"
     },
     {
       "id": "redis",
       "kind": "redis",
-      "x": 1952,
-      "y": 1232,
+      "x": 1912,
+      "y": 256,
       "name": "Redis Cluster",
       "description": "Session & Cache",
       "group": "data-tier"
@@ -148,8 +148,8 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "queue",
       "kind": "kafka",
-      "x": 1968,
-      "y": 984,
+      "x": 1912,
+      "y": 832,
       "name": "Event Bus",
       "description": "Message Broker",
       "group": "aws-cloud"
@@ -157,8 +157,8 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "search",
       "kind": "elasticsearch",
-      "x": 2240,
-      "y": 392,
+      "x": 2064,
+      "y": 424,
       "name": "Elasticsearch",
       "description": "Full-Text Search",
       "group": "data-tier"
@@ -166,8 +166,8 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "s3",
       "kind": "s3",
-      "x": 1952,
-      "y": 1400,
+      "x": 2064,
+      "y": 544,
       "name": "S3 Buckets",
       "description": "Static Assets",
       "group": "data-tier"
@@ -175,8 +175,8 @@ export const sampleArchitecture: SystemDesign = {
     {
       "id": "sendgrid",
       "kind": "email-provider",
-      "x": 2544,
-      "y": 1200,
+      "x": 2296,
+      "y": 840,
       "name": "SendGrid"
     }
   ],
@@ -293,15 +293,6 @@ export const sampleArchitecture: SystemDesign = {
       "style": "dotted"
     },
     {
-      "id": "e-product-cache",
-      "source": "product-svc",
-      "target": "redis",
-      "sourceHandle": "right-source",
-      "targetHandle": "left-target",
-      "protocol": "internal",
-      "style": "dotted"
-    },
-    {
       "id": "e-order-cache",
       "source": "order-svc",
       "target": "redis",
@@ -340,24 +331,6 @@ export const sampleArchitecture: SystemDesign = {
       "animated": true
     },
     {
-      "id": "e-product-search",
-      "source": "product-svc",
-      "target": "search",
-      "sourceHandle": "right-source",
-      "targetHandle": "left-target",
-      "protocol": "internal",
-      "style": "dashed"
-    },
-    {
-      "id": "e-product-s3",
-      "source": "product-svc",
-      "target": "s3",
-      "sourceHandle": "right-source",
-      "targetHandle": "left-target",
-      "protocol": "internal",
-      "style": "dashed"
-    },
-    {
       "id": "e-cdn-s3",
       "source": "cdn",
       "target": "s3",
@@ -376,15 +349,6 @@ export const sampleArchitecture: SystemDesign = {
       "style": "dotted"
     },
     {
-      "id": "e-payment-order",
-      "source": "payment-svc",
-      "target": "order-svc",
-      "sourceHandle": "right-source",
-      "targetHandle": "left-target",
-      "protocol": "internal",
-      "style": "dashed"
-    },
-    {
       "id": "xy-edge__mobile-appbottom-source-dnstop-target",
       "source": "mobile-app",
       "target": "dns",
@@ -401,6 +365,41 @@ export const sampleArchitecture: SystemDesign = {
       "targetHandle": "bottom-target",
       "label": "HTTPS",
       "protocol": "https"
+    },
+    {
+      "id": "xy-edge__payment-svctop-source-order-svcleft-target",
+      "source": "payment-svc",
+      "target": "order-svc",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__product-svcbottom-source-s3left-target",
+      "source": "product-svc",
+      "target": "s3",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__product-svctop-source-redisleft-target",
+      "source": "product-svc",
+      "target": "redis",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "xy-edge__product-svcright-source-searchleft-target",
+      "source": "product-svc",
+      "target": "search",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dashed"
     }
   ],
   "groups": [
@@ -408,10 +407,10 @@ export const sampleArchitecture: SystemDesign = {
       "id": "aws-cloud",
       "label": "AWS Cloud",
       "style": "dashed",
-      "width": 1592,
-      "height": 1572,
-      "x": 1352,
-      "y": -40
+      "width": 1176,
+      "height": 1030,
+      "x": 1280,
+      "y": -30
     },
     {
       "id": "data-tier",
@@ -419,10 +418,10 @@ export const sampleArchitecture: SystemDesign = {
       "color": "#6366f1",
       "style": "dashed",
       "parent": "aws-cloud",
-      "width": 984,
-      "height": 1516,
-      "x": 1912,
-      "y": 8
+      "width": 384,
+      "height": 928,
+      "x": 1864,
+      "y": 30
     }
   ]
 }
