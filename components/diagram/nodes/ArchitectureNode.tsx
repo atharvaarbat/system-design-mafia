@@ -7,6 +7,7 @@ import type { SystemDesignNode } from '@/types/diagram'
 import { CATEGORY_SHAPE_PATH, resolveNodeKind } from '@/lib/diagram/registry'
 import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
 import { useSelectionActions } from '@/lib/diagram/selection-actions-context'
+import { useEditable } from '@/lib/diagram/editable-context'
 
 type ArchitectureFlowNode = Node<SystemDesignNode & Record<string, unknown>>
 
@@ -33,6 +34,7 @@ function useShapeAvailable(path: string): boolean {
 function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlowNode>) {
   const { deleteElements, getNodes } = useReactFlow()
   const { groupSelectedNodes, ungroupSelectedNodes, moveNodesToGroup } = useSelectionActions()
+  const editable = useEditable()
   const edges = useEdges()
   const { hoveredEdgeIds } = useEdgeHover()
   const kindDef = resolveNodeKind(data.kind)
@@ -73,6 +75,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
   // this menu doesn't force every node to re-render on every drag/selection change.
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
+    if (!editable) return
     e.stopPropagation()
     const allNodes = getNodes()
     const selArchNodes = allNodes.filter((n) => n.selected && n.type === 'architectureNode')
@@ -94,7 +97,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
 
     const hasGroups = allNodes.some((n) => n.type === 'groupNode')
     setMenuState({ x: e.clientX, y: e.clientY, groupableIds, nodeIds, hasParent, hasGroups })
-  }, [getNodes, data.id])
+  }, [editable, getNodes, data.id])
 
   const handleGroup = useCallback(() => {
     if (menuState) groupSelectedNodes(menuState.groupableIds)
@@ -156,12 +159,12 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
     <>
       <div
         onContextMenu={handleContextMenu}
-        className={`group relative w-fit rounded-xl ${selected ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-transparent' : ''}`}
+        className={`group relative w-fit rounded-xl ${selected && editable ? 'bg-primary/20' : ''}`}
       >
-        <Handle id="left-target" type="target" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('left') ? 1 : undefined }} />
-        <Handle id="left-source" type="source" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('left') ? 1 : undefined }} />
-        <Handle id="top-target" type="target" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('top') ? 1 : undefined }} />
-        <Handle id="top-source" type="source" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('top') ? 1 : undefined }} />
+        <Handle id="left-target" type="target" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+        <Handle id="left-source" type="source" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+        <Handle id="top-target" type="target" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+        <Handle id="top-source" type="source" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
         <div className="flex flex-col items-center gap-1 px-2 py-1">
           <div className="relative h-10 w-10 shrink-0">
             <div
@@ -195,10 +198,10 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             </p>
           )}
         </div>
-        <Handle id="right-target" type="target" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('right') ? 1 : undefined }} />
-        <Handle id="right-source" type="source" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('right') ? 1 : undefined }} />
-        <Handle id="bottom-target" type="target" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('bottom') ? 1 : undefined }} />
-        <Handle id="bottom-source" type="source" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('bottom') ? 1 : undefined }} />
+        <Handle id="right-target" type="target" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('right') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+        <Handle id="right-source" type="source" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('right') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+        <Handle id="bottom-target" type="target" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('bottom') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+        <Handle id="bottom-source" type="source" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('bottom') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
       </div>
       {/* <div>
         x: {data.x}, y: {data.y}

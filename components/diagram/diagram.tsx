@@ -30,6 +30,7 @@ import { sampleArchitecture } from './data/sample'
 import { systemDesignToFlow } from '@/lib/diagram/transform'
 import { EdgeHoverContext } from '@/lib/diagram/edge-hover-context'
 import { SelectionActionsContext } from '@/lib/diagram/selection-actions-context'
+import { EditableContext } from '@/lib/diagram/editable-context'
 import type { SystemDesign } from '@/types/diagram'
 import { flowToSystemDesign } from '@/lib/diagram/flow-to-system-design'
 
@@ -44,9 +45,10 @@ const edgeTypes = {
 
 interface Props {
   design?: SystemDesign
+  editable?: boolean
 }
 
-export default function Diagram({ design }: Props) {
+export default function Diagram({ design, editable = true }: Props) {
   const diagram = design || sampleArchitecture
   const { resolvedTheme, setTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
@@ -175,7 +177,7 @@ export default function Diagram({ design }: Props) {
         height: groupH,
         draggable: false,
         selectable: true,
-        style: { zIndex: -1 },
+        style: { zIndex: -1, pointerEvents: 'none' },
       }
 
       return [
@@ -286,6 +288,7 @@ export default function Diagram({ design }: Props) {
   }, [nodes])
 
   useEffect(() => {
+    if (!editable) return
     const handler = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'g') return
       const archIds = nodesRef.current
@@ -297,24 +300,30 @@ export default function Diagram({ design }: Props) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [groupNodes])
+  }, [groupNodes, editable])
 
   return (
     <div style={{ width: '100vw', height: '100vh' }} className="dark:bg-zinc-900/60">
+      <EditableContext.Provider value={editable}>
       <SelectionActionsContext.Provider value={selectionActions}>
       <EdgeHoverContext.Provider value={{ hoveredEdgeIds }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onReconnect={onReconnect}
-        edgesReconnectable
+        onNodesChange={editable ? onNodesChange : undefined}
+        onEdgesChange={editable ? onEdgesChange : undefined}
+        onConnect={editable ? onConnect : undefined}
+        onReconnect={editable ? onReconnect : undefined}
+        edgesReconnectable={editable}
+        nodesDraggable={editable}
+        nodesConnectable={editable}
+        elementsSelectable={editable}
         colorMode={isDark ? 'dark' : 'light'}
+        nodesFocusable={editable}
+        edgesFocusable={editable}
         onEdgeMouseEnter={onEdgeMouseEnter}
         onEdgeMouseLeave={onEdgeMouseLeave}
-        onSelectionContextMenu={onSelectionContextMenu}
+        onSelectionContextMenu={editable ? onSelectionContextMenu : undefined}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
@@ -324,6 +333,7 @@ export default function Diagram({ design }: Props) {
         snapToGrid
         snapGrid={[8, 8]}
         panOnScroll
+        panOnDrag={true}
         proOptions={{ hideAttribution: true }}
       >
         <Background
@@ -332,11 +342,13 @@ export default function Diagram({ design }: Props) {
           gap={24}
           size={2}
         />
+        {editable && (
         <Controls className='bg-background' position="bottom-left">
           <ControlButton onClick={handleCopyJson} title="Copy JSON">
             <span className="text-xs font-mono">{copied ? '✓' : '</>'}</span>
           </ControlButton>
         </Controls>
+        )}
       </ReactFlow>
       {selectionMenu && createPortal(
         <div
@@ -359,6 +371,7 @@ export default function Diagram({ design }: Props) {
       )}
       </EdgeHoverContext.Provider>
       </SelectionActionsContext.Provider>
+      </EditableContext.Provider>
     </div>
   )
 }

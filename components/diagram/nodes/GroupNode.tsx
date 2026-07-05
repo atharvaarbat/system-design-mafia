@@ -3,6 +3,7 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { NodeResizer, useReactFlow, type NodeProps, type Node } from '@xyflow/react'
+import { useEditable } from '@/lib/diagram/editable-context'
 
 interface GroupNodeData {
   label: string
@@ -23,6 +24,7 @@ interface DragState {
 
 function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
   const { setNodes, getNode, deleteElements, screenToFlowPosition } = useReactFlow()
+  const editable = useEditable()
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const dragState = useRef<DragState | null>(null)
@@ -57,10 +59,8 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
     }
   }, [saveLabel, cancelEditing])
 
-  // The group itself is not draggable (so panning works everywhere inside its
-  // body); dragging is implemented manually and scoped to the label only.
   const handleLabelPointerDown = useCallback((e: React.PointerEvent) => {
-    if (editing || e.button !== 0) return
+    if (!editable || editing || e.button !== 0) return
     const node = getNode(id)
     if (!node) return
     e.stopPropagation()
@@ -73,7 +73,7 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
       originY: node.position.y,
     }
     e.currentTarget.setPointerCapture(e.pointerId)
-  }, [editing, getNode, id, screenToFlowPosition])
+  }, [editable, editing, getNode, id, screenToFlowPosition])
 
   const handleLabelPointerMove = useCallback((e: React.PointerEvent) => {
     const drag = dragState.current
@@ -107,9 +107,10 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
+    if (!editable) return
     e.stopPropagation()
     setMenuPos({ x: e.clientX, y: e.clientY })
-  }, [])
+  }, [editable])
 
   const handleUngroup = useCallback(() => {
     closeMenu()
@@ -141,28 +142,31 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
 
   return (
     <>
+      {editable && (
       <NodeResizer
         isVisible={selected}
         minWidth={240}
         minHeight={120}
-        lineClassName="border-blue-400"
-        handleClassName="h-6 w-6 bg-white border-2 border-blue-400 rounded-md"
+        lineStyle={{ borderColor: '#3b82f6', borderWidth: 3 }}
+        handleClassName="h-10 w-10 bg-white border-2 border-blue-400 rounded-md shadow-sm"
       />
+      )}
       <div className="relative h-full w-full" onContextMenu={handleContextMenu}>
         <div
           style={{
-            borderColor: selected ? '#3b82f6' : data.accent || '#94a3b8',
+            borderColor: selected ? '#3b82f655' : data.accent || '#94a3b8',
             borderStyle: data.borderStyle === 'dashed' ? 'dashed' : 'solid',
           }}
           className="h-full w-full rounded-2xl border-2 bg-zinc-50/40 dark:bg-zinc-900/20"
         />
         <div
-          className="nodrag nopan absolute left-4 top-2 inline-block rounded-md bg-white px-3 py-1 shadow-sm dark:bg-zinc-800 cursor-grab active:cursor-grabbing"
+          style={{ pointerEvents: 'auto' }}
+          className={`nodrag nopan absolute left-4 top-2 inline-block rounded-md bg-white px-3 py-1 shadow-sm dark:bg-zinc-800 ${editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
           onPointerDown={handleLabelPointerDown}
           onPointerMove={handleLabelPointerMove}
           onPointerUp={handleLabelPointerUp}
           onPointerCancel={handleLabelPointerUp}
-          onDoubleClick={(e) => { e.stopPropagation(); startEditing() }}
+          onDoubleClick={(e) => { if (!editable) return; e.stopPropagation(); startEditing() }}
         >
           {editing ? (
             <input
