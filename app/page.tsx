@@ -1,11 +1,10 @@
-// import App from "@/components/diagram/diagram";
 import Diagram from "@/components/diagram/diagram";
-import Image from "next/image";
+import { sampleArchitecture } from "@/components/diagram/data/sample";
 
 export default function Home() {
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans dark:bg-black">
-      <Diagram editable={true} />
+      <Diagram design={sampleArchitecture} editable={true} />
     </div>
   );
 }

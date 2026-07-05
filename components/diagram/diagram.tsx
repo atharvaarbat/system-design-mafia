@@ -26,7 +26,6 @@ import '@xyflow/react/dist/style.css'
 import ArchitectureNodeComponent from './nodes/ArchitectureNode'
 import GroupNodeComponent from './nodes/GroupNode'
 import ArchitectureEdgeComponent from './edges/ArchitectureEdge'
-import { sampleArchitecture } from './data/sample'
 import { systemDesignToFlow } from '@/lib/diagram/transform'
 import { EdgeHoverContext } from '@/lib/diagram/edge-hover-context'
 import { SelectionActionsContext } from '@/lib/diagram/selection-actions-context'
@@ -44,12 +43,12 @@ const edgeTypes = {
 }
 
 interface Props {
-  design?: SystemDesign
+  design: SystemDesign
   editable?: boolean
 }
 
 export default function Diagram({ design, editable = true }: Props) {
-  const diagram = design || sampleArchitecture
+  const diagram = design
   const { resolvedTheme, setTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
 
