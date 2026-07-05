@@ -4,6 +4,7 @@ import { useMemo, useCallback, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   BackgroundVariant,
   Controls,
@@ -19,6 +20,7 @@ import {
   type Connection,
   type EdgeMouseHandler,
   type OnReconnect,
+  useReactFlow,
 } from '@xyflow/react'
 import { useTheme } from 'next-themes'
 import '@xyflow/react/dist/style.css'
@@ -32,6 +34,8 @@ import { SelectionActionsContext } from '@/lib/diagram/selection-actions-context
 import { EditableContext } from '@/lib/diagram/editable-context'
 import type { SystemDesign } from '@/types/diagram'
 import { flowToSystemDesign } from '@/lib/diagram/flow-to-system-design'
+import { Dock } from '../unlumen-ui/dock'
+import { Copy, Minimize2, MoveDiagonal, RefreshCcw } from 'lucide-react'
 
 const nodeTypes = {
   architectureNode: ArchitectureNodeComponent,
@@ -300,77 +304,129 @@ export default function Diagram({ design, editable = true }: Props) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [groupNodes, editable])
+  const containerRef = useRef<HTMLDivElement>(null)
+  function DiagramDock() {
+    const { fitView } = useReactFlow()
+    const [isFullscreen, setIsFullscreen] = useState(false)
 
-  return (
-    <div style={{ width: '100vw', height: '100vh' }} className="dark:bg-zinc-900/60">
-      <EditableContext.Provider value={editable}>
-      <SelectionActionsContext.Provider value={selectionActions}>
-      <EdgeHoverContext.Provider value={{ hoveredEdgeIds }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={editable ? onNodesChange : undefined}
-        onEdgesChange={editable ? onEdgesChange : undefined}
-        onConnect={editable ? onConnect : undefined}
-        onReconnect={editable ? onReconnect : undefined}
-        edgesReconnectable={editable}
-        nodesDraggable={editable}
-        nodesConnectable={editable}
-        elementsSelectable={editable}
-        colorMode={isDark ? 'dark' : 'light'}
-        nodesFocusable={editable}
-        edgesFocusable={editable}
-        onEdgeMouseEnter={onEdgeMouseEnter}
-        onEdgeMouseLeave={onEdgeMouseLeave}
-        onSelectionContextMenu={editable ? onSelectionContextMenu : undefined}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        defaultEdgeOptions={defaultEdgeOptions}
-        fitView
-        minZoom={0.1}
-        maxZoom={2}
-        snapToGrid
-        snapGrid={[8, 8]}
-        panOnScroll
-        panOnDrag={true}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background
-          variant={BackgroundVariant.Dots}
-          color={isDark ? '#888' : '#ddd'}
-          gap={24}
-          size={2}
+    useEffect(() => {
+      const handler = () => setIsFullscreen(!!document.fullscreenElement)
+      document.addEventListener('fullscreenchange', handler)
+      return () => document.removeEventListener('fullscreenchange', handler)
+    }, [])
+
+    const handleReset = useCallback(() => {
+      fitView({ duration: 300 })
+    }, [fitView])
+
+    const handleFullscreen = useCallback(() => {
+      if (!document.fullscreenElement) {
+        containerRef.current?.requestFullscreen()
+      } else {
+        document.exitFullscreen()
+      }
+    }, [])
+
+    const [urlCopied, setUrlCopied] = useState(false)
+    const handleCopyUrl = useCallback(() => {
+      navigator.clipboard.writeText(window.location.href)
+      setUrlCopied(true)
+      setTimeout(() => setUrlCopied(false), 2000)
+    }, [])
+
+    const items = [
+      { icon: <RefreshCcw />, label: "Reset", onClick: handleReset },
+      { icon: isFullscreen ? <Minimize2 /> : <MoveDiagonal />, label: isFullscreen ? "Exit full screen" : "Full screen", onClick: handleFullscreen },
+      { icon: <Copy />, label: urlCopied ? "Copied!" : "Copy", onClick: handleCopyUrl },
+    ]
+
+    return (
+      <div className='absolute z-999 bottom-0 left-1/2 -translate-x-1/2 pb-4'>
+        <Dock
+          items={items}
+          magnification={1.4}
+          distance={50}
+          springOptions={{ stiffness: 400, damping: 25 }}
+          borderRadius={30}
+          iconSize={28}
+          className='rounded-3xl bg-background/10 backdrop-blur-md'
         />
-        {editable && (
-        <Controls className='bg-background' position="bottom-left">
-          <ControlButton onClick={handleCopyJson} title="Copy JSON">
-            <span className="text-xs font-mono">{copied ? '✓' : '</>'}</span>
-          </ControlButton>
-        </Controls>
-        )}
-      </ReactFlow>
-      {selectionMenu && createPortal(
-        <div
-          data-selection-context-menu
-          style={{ position: 'fixed', left: selectionMenu.x, top: selectionMenu.y, zIndex: 9999 }}
-          className="min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div
-            className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
-            onClick={() => {
-              groupNodes(selectionMenu.nodeIds)
-              closeSelectionMenu()
-            }}
-          >
-            Group
-          </div>
-        </div>,
-        document.body
-      )}
-      </EdgeHoverContext.Provider>
-      </SelectionActionsContext.Provider>
+      </div>
+    )
+  }
+  return (
+    <ReactFlowProvider>
+    <div ref={containerRef} style={{ width: '100vw', height: '100vh' }} className="dark:bg-zinc-900/60 relative">
+      <EditableContext.Provider value={editable}>
+        <SelectionActionsContext.Provider value={selectionActions}>
+          <EdgeHoverContext.Provider value={{ hoveredEdgeIds }}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={editable ? onNodesChange : undefined}
+              onEdgesChange={editable ? onEdgesChange : undefined}
+              onConnect={editable ? onConnect : undefined}
+              onReconnect={editable ? onReconnect : undefined}
+              edgesReconnectable={editable}
+              nodesDraggable={editable}
+              nodesConnectable={editable}
+              elementsSelectable={editable}
+              colorMode={isDark ? 'dark' : 'light'}
+              nodesFocusable={editable}
+              edgesFocusable={editable}
+              onEdgeMouseEnter={onEdgeMouseEnter}
+              onEdgeMouseLeave={onEdgeMouseLeave}
+              onSelectionContextMenu={editable ? onSelectionContextMenu : undefined}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              defaultEdgeOptions={defaultEdgeOptions}
+              fitView
+              minZoom={0.1}
+              maxZoom={2}
+              snapToGrid
+              snapGrid={[8, 8]}
+              panOnScroll
+              panOnDrag={true}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background
+                variant={BackgroundVariant.Dots}
+                color={isDark ? '#666' : '#222'}
+                gap={24}
+                size={2}
+              />
+              {editable && (
+                <Controls className='bg-background' position="bottom-left">
+                  <ControlButton onClick={handleCopyJson} title="Copy JSON">
+                    <span className="text-xs font-mono">{copied ? '✓' : '</>'}</span>
+                  </ControlButton>
+                </Controls>
+              )}
+            </ReactFlow>
+            {selectionMenu && createPortal(
+              <div
+                data-selection-context-menu
+                style={{ position: 'fixed', left: selectionMenu.x, top: selectionMenu.y, zIndex: 9999 }}
+                className="min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div
+                  className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => {
+                    groupNodes(selectionMenu.nodeIds)
+                    closeSelectionMenu()
+                  }}
+                >
+                  Group
+                </div>
+              </div>,
+              document.body
+            )}
+          </EdgeHoverContext.Provider>
+        </SelectionActionsContext.Provider>
       </EditableContext.Provider>
+      <DiagramDock />
     </div>
+    </ReactFlowProvider>
   )
 }
