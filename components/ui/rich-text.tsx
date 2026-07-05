@@ -49,19 +49,19 @@ function renderInline(tokens: InlineToken[]) {
     switch (t.type) {
       case 'bold':
         return (
-          <strong key={i} className="font-bold text-white/80">
+          <strong key={i} className="font-bold text-foreground/80">
             {t.content}
           </strong>
         );
       case 'italic':
         return (
-          <em key={i} className="italic text-white/70">
+          <em key={i} className="italic text-foreground/70">
             {t.content}
           </em>
         );
       case 'underline':
         return (
-          <u key={i} className="underline decoration-white/30 decoration-dotted underline-offset-2">
+          <u key={i} className="underline decoration-foreground/30 decoration-dotted underline-offset-2">
             {t.content}
           </u>
         );
@@ -69,7 +69,7 @@ function renderInline(tokens: InlineToken[]) {
         return (
           <code
             key={i}
-            className="rounded-sm border border-white/5 bg-white/[0.04] px-1 py-0.5 text-xs text-primary"
+            className="rounded-sm border border-foreground/5 bg-foreground/4 px-1 py-0.5 text-xs text-primary"
           >
             {t.content}
           </code>
@@ -101,7 +101,7 @@ export default function RichText({ content, className }: RichTextProps) {
   const blocks = content.split(/\n\n+/);
 
   return (
-    <div className={cn('space-y-5 font-mono text-sm leading-relaxed text-white/60', className)}>
+    <div className={cn('space-y-5 font-mono text-sm leading-relaxed dark:text-foreground/60 text-foreground', className)}>
       {blocks.map((block, i) => {
         const trimmed = block.trim();
         if (!trimmed) return null;
@@ -134,7 +134,7 @@ export default function RichText({ content, className }: RichTextProps) {
             <ul key={i} className="list-none space-y-1.5 pl-0">
               {items.map((item, j) => (
                 <li key={j} className="flex items-baseline gap-2">
-                  <span className="mt-[5px] inline-block h-1 w-1 flex-shrink-0 rounded-full bg-white/20" />
+                  <span className="mt-[5px] inline-block h-1 w-1 flex-shrink-0 rounded-full bg-foreground/20" />
                   <span>{renderInline(parseInline(item.slice(2)))}</span>
                 </li>
               ))}

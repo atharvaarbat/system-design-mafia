@@ -76,10 +76,10 @@ export default function DiagramPageClient({
   }, [design]);
 
   return (
-    <>
+    <div className="min-h-screen bg-background">
       <Navbar />
-      <section className="relative flex min-h-screen w-full flex-col overflow-x-hidden pt-28 pb-24 font-mono">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-size-[24px_24px]" />
+      <section className="relative flex min-h-screen w-full flex-col overflow-x-hidden pt-24 pb-24 font-mono">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px)] bg-size-[24px_24px]" />
 
         {/* Ambient Glow */}
         <motion.div
@@ -94,10 +94,10 @@ export default function DiagramPageClient({
         />
 
         {/* Decorative Technical Borders */}
-        <div className="absolute top-24 right-0 left-0 hidden h-px bg-white/5 lg:block" />
-        <div className="absolute right-0 bottom-24 left-0 hidden h-px bg-white/5 lg:block" />
-        <div className="absolute top-0 bottom-0 left-8 hidden w-px bg-white/5 md:left-16 lg:block" />
-        <div className="absolute top-0 right-8 bottom-0 hidden w-px bg-white/5 md:right-16 lg:block" />
+        <div className="absolute top-24 right-0 left-0 hidden h-px bg-foreground/5 lg:block" />
+        <div className="absolute right-0 bottom-24 left-0 hidden h-px bg-foreground/5 lg:block" />
+        <div className="absolute top-0 bottom-0 left-8 hidden w-px bg-foreground/5 md:left-16 lg:block" />
+        <div className="absolute top-0 right-8 bottom-0 hidden w-px bg-foreground/5 md:right-16 lg:block" />
 
         {/* Crosshairs */}
         <div className="absolute top-24 left-8 hidden h-4 w-4 -translate-x-1/2 -translate-y-1/2 md:left-16 lg:block">
@@ -105,28 +105,28 @@ export default function DiagramPageClient({
           <div className="bg-primary/50 absolute top-0 bottom-0 left-1/2 w-px" />
         </div>
         <div className="absolute top-24 right-8 hidden h-4 w-4 translate-x-1/2 -translate-y-1/2 md:right-16 lg:block">
-          <div className="absolute top-1/2 right-0 left-0 h-px bg-white/20" />
-          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/20" />
+          <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
+          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
         </div>
         <div className="absolute bottom-24 left-8 hidden h-4 w-4 -translate-x-1/2 translate-y-1/2 md:left-16 lg:block">
-          <div className="absolute top-1/2 right-0 left-0 h-px bg-white/20" />
-          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/20" />
+          <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
+          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
         </div>
         <div className="absolute right-8 bottom-24 hidden h-4 w-4 translate-x-1/2 translate-y-1/2 md:right-16 lg:block">
-          <div className="absolute top-1/2 right-0 left-0 h-px bg-white/20" />
-          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/20" />
+          <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
+          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
         </div>
 
         {/* Abstract Background Concentric Circles */}
-        <div className="pointer-events-none absolute top-1/2 left-0 flex h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/5 opacity-30">
-          <div className="flex h-[600px] w-[600px] items-center justify-center rounded-full border border-dashed border-white/20">
-            <div className="flex h-[400px] w-[400px] items-center justify-center rounded-full border border-white/20">
-              <div className="h-[200px] w-[200px] rounded-full border border-dashed border-white/10" />
+        <div className="pointer-events-none absolute top-1/2 left-0 flex h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-foreground/5 opacity-30">
+          <div className="flex h-[600px] w-[600px] items-center justify-center rounded-full border border-dashed border-foreground/20">
+            <div className="flex h-[400px] w-[400px] items-center justify-center rounded-full border border-foreground/20">
+              <div className="h-[200px] w-[200px] rounded-full border border-dashed border-foreground/10" />
             </div>
           </div>
         </div>
 
-        <Container className="relative z-10 flex flex-1 flex-col gap-16">
+        <Container className="relative z-10 flex flex-1 flex-col gap-10">
           {/* Back button */}
           <motion.div
             initial={{ opacity: 0, y: -8 }}
@@ -135,7 +135,7 @@ export default function DiagramPageClient({
           >
             <Link
               href="/#diagram-cards"
-              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 border border-white/5 bg-white/[0.015] px-3 py-1.5 text-xs tracking-wider transition-all hover:bg-white/[0.03]"
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 border border-foreground/5 bg-foreground/1.5 px-3 py-1.5 text-xs tracking-wider transition-all hover:bg-foreground/3"
             >
               <ArrowLeft className="h-3 w-3" />
               Back to patterns
@@ -147,14 +147,14 @@ export default function DiagramPageClient({
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="flex items-center gap-2 text-xs tracking-widest text-white/30 uppercase"
+            className="flex items-center gap-2 text-xs tracking-widest text-foreground/30 uppercase"
           >
-            <span className="text-white/20">~/patterns</span>
-            <span className="text-white/10">/</span>
+            <span className="dark:text-foreground/20 text-foreground/60">~/patterns</span>
+            <span className="dark:text-foreground/20 text-foreground/60">/</span>
             <span className="text-primary">
               {design.title.toLowerCase().replace(/\s+/g, '-')}
             </span>
-            <span className="ml-auto border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10px] text-white/25">
+            <span className="ml-auto border border-foreground/5 bg-foreground/2 px-2 py-0.5 text-[10px] text-foreground/25">
               v1.0
             </span>
           </motion.div>
@@ -176,7 +176,7 @@ export default function DiagramPageClient({
             </motion.div>
 
             {design.description && (
-              <motion.div variants={fadeUp} className="mb-8 max-w-xl">
+              <motion.div variants={fadeUp} className=" max-w-xl">
                 <SubHeading variant="big" className="text-pretty">
                   {design.description}
                 </SubHeading>
@@ -184,7 +184,7 @@ export default function DiagramPageClient({
             )}
 
             {/* Animated stat chips */}
-            <motion.div
+            {/* <motion.div
               variants={fadeUp}
               className="flex flex-wrap items-center gap-3"
             >
@@ -208,13 +208,13 @@ export default function DiagramPageClient({
               ].map((chip) => (
                 <div
                   key={chip.label}
-                  className={`inline-flex items-center border bg-white/[0.02] px-3 py-1 text-xs font-bold tracking-wider uppercase ${chip.color}`}
+                  className={`inline-flex items-center border bg-foreground/2 px-3 py-1 text-xs font-bold tracking-wider uppercase ${chip.color}`}
                 >
                   {chip.label}
                 </div>
               ))}
-            </motion.div>
-          </motion.div>
+            </motion.div> */}
+          </motion.div> 
 
           {/* Terminal-style metadata strip */}
           <motion.div
@@ -225,29 +225,29 @@ export default function DiagramPageClient({
               ease: [0.16, 1, 0.3, 1],
               delay: 0.5,
             }}
-            className="flex flex-wrap items-center gap-x-6 gap-y-1 border border-white/5 bg-white/[0.015] px-5 py-3 text-xs text-white/35"
+            className="flex flex-wrap items-center gap-x-6 gap-y-1 border border-foreground/5 bg-foreground/1.5 px-5 py-3 text-xs dark:text-foreground/35 text-foreground/75"
           >
-            <span className="text-white/20">$</span>
+            <span className="text-foreground/70">$</span>
             <span>
               arch inspect {design.title.toLowerCase().replace(/\s+/g, '-')}
             </span>
-            <span className="h-3 w-px bg-white/10" />
+            <span className="h-3 w-px bg-foreground/10" />
             <span>
-              <span className="text-white/50">{stats.nodeCount}</span> nodes
+              <span className="text-foreground">{stats.nodeCount}</span> nodes
             </span>
             <span>
-              <span className="text-white/50">{stats.edgeCount}</span> edges
+              <span className="text-foreground">{stats.edgeCount}</span> edges
             </span>
             <span>
-              <span className="text-white/50">{stats.groupCount}</span> groups
+              <span className="text-foreground">{stats.groupCount}</span> groups
             </span>
             <span>
-              <span className="text-white/50">{stats.protocols.length}</span>{' '}
+              <span className="text-foreground">{stats.protocols.length}</span>{' '}
               protocols
             </span>
             <span className="ml-auto inline-flex items-center gap-1.5">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500/60" />
-              <span className="text-[10px] tracking-wider text-green-500/60 uppercase">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+              <span className="text-[10px] tracking-wider text-primary uppercase">
                 verified
               </span>
             </span>
@@ -255,7 +255,7 @@ export default function DiagramPageClient({
 
           {/* Diagram */}
           <motion.div
-            className="relative overflow-hidden rounded-sm border border-white/10 bg-black/20"
+            className="relative overflow-hidden border border-foreground/10 bg-foreground/3"
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{
@@ -302,10 +302,10 @@ export default function DiagramPageClient({
             className="pb-8"
           >
             <motion.div variants={fadeUp} className="mb-8">
-              <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-white/30 uppercase">
+              <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase">
                 <span className="text-primary">//</span>
                 <span>Component Breakdown</span>
-                <span className="h-px flex-1 bg-white/5" />
+                <span className="h-px flex-1 bg-foreground/5" />
               </div>
               <Heading as="h2" variant="medium" className="text-foreground">
                 Key Components
@@ -378,7 +378,7 @@ export default function DiagramPageClient({
                 <motion.div
                   key={section.title}
                   variants={fadeUp}
-                  className={`group border bg-white/[0.015] p-5 transition-all hover:bg-white/[0.03] ${section.color}`}
+                  className={`group border bg-foreground/1.5 p-5 transition-all hover:bg-foreground/3 ${section.color}`}
                 >
                   <div
                     className={`mb-3 text-xs font-bold tracking-widest uppercase ${section.accent}`}
@@ -390,14 +390,14 @@ export default function DiagramPageClient({
                       {section.items.map((item) => (
                         <li
                           key={item}
-                          className="text-xs text-white/50 transition-colors group-hover:text-white/70"
+                          className="text-xs text-foreground/70 transition-colors group-hover:text-foreground/70"
                         >
                           {item}
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <span className="text-xs italic text-white/20">
+                    <span className="text-xs italic text-foreground/20">
                       none in this architecture
                     </span>
                   )}
@@ -416,10 +416,10 @@ export default function DiagramPageClient({
               className="pb-8"
             >
               <motion.div variants={fadeUp} className="mb-8">
-                <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-white/30 uppercase">
+                <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase">
                   <span className="text-primary">//</span>
                   <span>Deep Dive</span>
-                  <span className="h-px flex-1 bg-white/5" />
+                  <span className="h-px flex-1 bg-foreground/5" />
                 </div>
                 <Heading as="h2" variant="medium" className="text-foreground">
                   Architecture Breakdown
@@ -427,7 +427,7 @@ export default function DiagramPageClient({
               </motion.div>
               <motion.div
                 variants={fadeUp}
-                className="border border-white/5 bg-white/[0.01] p-8"
+                className="border border-foreground/5 bg-foreground/1 p-8"
               >
                 <RichText content={design.summary} />
               </motion.div>
@@ -435,6 +435,6 @@ export default function DiagramPageClient({
           )}
         </Container>
       </section>
-    </>
+    </div>
   );
 }
