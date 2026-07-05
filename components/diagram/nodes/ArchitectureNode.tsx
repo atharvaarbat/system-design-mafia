@@ -1,9 +1,16 @@
 'use client'
 
-import { memo, useEffect, useState } from 'react'
-import { Handle, Position, useEdges, type NodeProps, type Node } from '@xyflow/react'
+import { memo, useEffect, useState, useMemo } from 'react'
+import { Handle, Position, useEdges, useReactFlow, type NodeProps, type Node } from '@xyflow/react'
 import type { SystemDesignNode } from '@/types/diagram'
 import { CATEGORY_SHAPE_PATH, resolveNodeKind } from '@/lib/diagram/registry'
+import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from '@/components/ui/context-menu'
 
 type ArchitectureFlowNode = Node<SystemDesignNode & Record<string, unknown>>
 
@@ -27,16 +34,29 @@ function useShapeAvailable(path: string): boolean {
   return available
 }
 
-function ArchitectureNodeComponent({ data, selected, id }: NodeProps<ArchitectureFlowNode>) {
+function ArchitectureNodeComponent({ data }: NodeProps<ArchitectureFlowNode>) {
+  const { deleteElements } = useReactFlow()
   const edges = useEdges()
-  const hasIncoming = edges.some((e) => e.target === id)
-  const hasOutgoing = edges.some((e) => e.source === id)
-
+  const { hoveredEdgeIds } = useEdgeHover()
   const kindDef = resolveNodeKind(data.kind)
   const Icon = kindDef.icon
   const label = data.name || kindDef.label
   const shapePath = CATEGORY_SHAPE_PATH[kindDef.category]
   const shapeAvailable = useShapeAvailable(shapePath)
+
+  const connectedEdgeSides = useMemo(() => {
+    const sides = new Set<string>()
+    for (const edge of edges) {
+      if (!hoveredEdgeIds.has(edge.id)) continue
+      if (edge.source === data.id && edge.sourceHandle) {
+        sides.add(edge.sourceHandle.replace('-source', '').replace('-target', ''))
+      }
+      if (edge.target === data.id && edge.targetHandle) {
+        sides.add(edge.targetHandle.replace('-source', '').replace('-target', ''))
+      }
+    }
+    return sides
+  }, [edges, hoveredEdgeIds, data.id])
 
   const statusColor =
     data.status === 'active' ? '#22c55e'
@@ -46,63 +66,58 @@ function ArchitectureNodeComponent({ data, selected, id }: NodeProps<Architectur
     : undefined
 
   return (
-    <div
-      style={{
-        borderColor: selected ? '#3b82f6' : kindDef.color,
-        borderWidth: selected ? 2.5 : 2,
-        minWidth: data.width ?? 200,
-      }}
-      className="rounded-xl border-solid bg-white shadow-sm transition-shadow dark:bg-zinc-800 dark:shadow-black/20"
-    >
-      {hasIncoming && (
-        <Handle type="target" position={Position.Left} className="bg-zinc-400! dark:bg-zinc-500!" />
-      )}
-
-      <div className="flex items-start gap-3 px-3 py-3">
-        <div className="relative h-11 w-11 shrink-0">
-          <div
-            className="absolute inset-0 rounded-lg"
-            style={{
-              backgroundColor: kindDef.color,
-              ...(shapeAvailable
-                ? {
-                    WebkitMaskImage: `url(${shapePath})`,
-                    maskImage: `url(${shapePath})`,
-                    WebkitMaskSize: 'contain',
-                    maskSize: 'contain',
-                    WebkitMaskRepeat: 'no-repeat',
-                    maskRepeat: 'no-repeat',
-                    WebkitMaskPosition: 'center',
-                    maskPosition: 'center',
-                  }
-                : {}),
-            }}
-          />
-          <Icon className="absolute inset-0 m-auto h-5 w-5 text-white" strokeWidth={2} />
-        </div>
-
-        <div className="min-w-0 flex-1 pt-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-              {label}
-            </span>
-            {statusColor && (
-              <span
-                style={{ backgroundColor: statusColor }}
-                className="h-2 w-2 shrink-0 rounded-full"
-              />
-            )}
-          </div>
-          {data.description && (
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{data.description}</p>
-          )}
-        </div>
+    <ContextMenu>
+      <ContextMenuTrigger>
+    <div className="group relative w-fit">
+    <Handle id="left-target" type="target" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('left') ? 1 : undefined }} />
+    <Handle id="left-source" type="source" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('left') ? 1 : undefined }} />
+    <Handle id="top-target" type="target" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('top') ? 1 : undefined }} />
+    <Handle id="top-source" type="source" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('top') ? 1 : undefined }} />
+    <div className="flex flex-col items-center gap-1 px-2 py-1">
+      <div className="relative h-10 w-10 shrink-0">
+        <div
+          className="absolute inset-0 rounded-lg"
+          style={{
+            backgroundColor: kindDef.color,
+            ...(shapeAvailable
+              ? {
+                  WebkitMaskImage: `url(${shapePath})`,
+                  maskImage: `url(${shapePath})`,
+                  WebkitMaskSize: 'contain',
+                  maskSize: 'contain',
+                  WebkitMaskRepeat: 'no-repeat',
+                  maskRepeat: 'no-repeat',
+                  WebkitMaskPosition: 'center',
+                  maskPosition: 'center',
+                }
+              : {}),
+          }}
+        />
+        <Icon className="absolute inset-0 m-auto h-5 w-5 text-white" strokeWidth={2} />
       </div>
 
-      {hasOutgoing && (
-        <Handle type="source" position={Position.Right} className="bg-zinc-400! dark:bg-zinc-500!" />
+      <span className="max-w-24 truncate text-center text-xs font-semibold text-zinc-800 dark:text-zinc-100">
+        {label}
+      </span>
+
+      {data.description && (
+        <p className="max-w-24 text-center text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
+          {data.description}
+        </p>
       )}
     </div>
+    <Handle id="right-target" type="target" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('right') ? 1 : undefined }} />
+    <Handle id="right-source" type="source" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('right') ? 1 : undefined }} />
+    <Handle id="bottom-target" type="target" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('bottom') ? 1 : undefined }} />
+    <Handle id="bottom-source" type="source" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: connectedEdgeSides.has('bottom') ? 1 : undefined }} />
+    </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => deleteElements({ nodes: [{ id: data.id }] })}>
+          Delete
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 

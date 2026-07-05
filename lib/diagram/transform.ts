@@ -137,8 +137,6 @@ export function systemDesignToFlow(design: SystemDesign): { nodes: Node[]; edges
       data: { ...archNode },
       parentId: archNode.group || undefined,
       extent: archNode.group ? 'parent' : undefined,
-      width: archNode.width || NODE_W,
-      height: archNode.height || NODE_H,
       draggable: true,
       selectable: true,
     })
@@ -149,6 +147,8 @@ export function systemDesignToFlow(design: SystemDesign): { nodes: Node[]; edges
       id: archEdge.id,
       source: archEdge.source,
       target: archEdge.target,
+      sourceHandle: archEdge.sourceHandle,
+      targetHandle: archEdge.targetHandle,
       type: 'architectureEdge',
       animated: archEdge.animated,
       data: {

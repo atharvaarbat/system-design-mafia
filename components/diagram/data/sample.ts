@@ -152,46 +152,46 @@ export const sampleArchitecture: SystemDesign = {
 
   edges: [
     // ── Clients → DNS ─────────────────────────────────
-    { id: 'e-mobile-dns', source: 'mobile-app', target: 'dns', protocol: 'https', label: 'HTTPS' },
-    { id: 'e-web-dns', source: 'web-browser', target: 'dns', protocol: 'https', label: 'HTTPS' },
+    { id: 'e-mobile-dns', source: 'mobile-app', target: 'dns', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https', label: 'HTTPS' },
+    { id: 'e-web-dns', source: 'web-browser', target: 'dns', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https', label: 'HTTPS' },
 
     // ── Edge chain ────────────────────────────────────
-    { id: 'e-dns-cdn', source: 'dns', target: 'cdn', protocol: 'https' },
-    { id: 'e-cdn-waf', source: 'cdn', target: 'waf', protocol: 'https' },
-    { id: 'e-waf-alb', source: 'waf', target: 'alb', protocol: 'https' },
-    { id: 'e-alb-gw', source: 'alb', target: 'api-gateway', protocol: 'https' },
+    { id: 'e-dns-cdn', source: 'dns', target: 'cdn', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https' },
+    { id: 'e-cdn-waf', source: 'cdn', target: 'waf', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https' },
+    { id: 'e-waf-alb', source: 'waf', target: 'alb', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https' },
+    { id: 'e-alb-gw', source: 'alb', target: 'api-gateway', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https' },
 
     // ── API Gateway → Services ────────────────────────
-    { id: 'e-gw-user', source: 'api-gateway', target: 'user-svc', protocol: 'grpc', animated: true, label: 'gRPC' },
-    { id: 'e-gw-product', source: 'api-gateway', target: 'product-svc', protocol: 'grpc', animated: true, label: 'gRPC' },
-    { id: 'e-gw-order', source: 'api-gateway', target: 'order-svc', protocol: 'grpc', animated: true, label: 'gRPC' },
+    { id: 'e-gw-user', source: 'api-gateway', target: 'user-svc', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'grpc', animated: true, label: 'gRPC' },
+    { id: 'e-gw-product', source: 'api-gateway', target: 'product-svc', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'grpc', animated: true, label: 'gRPC' },
+    { id: 'e-gw-order', source: 'api-gateway', target: 'order-svc', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'grpc', animated: true, label: 'gRPC' },
 
     // ── Services → Databases ──────────────────────────
-    { id: 'e-user-db', source: 'user-svc', target: 'user-db', style: 'dashed', protocol: 'database', label: 'SQL' },
-    { id: 'e-user-ro', source: 'user-svc', target: 'user-db-ro', style: 'dashed', protocol: 'database', label: 'Read' },
-    { id: 'e-product-db', source: 'product-svc', target: 'product-db', style: 'dashed', protocol: 'database', label: 'SQL' },
-    { id: 'e-order-db', source: 'order-svc', target: 'order-db', style: 'dashed', protocol: 'database', label: 'SQL' },
+    { id: 'e-user-db', source: 'user-svc', target: 'user-db', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'database', label: 'SQL' },
+    { id: 'e-user-ro', source: 'user-svc', target: 'user-db-ro', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'database', label: 'Read' },
+    { id: 'e-product-db', source: 'product-svc', target: 'product-db', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'database', label: 'SQL' },
+    { id: 'e-order-db', source: 'order-svc', target: 'order-db', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'database', label: 'SQL' },
 
     // ── Services → Redis (cache) ──────────────────────
-    { id: 'e-user-cache', source: 'user-svc', target: 'redis', style: 'dotted', protocol: 'internal' },
-    { id: 'e-product-cache', source: 'product-svc', target: 'redis', style: 'dotted', protocol: 'internal' },
-    { id: 'e-order-cache', source: 'order-svc', target: 'redis', style: 'dotted', protocol: 'internal' },
+    { id: 'e-user-cache', source: 'user-svc', target: 'redis', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dotted', protocol: 'internal' },
+    { id: 'e-product-cache', source: 'product-svc', target: 'redis', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dotted', protocol: 'internal' },
+    { id: 'e-order-cache', source: 'order-svc', target: 'redis', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dotted', protocol: 'internal' },
 
     // ── Event Bus flow ────────────────────────────────
-    { id: 'e-order-queue', source: 'order-svc', target: 'queue', protocol: 'message', animated: true, label: 'Order Events' },
-    { id: 'e-payment-queue', source: 'payment-svc', target: 'queue', protocol: 'message', animated: true, label: 'Payment Events' },
-    { id: 'e-queue-notif', source: 'queue', target: 'notification-svc', protocol: 'message', animated: true },
+    { id: 'e-order-queue', source: 'order-svc', target: 'queue', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'message', animated: true, label: 'Order Events' },
+    { id: 'e-payment-queue', source: 'payment-svc', target: 'queue', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'message', animated: true, label: 'Payment Events' },
+    { id: 'e-queue-notif', source: 'queue', target: 'notification-svc', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'message', animated: true },
 
     // ── Search & Assets ───────────────────────────────
-    { id: 'e-product-search', source: 'product-svc', target: 'search', style: 'dashed', protocol: 'internal' },
-    { id: 'e-product-s3', source: 'product-svc', target: 's3', style: 'dashed', protocol: 'internal' },
-    { id: 'e-cdn-s3', source: 'cdn', target: 's3', style: 'dashed', protocol: 'https' },
+    { id: 'e-product-search', source: 'product-svc', target: 'search', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'internal' },
+    { id: 'e-product-s3', source: 'product-svc', target: 's3', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'internal' },
+    { id: 'e-cdn-s3', source: 'cdn', target: 's3', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'https' },
 
     // ── Notifications → SendGrid ──────────────────────
-    { id: 'e-notif-sendgrid', source: 'notification-svc', target: 'sendgrid', style: 'dotted', protocol: 'https' },
+    { id: 'e-notif-sendgrid', source: 'notification-svc', target: 'sendgrid', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dotted', protocol: 'https' },
 
     // ── Internal ──────────────────────────────────────
-    { id: 'e-payment-order', source: 'payment-svc', target: 'order-svc', style: 'dashed', protocol: 'internal' },
+    { id: 'e-payment-order', source: 'payment-svc', target: 'order-svc', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'internal' },
   ],
 
   groups: [
