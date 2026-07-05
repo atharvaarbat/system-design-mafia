@@ -117,7 +117,7 @@ export function systemDesignToFlow(design: SystemDesign): { nodes: Node[]; edges
         extent: group.parent ? 'parent' : undefined,
         width: boundsForGroup.width,
         height: boundsForGroup.height,
-        draggable: true,
+        draggable: false,
         selectable: true,
         style: { zIndex: -1 },
       })

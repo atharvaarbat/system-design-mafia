@@ -1,211 +1,428 @@
 import type { SystemDesign } from '@/types/diagram'
 
 export const sampleArchitecture: SystemDesign = {
-  version: '1.0',
-  title: 'E-Commerce Microservices',
-  description: 'Cloud-native e-commerce platform on AWS',
-
-  nodes: [
-    // ── Clients ─────────────────────────────────────────
-    { id: 'mobile-app', kind: 'mobile-app', name: 'Mobile App', x: 48, y: 240 },
-    { id: 'web-browser', kind: 'browser', name: 'Web Browser', x: 48, y: 480 },
-
-    // ── Edge Layer ──────────────────────────────────────
-    { id: 'dns', kind: 'dns', name: 'Route 53', x: 336, y: 360 },
-    { id: 'cdn', kind: 'cdn', name: 'CloudFront', x: 600, y: 360, description: 'CDN & Edge Caching' },
-    { id: 'waf', kind: 'firewall', name: 'WAF', x: 864, y: 360, description: 'Web Application Firewall' },
-    { id: 'alb', kind: 'load-balancer', name: 'ALB', x: 1128, y: 360, description: 'Application LB' },
+  "version": "1.0",
+  "title": "E-Commerce Microservices",
+  "description": "Cloud-native e-commerce platform on AWS",
+  "nodes": [
     {
-      id: 'api-gateway',
-      kind: 'api-gateway',
-      name: 'API Gateway',
-      x: 1392,
-      y: 360,
-      description: 'REST / GraphQL',
-      group: 'aws-cloud',
-    },
-
-    // ── Services ────────────────────────────────────────
-    {
-      id: 'user-svc',
-      kind: 'rest-api',
-      name: 'User Service',
-      x: 1680,
-      y: 48,
-      description: 'Auth & Profiles',
-      group: 'aws-cloud',
+      "id": "mobile-app",
+      "kind": "mobile-app",
+      "x": 360,
+      "y": 128,
+      "name": "Mobile App"
     },
     {
-      id: 'product-svc',
-      kind: 'rest-api',
-      name: 'Product Service',
-      x: 1680,
-      y: 360,
-      description: 'Catalog & Inventory',
-      group: 'aws-cloud',
+      "id": "web-browser",
+      "kind": "browser",
+      "x": 312,
+      "y": 608,
+      "name": "Web Browser"
     },
     {
-      id: 'order-svc',
-      kind: 'rest-api',
-      name: 'Order Service',
-      x: 1680,
-      y: 672,
-      description: 'Order Management',
-      group: 'aws-cloud',
+      "id": "dns",
+      "kind": "dns",
+      "x": 328,
+      "y": 416,
+      "name": "Route 53"
     },
     {
-      id: 'payment-svc',
-      kind: 'rest-api',
-      name: 'Payment Service',
-      x: 1680,
-      y: 984,
-      description: 'Payment Processing',
-      group: 'aws-cloud',
+      "id": "cdn",
+      "kind": "cdn",
+      "x": 600,
+      "y": 360,
+      "name": "CloudFront",
+      "description": "CDN & Edge Caching"
     },
     {
-      id: 'notification-svc',
-      kind: 'worker-service',
-      name: 'Notification Svc',
-      x: 2256,
-      y: 1200,
-      description: 'Email & Push',
-      group: 'aws-cloud',
-    },
-
-    // ── Databases & Infrastructure ──────────────────────
-    {
-      id: 'user-db',
-      kind: 'postgres',
-      name: 'User DB',
-      x: 1968,
-      y: 48,
-      group: 'data-tier',
+      "id": "waf",
+      "kind": "firewall",
+      "x": 864,
+      "y": 360,
+      "name": "WAF",
+      "description": "Web Application Firewall"
     },
     {
-      id: 'user-db-ro',
-      kind: 'postgres',
-      name: 'User DB Read Replica',
-      x: 2256,
-      y: 48,
-      group: 'data-tier',
+      "id": "alb",
+      "kind": "load-balancer",
+      "x": 1128,
+      "y": 360,
+      "name": "ALB",
+      "description": "Application LB"
     },
     {
-      id: 'product-db',
-      kind: 'postgres',
-      name: 'Product DB',
-      x: 1968,
-      y: 360,
-      group: 'data-tier',
+      "id": "api-gateway",
+      "kind": "api-gateway",
+      "x": 1392,
+      "y": 360,
+      "name": "API Gateway",
+      "description": "REST / GraphQL",
+      "group": "aws-cloud"
     },
     {
-      id: 'order-db',
-      kind: 'dynamodb',
-      name: 'Order DB (Sharded)',
-      x: 1968,
-      y: 672,
-      group: 'data-tier',
+      "id": "user-svc",
+      "kind": "rest-api",
+      "x": 1680,
+      "y": 48,
+      "name": "User Service",
+      "description": "Auth & Profiles",
+      "group": "aws-cloud"
     },
     {
-      id: 'redis',
-      kind: 'redis',
-      name: 'Redis Cluster',
-      x: 1968,
-      y: 1200,
-      description: 'Session & Cache',
-      group: 'data-tier',
+      "id": "product-svc",
+      "kind": "rest-api",
+      "x": 1680,
+      "y": 360,
+      "name": "Product Service",
+      "description": "Catalog & Inventory",
+      "group": "aws-cloud"
     },
     {
-      id: 'queue',
-      kind: 'kafka',
-      name: 'Event Bus',
-      x: 1968,
-      y: 984,
-      description: 'Message Broker',
-      group: 'aws-cloud',
+      "id": "order-svc",
+      "kind": "rest-api",
+      "x": 1584,
+      "y": 776,
+      "name": "Order Service",
+      "description": "Order Management",
+      "group": "aws-cloud"
     },
     {
-      id: 'search',
-      kind: 'elasticsearch',
-      name: 'Elasticsearch',
-      x: 2256,
-      y: 360,
-      description: 'Full-Text Search',
-      group: 'data-tier',
+      "id": "payment-svc",
+      "kind": "rest-api",
+      "x": 1680,
+      "y": 984,
+      "name": "Payment Service",
+      "description": "Payment Processing",
+      "group": "aws-cloud"
     },
     {
-      id: 's3',
-      kind: 's3',
-      name: 'S3 Buckets',
-      x: 1968,
-      y: 1368,
-      description: 'Static Assets',
-      group: 'data-tier',
+      "id": "notification-svc",
+      "kind": "worker-service",
+      "x": 2256,
+      "y": 1200,
+      "name": "Notification Svc",
+      "description": "Email & Push",
+      "group": "aws-cloud"
     },
     {
-      id: 'sendgrid',
-      kind: 'email-provider',
-      name: 'SendGrid',
-      x: 2544,
-      y: 1200,
+      "id": "user-db",
+      "kind": "postgres",
+      "x": 1952,
+      "y": 80,
+      "name": "User DB",
+      "group": "data-tier"
     },
+    {
+      "id": "user-db-ro",
+      "kind": "postgres",
+      "x": 2240,
+      "y": 80,
+      "name": "User DB Read Replica",
+      "group": "data-tier"
+    },
+    {
+      "id": "product-db",
+      "kind": "postgres",
+      "x": 1952,
+      "y": 392,
+      "name": "Product DB",
+      "group": "data-tier"
+    },
+    {
+      "id": "order-db",
+      "kind": "dynamodb",
+      "x": 1952,
+      "y": 704,
+      "name": "Order DB (Sharded)",
+      "group": "data-tier"
+    },
+    {
+      "id": "redis",
+      "kind": "redis",
+      "x": 1952,
+      "y": 1232,
+      "name": "Redis Cluster",
+      "description": "Session & Cache",
+      "group": "data-tier"
+    },
+    {
+      "id": "queue",
+      "kind": "kafka",
+      "x": 1968,
+      "y": 984,
+      "name": "Event Bus",
+      "description": "Message Broker",
+      "group": "aws-cloud"
+    },
+    {
+      "id": "search",
+      "kind": "elasticsearch",
+      "x": 2240,
+      "y": 392,
+      "name": "Elasticsearch",
+      "description": "Full-Text Search",
+      "group": "data-tier"
+    },
+    {
+      "id": "s3",
+      "kind": "s3",
+      "x": 1952,
+      "y": 1400,
+      "name": "S3 Buckets",
+      "description": "Static Assets",
+      "group": "data-tier"
+    },
+    {
+      "id": "sendgrid",
+      "kind": "email-provider",
+      "x": 2544,
+      "y": 1200,
+      "name": "SendGrid"
+    }
   ],
-
-  edges: [
-    // ── Clients → DNS ─────────────────────────────────
-    { id: 'e-mobile-dns', source: 'mobile-app', target: 'dns', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https', label: 'HTTPS' },
-    { id: 'e-web-dns', source: 'web-browser', target: 'dns', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https', label: 'HTTPS' },
-
-    // ── Edge chain ────────────────────────────────────
-    { id: 'e-dns-cdn', source: 'dns', target: 'cdn', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https' },
-    { id: 'e-cdn-waf', source: 'cdn', target: 'waf', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https' },
-    { id: 'e-waf-alb', source: 'waf', target: 'alb', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https' },
-    { id: 'e-alb-gw', source: 'alb', target: 'api-gateway', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'https' },
-
-    // ── API Gateway → Services ────────────────────────
-    { id: 'e-gw-user', source: 'api-gateway', target: 'user-svc', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'grpc', animated: true, label: 'gRPC' },
-    { id: 'e-gw-product', source: 'api-gateway', target: 'product-svc', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'grpc', animated: true, label: 'gRPC' },
-    { id: 'e-gw-order', source: 'api-gateway', target: 'order-svc', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'grpc', animated: true, label: 'gRPC' },
-
-    // ── Services → Databases ──────────────────────────
-    { id: 'e-user-db', source: 'user-svc', target: 'user-db', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'database', label: 'SQL' },
-    { id: 'e-user-ro', source: 'user-svc', target: 'user-db-ro', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'database', label: 'Read' },
-    { id: 'e-product-db', source: 'product-svc', target: 'product-db', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'database', label: 'SQL' },
-    { id: 'e-order-db', source: 'order-svc', target: 'order-db', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'database', label: 'SQL' },
-
-    // ── Services → Redis (cache) ──────────────────────
-    { id: 'e-user-cache', source: 'user-svc', target: 'redis', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dotted', protocol: 'internal' },
-    { id: 'e-product-cache', source: 'product-svc', target: 'redis', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dotted', protocol: 'internal' },
-    { id: 'e-order-cache', source: 'order-svc', target: 'redis', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dotted', protocol: 'internal' },
-
-    // ── Event Bus flow ────────────────────────────────
-    { id: 'e-order-queue', source: 'order-svc', target: 'queue', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'message', animated: true, label: 'Order Events' },
-    { id: 'e-payment-queue', source: 'payment-svc', target: 'queue', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'message', animated: true, label: 'Payment Events' },
-    { id: 'e-queue-notif', source: 'queue', target: 'notification-svc', sourceHandle: 'right-source', targetHandle: 'left-target', protocol: 'message', animated: true },
-
-    // ── Search & Assets ───────────────────────────────
-    { id: 'e-product-search', source: 'product-svc', target: 'search', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'internal' },
-    { id: 'e-product-s3', source: 'product-svc', target: 's3', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'internal' },
-    { id: 'e-cdn-s3', source: 'cdn', target: 's3', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'https' },
-
-    // ── Notifications → SendGrid ──────────────────────
-    { id: 'e-notif-sendgrid', source: 'notification-svc', target: 'sendgrid', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dotted', protocol: 'https' },
-
-    // ── Internal ──────────────────────────────────────
-    { id: 'e-payment-order', source: 'payment-svc', target: 'order-svc', sourceHandle: 'right-source', targetHandle: 'left-target', style: 'dashed', protocol: 'internal' },
-  ],
-
-  groups: [
+  "edges": [
     {
-      id: 'aws-cloud',
-      label: 'AWS Cloud',
-      style: 'dashed',
+      "id": "e-dns-cdn",
+      "source": "dns",
+      "target": "cdn",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
     },
     {
-      id: 'data-tier',
-      label: 'Data Tier',
-      style: 'dashed',
-      color: '#6366f1',
-      parent: 'aws-cloud',
+      "id": "e-cdn-waf",
+      "source": "cdn",
+      "target": "waf",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
     },
+    {
+      "id": "e-waf-alb",
+      "source": "waf",
+      "target": "alb",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-alb-gw",
+      "source": "alb",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-gw-user",
+      "source": "api-gateway",
+      "target": "user-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc",
+      "animated": true
+    },
+    {
+      "id": "e-gw-product",
+      "source": "api-gateway",
+      "target": "product-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc",
+      "animated": true
+    },
+    {
+      "id": "e-gw-order",
+      "source": "api-gateway",
+      "target": "order-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc",
+      "animated": true
+    },
+    {
+      "id": "e-user-db",
+      "source": "user-svc",
+      "target": "user-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "SQL",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-user-ro",
+      "source": "user-svc",
+      "target": "user-db-ro",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Read",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-product-db",
+      "source": "product-svc",
+      "target": "product-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "SQL",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-order-db",
+      "source": "order-svc",
+      "target": "order-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "SQL",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-user-cache",
+      "source": "user-svc",
+      "target": "redis",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "e-product-cache",
+      "source": "product-svc",
+      "target": "redis",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "e-order-cache",
+      "source": "order-svc",
+      "target": "redis",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "e-order-queue",
+      "source": "order-svc",
+      "target": "queue",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Order Events",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-payment-queue",
+      "source": "payment-svc",
+      "target": "queue",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Payment Events",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-queue-notif",
+      "source": "queue",
+      "target": "notification-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-product-search",
+      "source": "product-svc",
+      "target": "search",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "e-product-s3",
+      "source": "product-svc",
+      "target": "s3",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "e-cdn-s3",
+      "source": "cdn",
+      "target": "s3",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "e-notif-sendgrid",
+      "source": "notification-svc",
+      "target": "sendgrid",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "style": "dotted"
+    },
+    {
+      "id": "e-payment-order",
+      "source": "payment-svc",
+      "target": "order-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__mobile-appbottom-source-dnstop-target",
+      "source": "mobile-app",
+      "target": "dns",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__web-browsertop-source-dnsbottom-target",
+      "source": "web-browser",
+      "target": "dns",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    }
   ],
+  "groups": [
+    {
+      "id": "aws-cloud",
+      "label": "AWS Cloud",
+      "style": "dashed",
+      "width": 1592,
+      "height": 1572,
+      "x": 1352,
+      "y": -40
+    },
+    {
+      "id": "data-tier",
+      "label": "Data Tier",
+      "color": "#6366f1",
+      "style": "dashed",
+      "parent": "aws-cloud",
+      "width": 984,
+      "height": 1516,
+      "x": 1912,
+      "y": 8
+    }
+  ]
 }
