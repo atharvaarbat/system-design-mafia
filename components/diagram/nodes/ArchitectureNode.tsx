@@ -32,7 +32,7 @@ function useShapeAvailable(path: string): boolean {
 
 function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlowNode>) {
   const { deleteElements, getNodes } = useReactFlow()
-  const { groupSelectedNodes } = useSelectionActions()
+  const { groupSelectedNodes, ungroupSelectedNodes, moveNodesToGroup } = useSelectionActions()
   const edges = useEdges()
   const { hoveredEdgeIds } = useEdgeHover()
   const kindDef = resolveNodeKind(data.kind)
@@ -41,17 +41,32 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
   const shapePath = CATEGORY_SHAPE_PATH[kindDef.category]
   const shapeAvailable = useShapeAvailable(shapePath)
 
-  const [menuState, setMenuState] = useState<{ x: number; y: number; groupableIds: string[] } | null>(null)
-  const closeMenu = useCallback(() => setMenuState(null), [])
+  const [menuState, setMenuState] = useState<{
+    x: number
+    y: number
+    groupableIds: string[]
+    nodeIds: string[]
+    hasParent: boolean
+    hasGroups: boolean
+  } | null>(null)
+  const [groupSubmenu, setGroupSubmenu] = useState<{
+    x: number
+    y: number
+    groups: { id: string; label: string }[]
+  } | null>(null)
+  const closeMenu = useCallback(() => {
+    setMenuState(null)
+    setGroupSubmenu(null)
+  }, [])
 
   useEffect(() => {
     if (!menuState) return
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement
-      if (!target.closest('[data-node-context-menu]')) closeMenu()
+      if (!target.closest('[data-node-context-menu]') && !target.closest('[data-group-submenu]')) closeMenu()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
   }, [menuState, closeMenu])
 
   // Reads the current selection on demand (not a subscription) so opening
@@ -59,18 +74,57 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    const selArchNodes = getNodes().filter((n) => n.selected && n.type === 'architectureNode')
+    const allNodes = getNodes()
+    const selArchNodes = allNodes.filter((n) => n.selected && n.type === 'architectureNode')
+
+    let nodeIds: string[]
+    let hasParent: boolean
+    if (selArchNodes.length >= 1) {
+      nodeIds = selArchNodes.map((n) => n.id)
+      hasParent = selArchNodes.some((n) => n.parentId)
+    } else {
+      nodeIds = [data.id]
+      hasParent = !!allNodes.find((n) => n.id === data.id)?.parentId
+    }
+
     let groupableIds: string[] = []
     if (selArchNodes.length >= 2 && new Set(selArchNodes.map((n) => n.parentId)).size === 1) {
       groupableIds = selArchNodes.map((n) => n.id)
     }
-    setMenuState({ x: e.clientX, y: e.clientY, groupableIds })
-  }, [getNodes])
+
+    const hasGroups = allNodes.some((n) => n.type === 'groupNode')
+    setMenuState({ x: e.clientX, y: e.clientY, groupableIds, nodeIds, hasParent, hasGroups })
+  }, [getNodes, data.id])
 
   const handleGroup = useCallback(() => {
     if (menuState) groupSelectedNodes(menuState.groupableIds)
     closeMenu()
   }, [menuState, groupSelectedNodes, closeMenu])
+
+  const handleUngroup = useCallback(() => {
+    if (menuState) ungroupSelectedNodes(menuState.nodeIds)
+    closeMenu()
+  }, [menuState, ungroupSelectedNodes, closeMenu])
+
+  const handleOpenMoveSubmenu = useCallback(() => {
+    if (!menuState) return
+    if (groupSubmenu) {
+      setGroupSubmenu(null)
+      return
+    }
+    const allNodes = getNodes()
+    const currentParentId = allNodes.find((n) => n.id === menuState.nodeIds[0])?.parentId
+    const groups = allNodes
+      .filter((n) => n.type === 'groupNode' && n.id !== currentParentId)
+      .map((n) => ({ id: n.id, label: (n.data as { label?: string })?.label || n.id }))
+    if (groups.length === 0) return
+    setGroupSubmenu({ x: menuState.x + 144, y: menuState.y, groups })
+  }, [menuState, getNodes, groupSubmenu])
+
+  const handleMoveToGroup = useCallback((targetGroupId: string) => {
+    if (menuState) moveNodesToGroup(menuState.nodeIds, targetGroupId)
+    closeMenu()
+  }, [menuState, moveNodesToGroup, closeMenu])
 
   const connectedEdgeSides = useMemo(() => {
     const sides = new Set<string>()
@@ -164,12 +218,48 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
               Group
             </div>
           )}
+          {menuState.hasParent && (
+            <div
+              className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+              onClick={handleUngroup}
+            >
+              Ungroup
+            </div>
+          )}
+          {menuState.hasGroups && (
+            <div
+              className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+              onClick={handleOpenMoveSubmenu}
+            >
+              <span className="flex-1">Move to Group</span>
+              <span className="text-foreground/40">›</span>
+            </div>
+          )}
           <div
             className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
             onClick={handleDelete}
           >
             Delete
           </div>
+        </div>,
+        document.body
+      )}
+      {groupSubmenu && createPortal(
+        <div
+          data-group-submenu
+          style={{ position: 'fixed', left: groupSubmenu.x, top: groupSubmenu.y, zIndex: 9999 }}
+          className="min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {groupSubmenu.groups.map((g) => (
+            <div
+              key={g.id}
+              className="flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+              onClick={() => handleMoveToGroup(g.id)}
+            >
+              {g.label}
+            </div>
+          ))}
         </div>,
         document.body
       )}

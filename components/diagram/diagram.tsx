@@ -195,7 +195,69 @@ export default function Diagram({ design }: Props) {
     })
   }, [])
 
-  const selectionActions = useMemo(() => ({ groupSelectedNodes: groupNodes }), [groupNodes])
+  // Ungroups the given architecture-node ids – removes them from their group
+  // by converting their position to absolute coordinates and clearing parentId.
+  const ungroupNodes = useCallback((nodeIds: string[]) => {
+    setNodes((nds) => {
+      const nodeMap = new Map(nds.map((n) => [n.id, n]))
+      function getAbsPos(nodeId: string): { x: number; y: number } {
+        let x = 0, y = 0
+        let cur = nodeMap.get(nodeId)
+        while (cur) {
+          x += cur.position.x
+          y += cur.position.y
+          cur = cur.parentId ? nodeMap.get(cur.parentId) : undefined
+        }
+        return { x, y }
+      }
+      const ids = new Set(nodeIds)
+      return nds.map((n) => {
+        if (!ids.has(n.id) || !n.parentId) return n
+        const abs = getAbsPos(n.id)
+        return {
+          ...n,
+          parentId: undefined,
+          extent: undefined,
+          position: { x: abs.x, y: abs.y },
+        }
+      })
+    })
+  }, [])
+
+  // Moves the given architecture-node ids into targetGroupId, converting their
+  // position to be relative to the target group.
+  const moveToGroup = useCallback((nodeIds: string[], targetGroupId: string) => {
+    setNodes((nds) => {
+      const nodeMap = new Map(nds.map((n) => [n.id, n]))
+      function getAbsPos(nodeId: string): { x: number; y: number } {
+        let x = 0, y = 0
+        let cur = nodeMap.get(nodeId)
+        while (cur) {
+          x += cur.position.x
+          y += cur.position.y
+          cur = cur.parentId ? nodeMap.get(cur.parentId) : undefined
+        }
+        return { x, y }
+      }
+      const targetAbs = getAbsPos(targetGroupId)
+      const ids = new Set(nodeIds)
+      return nds.map((n) => {
+        if (!ids.has(n.id)) return n
+        const abs = getAbsPos(n.id)
+        return {
+          ...n,
+          parentId: targetGroupId,
+          extent: 'parent' as const,
+          position: { x: abs.x - targetAbs.x, y: abs.y - targetAbs.y },
+        }
+      })
+    })
+  }, [])
+
+  const selectionActions = useMemo(
+    () => ({ groupSelectedNodes: groupNodes, ungroupSelectedNodes: ungroupNodes, moveNodesToGroup: moveToGroup }),
+    [groupNodes, ungroupNodes, moveToGroup],
+  )
 
   const [selectionMenu, setSelectionMenu] = useState<{ x: number; y: number; nodeIds: string[] } | null>(null)
   const closeSelectionMenu = useCallback(() => setSelectionMenu(null), [])
@@ -213,8 +275,8 @@ export default function Diagram({ design }: Props) {
       const target = e.target as HTMLElement
       if (!target.closest('[data-selection-context-menu]')) closeSelectionMenu()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
   }, [selectionMenu, closeSelectionMenu])
 
   // Kept in a ref so the Ctrl/Cmd+G shortcut doesn't need to re-subscribe on every node change.
