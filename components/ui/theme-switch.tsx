@@ -28,6 +28,7 @@ export default function ThemeToggle() {
         size="icon"
         aria-label="Theme Toggle"
         onClick={handleThemeToggleClick}
+        className="flex rounded-none items-center justify-center h-10 w-10 border border-foreground/10 bg-transparent text-foreground/50 hover:text-foreground hover:bg-foreground/5 transition-colors"
       >
         <MoonIcon className="hidden [html.dark_&]:block" />
         <SunMediumIcon className="hidden [html.light_&]:block" />
