@@ -31,6 +31,13 @@ export default function RootLayout({
       lang="en"
       className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", inter.variable)}
     >
+      <head>
+        <link rel="icon" type="image/x-icon" href="/favicon-light.ico" media="(prefers-color-scheme: dark)" />
+
+        <link rel="icon" type="image/x-icon" href="/favicon-dark.ico" media="(prefers-color-scheme: light)" />
+
+        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+      </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider
           attribute="class"

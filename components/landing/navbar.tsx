@@ -25,17 +25,18 @@ export default function Navbar() {
         "fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b",
         scrolled
           ? "bg-background/80 backdrop-blur-md border-border/50 shadow-sm py-3"
-          : "bg-transparent border-transparent py-5"
+          : "bg-transparent border-transparent py-5 px-2 md:px-5 lg:px-8"
       )}
     >
       <div className="container mx-auto px-4 md:px-8 lg:px-12 xl:px-16 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-3 group">
-          <div className="w-8 h-8 flex items-center invert dark:invert-0 justify-center relative transition-transform duration-300 group-hover:scale-105">
+          <div className="h-5 flex items-center invert dark:invert-0 justify-center relative transition-transform duration-300 group-hover:scale-105">
             {/* <LogoIcon className="w-full h-full text-primary" /> */}
             <img src="/logo.svg" alt="Logo" className="w-full h-full" />
+
           </div>
-          <span className="font-mono font-bold text-sm tracking-widest uppercase">System Design Mafia</span>
+            <img src="/mafia.svg" alt="Logo" className="h-5" />
         </Link>
 
 

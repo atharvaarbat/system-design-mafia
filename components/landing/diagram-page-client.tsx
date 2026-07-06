@@ -135,7 +135,7 @@ export default function DiagramPageClient({
           >
             <Link
               href="/#diagram-cards"
-              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 border border-foreground/5 bg-foreground/1.5 px-3 py-1.5 text-xs tracking-wider transition-all hover:bg-foreground/3"
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5  px-3 py-1.5 text-xs tracking-wider transition-all hover:bg-foreground/3"
             >
               <ArrowLeft className="h-3 w-3" />
               Back to patterns
@@ -232,6 +232,8 @@ export default function DiagramPageClient({
               arch inspect {design.title.toLowerCase().replace(/\s+/g, '-')}
             </span>
             <span className="h-3 w-px bg-foreground/10" />
+            <div className="flex items-center gap-2">
+
             <span>
               <span className="text-foreground">{stats.nodeCount}</span> nodes
             </span>
@@ -245,6 +247,7 @@ export default function DiagramPageClient({
               <span className="text-foreground">{stats.protocols.length}</span>{' '}
               protocols
             </span>
+            </div>
             <span className="ml-auto inline-flex items-center gap-1.5">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
               <span className="text-[10px] tracking-wider text-primary uppercase">
