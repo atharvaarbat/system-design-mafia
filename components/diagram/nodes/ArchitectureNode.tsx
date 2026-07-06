@@ -8,6 +8,7 @@ import { CATEGORY_SHAPE_PATH, resolveNodeKind } from '@/lib/diagram/registry'
 import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
 import { useSelectionActions } from '@/lib/diagram/selection-actions-context'
 import { useEditable } from '@/lib/diagram/editable-context'
+import ExpandableNodeCard from './expandable-node-card'
 
 type ArchitectureFlowNode = Node<SystemDesignNode & Record<string, unknown>>
 
@@ -150,62 +151,110 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
 
   const statusColor =
     data.status === 'active' ? '#22c55e'
-    : data.status === 'warning' ? '#f59e0b'
-    : data.status === 'error' ? '#ef4444'
-    : data.status === 'inactive' ? '#d1d5db'
-    : undefined
+      : data.status === 'warning' ? '#f59e0b'
+        : data.status === 'error' ? '#ef4444'
+          : data.status === 'inactive' ? '#d1d5db'
+            : undefined
+
+  const connectedEdgeCount = useMemo(
+    () => edges.filter((e) => e.source === data.id || e.target === data.id).length,
+    [edges, data.id],
+  )
 
   return (
     <>
-      <div
-        onContextMenu={handleContextMenu}
-        className={`group relative w-fit rounded-xl ${selected && editable ? 'bg-primary/20' : ''}`}
+      <ExpandableNodeCard
+        trigger={
+          <div
+            onContextMenu={handleContextMenu}
+            className={`group relative w-fit rounded-xl ${selected && editable ? 'bg-primary/20' : ''}`}
+          >
+            <Handle id="left-target" type="target" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+            <Handle id="left-source" type="source" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+            <Handle id="top-target" type="target" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+            <Handle id="top-source" type="source" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+            <div className="flex flex-col items-center gap-1 px-2 py-1">
+              <div className="relative h-10 w-10 shrink-0">
+                <div
+                  className="absolute inset-0 rounded-lg"
+                  style={{
+                    backgroundColor: kindDef.color,
+                    ...(shapeAvailable
+                      ? {
+                        WebkitMaskImage: `url(${shapePath})`,
+                        maskImage: `url(${shapePath})`,
+                        WebkitMaskSize: 'contain',
+                        maskSize: 'contain',
+                        WebkitMaskRepeat: 'no-repeat',
+                        maskRepeat: 'no-repeat',
+                        WebkitMaskPosition: 'center',
+                        maskPosition: 'center',
+                      }
+                      : {}),
+                  }}
+                />
+                <Icon className="absolute inset-0 m-auto h-5 w-5 text-white" strokeWidth={2} />
+              </div>
+
+              <span className="max-w-24 truncate text-center text-xs font-semibold text-zinc-800 dark:text-zinc-100">
+                {label}
+              </span>
+
+              {data.description && (
+                <p className="max-w-24 text-center text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
+                  {data.description}
+                </p>
+              )}
+            </div>
+            <Handle id="right-target" type="target" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('right') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+            <Handle id="right-source" type="source" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('right') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+            <Handle id="bottom-target" type="target" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('bottom') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+            <Handle id="bottom-source" type="source" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('bottom') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
+          </div>
+        }
+        title={label}
+        subtitle={kindDef.label}
+        icon={<Icon className="w-full h-full" strokeWidth={2} />}
+        color={kindDef.color}
       >
-        <Handle id="left-target" type="target" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-        <Handle id="left-source" type="source" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-        <Handle id="top-target" type="target" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-        <Handle id="top-source" type="source" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-        <div className="flex flex-col items-center gap-1 px-2 py-1">
-          <div className="relative h-10 w-10 shrink-0">
-            <div
-              className="absolute inset-0 rounded-lg"
-              style={{
-                backgroundColor: kindDef.color,
-                ...(shapeAvailable
-                  ? {
-                      WebkitMaskImage: `url(${shapePath})`,
-                      maskImage: `url(${shapePath})`,
-                      WebkitMaskSize: 'contain',
-                      maskSize: 'contain',
-                      WebkitMaskRepeat: 'no-repeat',
-                      maskRepeat: 'no-repeat',
-                      WebkitMaskPosition: 'center',
-                      maskPosition: 'center',
-                    }
-                  : {}),
-              }}
-            />
-            <Icon className="absolute inset-0 m-auto h-5 w-5 text-white" strokeWidth={2} />
+        <div className="space-y-6">
+          <div>
+            <h4 className="text-foreground font-semibold tracking-tight mb-2">Category</h4>
+            <p className="text-muted-foreground capitalize">{kindDef.category}</p>
           </div>
 
-          <span className="max-w-24 truncate text-center text-xs font-semibold text-zinc-800 dark:text-zinc-100">
-            {label}
-          </span>
-
           {data.description && (
-            <p className="max-w-24 text-center text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
-              {data.description}
-            </p>
+            <div>
+              <h4 className="text-foreground font-semibold tracking-tight mb-2">Description</h4>
+              <p className="text-muted-foreground">{data.description}</p>
+            </div>
           )}
+
+          <div>
+            <h4 className="text-foreground font-semibold tracking-tight mb-2">Connections</h4>
+            <p className="text-muted-foreground">{connectedEdgeCount} edge{connectedEdgeCount !== 1 ? 's' : ''}</p>
+          </div>
+
+          {data.status && (
+            <div>
+              <h4 className="text-foreground font-semibold tracking-tight mb-2">Status</h4>
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border capitalize"
+                style={{ borderColor: statusColor ?? undefined, color: statusColor ?? undefined }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
+                {data.status}
+              </span>
+            </div>
+          )}
+
+          <div>
+            <h4 className="text-foreground font-semibold tracking-tight mb-2">ID</h4>
+            <code className="text-xs text-muted-foreground">{data.id}</code>
+          </div>
         </div>
-        <Handle id="right-target" type="target" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('right') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-        <Handle id="right-source" type="source" position={Position.Right} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('right') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-        <Handle id="bottom-target" type="target" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('bottom') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-        <Handle id="bottom-source" type="source" position={Position.Bottom} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('bottom') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-      </div>
-      {/* <div>
-        x: {data.x}, y: {data.y}
-      </div> */}
+      </ExpandableNodeCard>
+
       {menuState && createPortal(
         <div
           data-node-context-menu
