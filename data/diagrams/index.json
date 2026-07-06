@@ -1,6 +1,15 @@
 {
   "diagrams": [
     {
+      "slug": "design-youtube-or-netflix",
+      "title": "Design YouTube or Netflix",
+      "description": "A video streaming platform supporting fast video upload and smooth, adaptive streaming.",
+      "tags": ["video", "streaming", "cdn", "transcoding"],
+      "difficulty": "advanced",
+      "nodeCount": 13,
+      "edgeCount": 15
+    },
+    {
       "slug": "e-commerce-microservices",
       "title": "E-Commerce Microservices",
       "description": "Cloud-native e-commerce platform on AWS",
@@ -53,15 +62,6 @@
       "difficulty": "beginner",
       "nodeCount": 5,
       "edgeCount": 4
-    },
-    {
-      "slug": "design-youtube-or-netflix",
-      "title": "Design YouTube or Netflix",
-      "description": "A video streaming platform supporting fast video upload and smooth, adaptive streaming.",
-      "tags": ["video", "streaming", "cdn", "transcoding"],
-      "difficulty": "advanced",
-      "nodeCount": 13,
-      "edgeCount": 15
     }
   ]
 }

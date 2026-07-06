@@ -7,6 +7,8 @@ import SubHeading from '@/components/landing/subheading';
 import Diagram from '@/components/diagram/diagram';
 import Navbar from '@/components/landing/navbar';
 import RichText from '@/components/ui/rich-text';
+import DiagramVisual from '@/components/landing/diagram-visuals';
+import diagrams from '@/data/diagrams/index.json';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { motion, type Variants } from 'motion/react';
@@ -43,9 +45,11 @@ const PROTOCOL_COLORS: Record<Protocol, { color: string; label: string }> = {
 };
 
 export default function DiagramPageClient({
+  slug,
   design,
   editable = false,
 }: {
+  slug: string;
   design: SystemDesign;
   editable?: boolean;
 }) {
@@ -75,6 +79,12 @@ export default function DiagramPageClient({
     return { nodeCount, edgeCount, groupCount, protocols, kinds };
   }, [design]);
 
+  const suggested = useMemo(() => {
+    const others = diagrams.diagrams.filter((d) => d.slug !== slug);
+    const shuffled = [...others].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, 3);
+  }, [slug]);
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -99,32 +109,110 @@ export default function DiagramPageClient({
         <div className="absolute top-0 bottom-0 left-8 hidden w-px bg-foreground/5 md:left-16 lg:block" />
         <div className="absolute top-0 right-8 bottom-0 hidden w-px bg-foreground/5 md:right-16 lg:block" />
 
-        {/* Crosshairs */}
-        <div className="absolute top-24 left-8 hidden h-4 w-4 -translate-x-1/2 -translate-y-1/2 md:left-16 lg:block">
+        {/* Crosshairs - corner targets */}
+        <motion.div
+          className="absolute top-24 left-8 hidden h-4 w-4 -translate-x-1/2 -translate-y-1/2 md:left-16 lg:block"
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 3, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
+        >
           <div className="bg-primary/50 absolute top-1/2 right-0 left-0 h-px" />
           <div className="bg-primary/50 absolute top-0 bottom-0 left-1/2 w-px" />
-        </div>
-        <div className="absolute top-24 right-8 hidden h-4 w-4 translate-x-1/2 -translate-y-1/2 md:right-16 lg:block">
+        </motion.div>
+        <motion.div
+          className="absolute top-24 right-8 hidden h-4 w-4 translate-x-1/2 -translate-y-1/2 md:right-16 lg:block"
+          animate={{ opacity: [0.3, 0.7, 0.3] }}
+          transition={{ duration: 4, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: 0.5 }}
+        >
           <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
           <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
-        </div>
-        <div className="absolute bottom-24 left-8 hidden h-4 w-4 -translate-x-1/2 translate-y-1/2 md:left-16 lg:block">
+        </motion.div>
+        <motion.div
+          className="absolute bottom-24 left-8 hidden h-4 w-4 -translate-x-1/2 translate-y-1/2 md:left-16 lg:block"
+          animate={{ opacity: [0.3, 0.7, 0.3] }}
+          transition={{ duration: 4, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: 1 }}
+        >
           <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
           <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
-        </div>
-        <div className="absolute right-8 bottom-24 hidden h-4 w-4 translate-x-1/2 translate-y-1/2 md:right-16 lg:block">
+        </motion.div>
+        <motion.div
+          className="absolute right-8 bottom-24 hidden h-4 w-4 translate-x-1/2 translate-y-1/2 md:right-16 lg:block"
+          animate={{ opacity: [0.3, 0.7, 0.3] }}
+          transition={{ duration: 4, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: 1.5 }}
+        >
           <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
           <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
+        </motion.div>
+
+        {/* Crosshairs - mid-edge */}
+        <motion.div
+          className="absolute top-1/2 left-8 hidden h-4 w-4 -translate-x-1/2 -translate-y-1/2 md:left-16 lg:block"
+          animate={{ opacity: [0.2, 0.6, 0.2] }}
+          transition={{ duration: 5, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: 2 }}
+        >
+          <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/10" />
+          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/10" />
+        </motion.div>
+        <motion.div
+          className="absolute top-1/2 right-8 hidden h-4 w-4 translate-x-1/2 -translate-y-1/2 md:right-16 lg:block"
+          animate={{ opacity: [0.2, 0.6, 0.2] }}
+          transition={{ duration: 5, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: 2.5 }}
+        >
+          <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/10" />
+          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/10" />
+        </motion.div>
+
+        {/* Abstract Background Concentric Circles - breathing */}
+        <div className="pointer-events-none absolute top-1/2 left-0 flex h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 items-center justify-center">
+          <motion.div
+            className="flex h-[800px] w-[800px] items-center justify-center rounded-full border border-foreground/5"
+            animate={{ scale: [1, 1.04, 1] }}
+            transition={{ duration: 6, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
+          >
+            <motion.div
+              className="flex h-[600px] w-[600px] items-center justify-center rounded-full border border-dashed border-foreground/20"
+              animate={{ scale: [1, 0.96, 1] }}
+              transition={{ duration: 6, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: 1 }}
+            >
+              <motion.div
+                className="flex h-[400px] w-[400px] items-center justify-center rounded-full border border-foreground/20"
+                animate={{ scale: [1, 1.03, 1] }}
+                transition={{ duration: 6, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: 2 }}
+              >
+                <motion.div
+                  className="h-[200px] w-[200px] rounded-full border border-dashed border-foreground/10"
+                  animate={{ scale: [1, 0.95, 1] }}
+                  transition={{ duration: 6, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: 3 }}
+                />
+              </motion.div>
+            </motion.div>
+          </motion.div>
         </div>
 
-        {/* Abstract Background Concentric Circles */}
-        <div className="pointer-events-none absolute top-1/2 left-0 flex h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-foreground/5 opacity-30">
-          <div className="flex h-[600px] w-[600px] items-center justify-center rounded-full border border-dashed border-foreground/20">
-            <div className="flex h-[400px] w-[400px] items-center justify-center rounded-full border border-foreground/20">
-              <div className="h-[200px] w-[200px] rounded-full border border-dashed border-foreground/10" />
-            </div>
-          </div>
-        </div>
+        {/* Scanning line - slow vertical sweep */}
+        <motion.div
+          className="pointer-events-none absolute left-0 right-0 hidden h-px lg:block"
+          style={{
+            background: 'linear-gradient(90deg, transparent 0%, rgba(163,255,18,0.3) 50%, transparent 100%)',
+          }}
+          animate={{ top: ['10%', '90%', '10%'] }}
+          transition={{ duration: 12, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
+        />
+
+        {/* Floating terminal dots */}
+        {[
+          { top: '15%', left: '5%', delay: 0 },
+          { top: '35%', right: '6%', delay: 0.8 },
+          { top: '65%', left: '4%', delay: 1.6 },
+          { top: '80%', right: '5%', delay: 2.4 },
+        ].map((dot, i) => (
+          <motion.div
+            key={i}
+            className="pointer-events-none absolute hidden h-1 w-1 rounded-full lg:block"
+            style={{ backgroundColor: 'rgba(163,255,18,0.4)', top: dot.top, left: dot.left, right: dot.right }}
+            animate={{ opacity: [0, 0.8, 0] }}
+            transition={{ duration: 2.5, repeat: Infinity, ease: [0.4, 0, 0.2, 1], delay: dot.delay }}
+          />
+        ))}
 
         <Container className="relative z-10 flex flex-1 flex-col gap-10">
           {/* Back button */}
@@ -248,6 +336,11 @@ export default function DiagramPageClient({
               protocols
             </span>
             </div>
+            <motion.span
+              className="ml-1 inline-block h-4 w-[2px] bg-foreground/40"
+              animate={{ opacity: [1, 0, 1] }}
+              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            />
             <span className="ml-auto inline-flex items-center gap-1.5">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
               <span className="text-[10px] tracking-wider text-primary uppercase">
@@ -267,6 +360,12 @@ export default function DiagramPageClient({
               delay: 0.5,
             }}
           >
+            {/* Corner L-brackets */}
+            <div className="pointer-events-none absolute top-0 left-0 z-20 hidden h-5 w-5 border-t-2 border-l-2 border-primary/30 lg:block" />
+            <div className="pointer-events-none absolute top-0 right-0 z-20 hidden h-5 w-5 border-t-2 border-r-2 border-primary/30 lg:block" />
+            <div className="pointer-events-none absolute bottom-0 left-0 z-20 hidden h-5 w-5 border-b-2 border-l-2 border-primary/30 lg:block" />
+            <div className="pointer-events-none absolute bottom-0 right-0 z-20 hidden h-5 w-5 border-b-2 border-r-2 border-primary/30 lg:block" />
+
             <Diagram design={design} editable={editable} />
 
             {/* Protocol legend — pinned to bottom of diagram */}
@@ -487,6 +586,60 @@ export default function DiagramPageClient({
                 </span>
               </p>
             </motion.div>
+          </motion.div>
+          {/* More Patterns */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: '-80px' }}
+            variants={staggerContainer}
+          >
+            <motion.div variants={fadeUp} className="mb-8">
+              <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase">
+                <span className="text-primary">//</span>
+                <span>Explore</span>
+                <span className="h-px flex-1 bg-foreground/5" />
+              </div>
+              <Heading as="h2" variant="medium" className="text-foreground">
+                More Patterns
+              </Heading>
+            </motion.div>
+
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {suggested.map((diagram) => (
+                <Link key={diagram.slug} href={`/d/${diagram.slug}`} className="block">
+                  <motion.div
+                    variants={fadeUp}
+                    whileHover={{ y: -4, transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] } }}
+                    className="group relative flex flex-col border border-foreground/10 bg-foreground/[0.02] transition-colors duration-500 ease-out hover:border-primary/30 hover:bg-primary/[0.03]"
+                  >
+                    <div className="relative aspect-[4/3] overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
+                      <DiagramVisual slug={diagram.slug} />
+                    </div>
+                    <div className="flex flex-1 flex-col gap-2 p-5">
+                      <h3 className="text-foreground text-sm font-bold tracking-wide uppercase">
+                        {diagram.title}
+                      </h3>
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        {diagram.description}
+                      </p>
+                    </div>
+                    <motion.div
+                      className="absolute right-0 top-0 m-3 h-2 w-2 rounded-full border border-foreground/10 bg-foreground/5"
+                      variants={{
+                        hover: {
+                          scale: 1.6,
+                          borderColor: 'var(--color-primary)',
+                          backgroundColor: 'var(--color-primary)',
+                          transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] },
+                        },
+                      }}
+                    />
+                  </motion.div>
+                </Link>
+              ))}
+            </div>
           </motion.div>
         </Container>
       </section>

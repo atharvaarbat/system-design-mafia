@@ -29,10 +29,10 @@ export default function HexagonalDiagram() {
       />
 
       <motion.circle
-        cx={cx} cy={cy} r="8"
+        cx={cx} cy={cy} r={8}
         fill="var(--color-primary)" fillOpacity={0.08}
         variants={{
-          hover: { scale: 1.4, fillOpacity: 0.3, transition: { duration: 0.5, ease: easePremium } },
+          hover: { r: 11, fillOpacity: 0.3, transition: { duration: 0.5, ease: easePremium } },
         }}
       />
 
@@ -49,7 +49,7 @@ export default function HexagonalDiagram() {
         const extY = midY + (dy / len) * 48;
 
         return (
-          <motion.g key={`port-${i}`}>
+          <g key={`port-${i}`}>
             <motion.line
               x1={portX} y1={portY} x2={extX} y2={extY}
               stroke="var(--color-primary)" strokeOpacity={0.08} strokeWidth="0.75"
@@ -58,7 +58,7 @@ export default function HexagonalDiagram() {
               }}
             />
             <motion.rect
-              x={portX - 8} y={portY - 4} width="16" height="8" rx="2"
+              x={portX - 8} y={portY - 4} width={16} height={8} rx="2"
               stroke="var(--color-primary)" strokeOpacity={0.14} strokeWidth="0.75"
               fill="var(--color-primary)" fillOpacity={0.02}
               variants={{
@@ -66,13 +66,13 @@ export default function HexagonalDiagram() {
               }}
             />
             <motion.circle
-              cx={extX} cy={extY} r="2"
+              cx={extX} cy={extY} r={2}
               fill="var(--color-primary)" fillOpacity={0.1}
               variants={{
-                hover: { scale: 2.5, fillOpacity: 0.5, transition: { duration: 0.35, delay: i * 0.04, ease: easePremium } },
+                hover: { r: 5, fillOpacity: 0.5, transition: { duration: 0.35, delay: i * 0.04, ease: easePremium } },
               }}
             />
-          </motion.g>
+          </g>
         );
       })}
     </svg>

@@ -14,7 +14,7 @@ export default function NetflixDiagram() {
 
       {/* Primary: platform / processing pipeline */}
       <motion.rect
-        x="120" y="110" width="72" height="28" rx="4"
+        x={120} y={110} width={72} height={28} rx="4"
         stroke="var(--color-primary)" strokeOpacity={0.18} strokeWidth="1"
         fill="var(--color-primary)" fillOpacity={0.03}
         variants={{
@@ -22,7 +22,7 @@ export default function NetflixDiagram() {
         }}
       />
       <motion.rect
-        x="120" y="150" width="72" height="28" rx="4"
+        x={120} y={150} width={72} height={28} rx="4"
         stroke="var(--color-primary)" strokeOpacity={0.18} strokeWidth="1"
         fill="var(--color-primary)" fillOpacity={0.03}
         variants={{
@@ -44,13 +44,13 @@ export default function NetflixDiagram() {
         d="M 100 152 L 100 136 L 112 144 Z"
         fill="var(--color-primary)" fillOpacity={0.06}
         variants={{
-          hover: { fillOpacity: 0.2, scale: 1.15, transition: { duration: 0.4, delay: 0.08, ease: easePremium } },
+          hover: { fillOpacity: 0.2, transition: { duration: 0.4, delay: 0.08, ease: easePremium } },
         }}
       />
 
       {/* Storage node */}
       <motion.rect
-        x="210" y="132" width="36" height="24" rx="3"
+        x={210} y={132} width={36} height={24} rx="3"
         stroke="var(--color-primary)" strokeOpacity={0.15} strokeWidth="1"
         fill="var(--color-primary)" fillOpacity={0.02}
         variants={{
@@ -60,11 +60,11 @@ export default function NetflixDiagram() {
 
       {/* CDN node */}
       <motion.circle
-        cx="270" cy="70" r="18"
+        cx="270" cy="70" r={18}
         stroke="var(--color-primary)" strokeOpacity={0.16} strokeWidth="1"
         fill="var(--color-primary)" fillOpacity={0.03}
         variants={{
-          hover: { scale: 1.15, strokeOpacity: 0.55, fillOpacity: 0.08, transition: { duration: 0.45, delay: 0.12, ease: easePremium } },
+          hover: { r: 21, strokeOpacity: 0.55, fillOpacity: 0.08, transition: { duration: 0.45, delay: 0.12, ease: easePremium } },
         }}
       />
       <motion.text x="270" y="74" fontSize="7" textAnchor="middle"
@@ -109,23 +109,23 @@ export default function NetflixDiagram() {
 
       {/* Primary: client devices (right, stacked) */}
       {[[320, 130], [320, 190], [320, 250]].map(([x, y], i) => (
-        <motion.g key={`client-${i}`}>
+        <g key={`client-${i}`}>
           <motion.circle
-            cx={x} cy={y} r="11"
+            cx={x} cy={y} r={11}
             stroke="var(--color-primary)" strokeOpacity={0.14} strokeWidth="1"
             fill="var(--color-primary)" fillOpacity={0.02}
             variants={{
-              hover: { scale: 1.2, strokeOpacity: 0.5, fillOpacity: 0.06, transition: { duration: 0.4, delay: 0.16 + i * 0.06, ease: easePremium } },
+              hover: { r: 13, strokeOpacity: 0.5, fillOpacity: 0.06, transition: { duration: 0.4, delay: 0.16 + i * 0.06, ease: easePremium } },
             }}
           />
           <motion.circle
-            cx={x} cy={y} r="2.5"
+            cx={x} cy={y} r={2.5}
             fill="var(--color-primary)" fillOpacity={0.15}
             variants={{
-              hover: { scale: 2, fillOpacity: 0.6, transition: { duration: 0.35, delay: 0.16 + i * 0.06, ease: easePremium } },
+              hover: { r: 5, fillOpacity: 0.6, transition: { duration: 0.35, delay: 0.16 + i * 0.06, ease: easePremium } },
             }}
           />
-        </motion.g>
+        </g>
       ))}
 
       {/* Secondary: streaming paths (CDN → devices) */}

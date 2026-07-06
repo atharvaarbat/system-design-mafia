@@ -2,6 +2,7 @@
   "version": "1.0",
   "title": "Design YouTube or Netflix",
   "description": "A video streaming platform supporting fast video upload and smooth, adaptive streaming.",
+  "summary": "### Architecture Overview\n\nThis architecture is designed for a large-scale video streaming platform similar to YouTube or Netflix. The system separates the **control plane** (metadata, APIs, upload management, orchestration) from the **data plane** (video storage, transcoding, CDN delivery). This separation allows lightweight API services to scale independently from the bandwidth-intensive video delivery pipeline. Application servers never proxy video files. Instead, clients upload directly to object storage and stream directly from the CDN, allowing the platform to support millions of users without overwhelming backend servers. \n\nThe architecture consists of two major workflows:\n\n- **Upload Pipeline** converts a raw uploaded video into multiple optimized streaming formats.\n- **Streaming Pipeline** delivers those processed videos efficiently using adaptive bitrate streaming.\n\nThe entire system is built around asynchronous processing, distributed storage, stateless services, and aggressive caching to maximize scalability while minimizing infrastructure costs.\n\n### Upload Architecture\n\nWhen a creator uploads a video, the application server does **not** receive the video itself. Instead, the client first requests a **pre-signed upload URL** from the API service.\n\nThe API authenticates the user, creates a multipart upload session in blob storage, stores the initial metadata (title, description, uploader, visibility, etc.), and returns a temporary upload URL. This URL grants permission to upload directly into blob storage without exposing permanent credentials.\n\nThe client splits the video into multiple chunks and uploads them directly to blob storage using multipart upload. Because every part is uploaded independently, interrupted uploads can resume from the failed chunk instead of restarting the entire transfer. This significantly improves reliability for multi-gigabyte uploads and removes the application servers from the critical data path. \n\nAfter all parts have been uploaded, the client completes the multipart upload request. Blob storage assembles the individual parts into the final raw video object.\n\nThe creation of the new object automatically generates an object-created event. Rather than immediately processing the video, this event is published to a queue. Using a queue completely decouples uploads from processing, allowing uploads to finish instantly even if the transcoding cluster is busy.\n\n### Asynchronous Processing Pipeline\n\nA **Transcoding Orchestrator** continuously consumes upload events from the queue.\n\nInstead of treating transcoding as a single long-running task, the orchestrator constructs a **Directed Acyclic Graph (DAG)** representing every processing step and the dependencies between them. This allows independent tasks to execute simultaneously while preserving the required execution order. \n\nA typical DAG contains operations such as:\n\n- Splitting the original video into GOP-aligned segments\n- Encoding each segment into multiple resolutions (240p, 360p, 480p, 720p, 1080p, 4K)\n- Encoding multiple bitrates for each resolution\n- Generating thumbnails\n- Creating preview images\n- Extracting audio if required\n- Applying watermarking\n- Creating streaming manifests\n- Updating processing status\n\nOnce the video has been split into independent segments, hundreds of encoding jobs can execute in parallel across many worker machines. Since transcoding is extremely CPU-intensive, parallel execution dramatically reduces total processing time.\n\nWorkers never exchange large video files directly. Instead, intermediate outputs are written back to blob storage, and workers simply pass object references between DAG stages. This minimizes network traffic and allows workers to remain completely stateless.\n\nWhen all DAG tasks complete successfully, the processed outputs include:\n\n- Video segments\n- Adaptive bitrate variants\n- HLS or MPEG-DASH manifest files\n- Thumbnail images\n- Updated metadata\n\nThe orchestrator marks the video as available for streaming.\n\n### Adaptive Bitrate Video Generation\n\nRaw uploaded videos are not streamed directly.\n\nDuring transcoding, each video is converted into multiple combinations of:\n\n- Resolution\n- Bitrate\n- Codec\n- Container format\n\nEach version is then divided into short video segments, typically lasting only a few seconds.\n\nThe transcoder generates one or more **manifest files** (such as HLS or MPEG-DASH manifests). Rather than containing video data, these manifests describe:\n\n- Available quality levels\n- Segment ordering\n- Segment URLs\n- Codec information\n- Bitrate information\n\nThe manifest acts as an index for every streamable version of the video and enables adaptive bitrate streaming. \n\n### Metadata Layer\n\nVideo files themselves are far too large to store inside a traditional database.\n\nInstead, the metadata service stores only structured information such as:\n\n- Video ID\n- Title\n- Description\n- Upload timestamp\n- Duration\n- Processing status\n- Thumbnail URLs\n- Manifest URL\n- Owner information\n\nA horizontally scalable database such as Cassandra is used because metadata reads and writes occur at massive scale while requiring high availability and partition tolerance. Records are partitioned using the Video ID, allowing requests to be distributed evenly across database nodes. \n\nFrequently accessed metadata is cached inside Redis.\n\nMost video requests first check Redis. If metadata is already cached, the database is bypassed entirely. Otherwise, the metadata is loaded from Cassandra and inserted into Redis for future requests.\n\nThis cache dramatically reduces database load for popular videos.\n\n### Streaming Architecture\n\nWhen a viewer opens a video, the client first requests video metadata from the API service.\n\nThe metadata contains information such as the title, description, thumbnail, duration, and most importantly, the URL of the generated manifest file.\n\nThe client downloads the manifest before requesting any video content.\n\nThe manifest informs the player about every available quality level and provides the location of every segment belonging to each quality.\n\nThe player estimates the user's available bandwidth and selects an initial quality.\n\nInstead of downloading the complete video, the player requests only the first segment from the CDN.\n\nWhile the first segment is being played, subsequent segments are downloaded in the background.\n\nAfter each segment finishes downloading, the player measures:\n\n- Current throughput\n- Buffer size\n- Download latency\n- Playback performance\n\nIf bandwidth improves, the next segment can be requested at a higher quality.\n\nIf bandwidth decreases, the next segment is requested using a lower bitrate.\n\nBecause switching occurs only between segment boundaries, playback continues smoothly without restarting the video.\n\nThis mechanism is known as **Adaptive Bitrate Streaming (ABR)** and is the standard approach used by modern streaming platforms. \n\n### CDN Distribution\n\nServing every video request directly from blob storage would generate enormous bandwidth costs and introduce high latency for users located far from the storage region.\n\nInstead, transcoded segments are distributed through a Content Delivery Network.\n\nCDN edge servers cache video segments close to users around the world.\n\nWhen a segment is requested:\n\n- If the segment already exists at the edge, it is returned immediately.\n- Otherwise, the CDN retrieves it from origin storage, caches it, and serves it to the client.\n\nSince each segment is only a few seconds long, only the requested portions of the video are transferred instead of the entire file.\n\nThe CDN therefore handles the overwhelming majority of read traffic, while origin storage primarily acts as the durable source of truth. \n\n### Hybrid CDN Strategy\n\nCaching every uploaded video inside the CDN would be prohibitively expensive because the majority of uploaded content receives very few views.\n\nInstead, the architecture follows a hybrid caching strategy.\n\nHighly popular videos remain cached in CDN edge locations to provide extremely low latency and reduce origin traffic.\n\nLess frequently viewed videos are streamed directly from blob storage whenever necessary.\n\nAs popularity changes over time, videos naturally migrate between origin storage and CDN caches according to demand.\n\nThis balances infrastructure cost with user experience.\n\n### Scalability Characteristics\n\nThe architecture is designed so that every major component can scale independently.\n\nThe API layer remains completely stateless, allowing additional instances to be added behind a load balancer whenever request volume increases.\n\nBlob storage provides virtually unlimited storage capacity for raw uploads and transcoded outputs.\n\nThe queue absorbs upload spikes by buffering processing requests.\n\nThe DAG-based transcoding system scales horizontally by simply adding more worker nodes.\n\nMetadata storage scales through partitioning across database nodes.\n\nRedis reduces repeated database queries for popular content.\n\nThe CDN absorbs nearly all streaming traffic, preventing backend services from becoming bandwidth bottlenecks.\n\nSince upload, processing, metadata management, and streaming are loosely coupled through asynchronous communication and object storage, failures in one subsystem rarely impact the others. The resulting architecture achieves high availability, efficient resource utilization, and the ability to support millions of concurrent uploads and streams while maintaining low latency and predictable operational costs.",
   "nodes": [
     {
       "id": "client-mobile",
@@ -42,8 +43,8 @@
     {
       "id": "metadata-db",
       "kind": "cassandra",
-      "x": 1072,
-      "y": 232,
+      "x": 1008,
+      "y": 192,
       "name": "Metadata Database",
       "description": "Cassandra (Partitioned by videoId)",
       "group": "data-tier"
@@ -51,8 +52,8 @@
     {
       "id": "metadata-cache",
       "kind": "redis",
-      "x": 1072,
-      "y": 352,
+      "x": 1008,
+      "y": 392,
       "name": "Metadata Cache",
       "description": "Redis (For hot videos)",
       "group": "data-tier"
@@ -60,7 +61,7 @@
     {
       "id": "blob-storage-upload",
       "kind": "s3",
-      "x": 488,
+      "x": 640,
       "y": 608,
       "name": "Original Blob Storage",
       "description": "Stores raw uploaded videos",
@@ -104,16 +105,16 @@
     {
       "id": "upload-completion-queue",
       "kind": "sqs",
-      "x": 720,
-      "y": 768,
+      "x": 784,
+      "y": 816,
       "name": "Upload Completion Queue",
       "description": "SQS / Message Queue"
     },
     {
       "id": "completion-handler",
       "kind": "lambda-function",
-      "x": 600,
-      "y": 968,
+      "x": 576,
+      "y": 960,
       "name": "Completion Handler",
       "description": "Triggers transcoding DAG"
     }
@@ -254,15 +255,6 @@
       "style": "dashed"
     },
     {
-      "id": "xy-edge__upload-completion-queuebottom-source-completion-handlertop-target",
-      "source": "upload-completion-queue",
-      "target": "completion-handler",
-      "sourceHandle": "bottom-source",
-      "targetHandle": "top-target",
-      "label": "Pull Event",
-      "protocol": "message"
-    },
-    {
       "id": "xy-edge__completion-handlerleft-source-transcoder-orchestratorright-target",
       "source": "completion-handler",
       "target": "transcoder-orchestrator",
@@ -272,11 +264,20 @@
       "protocol": "internal"
     },
     {
-      "id": "xy-edge__blob-storage-uploadbottom-source-upload-completion-queueleft-target",
+      "id": "xy-edge__upload-completion-queuebottom-source-completion-handlerright-target",
+      "source": "upload-completion-queue",
+      "target": "completion-handler",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "right-target",
+      "label": "Pull Event",
+      "protocol": "message"
+    },
+    {
+      "id": "xy-edge__blob-storage-uploadbottom-source-upload-completion-queuetop-target",
       "source": "blob-storage-upload",
       "target": "upload-completion-queue",
       "sourceHandle": "bottom-source",
-      "targetHandle": "left-target",
+      "targetHandle": "top-target",
       "label": "Object Created",
       "protocol": "event",
       "style": "dotted"
@@ -288,17 +289,17 @@
       "label": "Data Tier",
       "color": "#6366f1",
       "style": "dashed",
-      "width": 280,
-      "height": 344,
-      "x": 1056,
-      "y": 184
+      "width": 240,
+      "height": 472,
+      "x": 944,
+      "y": 112
     },
     {
       "id": "storage-tier",
       "label": "Blob Storage Tier",
       "color": "#f59e0b",
       "style": "dashed",
-      "width": 960,
+      "width": 1112,
       "height": 164,
       "x": -256,
       "y": 580
@@ -308,8 +309,8 @@
       "label": "Video Processing Tier",
       "color": "#10b981",
       "style": "dashed",
-      "width": 560,
-      "height": 344,
+      "width": 504,
+      "height": 216,
       "x": -152,
       "y": 844
     }

@@ -34,5 +34,5 @@ export default async function DiagramPage({
     notFound();
   }
 
-  return <DiagramPageClient design={design} editable={false} />;
+  return <DiagramPageClient slug={slug} design={design} editable={false} />;
 }

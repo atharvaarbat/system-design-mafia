@@ -78,6 +78,7 @@ export function flowToSystemDesign(nodes: Node[], edges: Edge[], original?: Syst
     version: original?.version ?? '1.0',
     title: original?.title ?? 'Exported Architecture',
     ...(original?.description ? { description: original.description } : {}),
+    ...(original?.summary ? { summary: original.summary } : {}),
     nodes: systemNodes,
     edges: systemEdges,
     ...(systemGroups.length > 0 ? { groups: systemGroups } : {}),

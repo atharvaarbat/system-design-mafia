@@ -151,7 +151,7 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
         handleClassName="h-10 w-10 bg-white border-2 border-blue-400 rounded-md shadow-sm"
       />
       )}
-      <div className="relative h-full w-full" onContextMenu={handleContextMenu}>
+      <div className="relative h-full w-full" onContextMenu={handleContextMenu} style={{ pointerEvents: 'auto' }}>
         <div
           style={{
             borderColor: selected ? '#3b82f655' : data.accent || '#94a3b8',

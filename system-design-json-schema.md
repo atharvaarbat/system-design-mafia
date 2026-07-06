@@ -324,8 +324,91 @@ This enables the "Copy JSON" button to export accurate absolute positions after 
 - 8 handles are present but only visible on hover (or when an edge is connected)
 - Status colors: green (active), amber (warning), red (error), gray (inactive)
 - Clicking a node opens an expanded card (`ExpandableNodeCard`) with Category, Description, Details, Connections, Status, and ID sections
-- `details` is rendered with `RichText` (`components/ui/rich-text.tsx`), a lightweight markdown subset: `### `/`#### ` headings, `- ` list items, blank-line-separated paragraphs, and inline `**bold**`, `*italic*`, `__underline__`, `` `code` ``, `[text](url)` links. Full CommonMark (tables, numbered lists, nested lists, images) is not supported.
-- Blocks are split on blank lines (`\n\n`) only — a heading or list must be followed by a blank line before the next block, or it gets swallowed into the same block (e.g. a `### Heading` immediately followed by `- item` with no blank line renders as one heading containing the raw `- item` text, not a separate list).
+- `details` is rendered with `RichText` (`components/ui/rich-text.tsx`). See §9a for the full rendering specification.
+
+### 9a. Rich Text Rendering Specification (`RichText`)
+
+Both `details` (on a node) and `summary` (top-level field) support a **strict markdown subset** that is parsed in two phases: block-level split → inline tokenization.
+
+#### Block-Level Parsing
+
+Content is split into blocks by **one or more blank lines** (`\n\n+`). Each block is classified into exactly one type:
+
+| Prefix | Block type | Rendered as |
+|---|---|---|
+| `### ` | H3 heading | `<h3>` (bold, 16px) |
+| `#### ` | H4 heading | `<h4>` (bold, 14px) |
+| `- ` | Unordered list | `<ul>` with dot markers |
+| *(none)* | Paragraph | `<p>` |
+
+> **⚠️ Critical rule:** A heading or list must be separated from the previous/next block by **at least one blank line**. If a `### Heading` is immediately followed by `- item` with no blank line between them, the entire thing is parsed as **one heading block** — the `- item` text appears as raw content inside the `<h3>`, not as a separate list.
+
+✅ **Correct:**
+```markdown
+### Responsibilities
+
+- Auth
+- Profiles
+
+This is a paragraph.
+```
+
+❌ **Wrong** (no blank line between heading and list — everything becomes one heading):
+```markdown
+### Responsibilities
+- Auth
+- Profiles
+
+This is a paragraph.
+```
+
+#### List Block Detail
+
+A list block groups **consecutive `- ` lines** within the same block:
+- Lines in the block that do not start with `- ` are silently dropped.
+- Only **single-level** lists are supported — no nested lists, no numbered lists.
+- Each item renders with a small dot marker (bullet).
+
+```markdown
+- First item
+- Second item
+- Third item
+```
+
+#### Inline Formatting
+
+Within any block's text (after stripping the prefix), inline tokens are parsed:
+
+| Syntax | Result |
+|---|---|
+| `**bold text**` | **Bold** (`<strong>`) |
+| `*italic text*` | *Italic* (`<em>`) |
+| `__underlined__` | <u>Underlined</u> (`<u>`, dotted underline) |
+| `` `code span` `` | `Code` (`<code>`, small, primary color) |
+| `[label](https://...)` | Link (`<a>`, opens in new tab) |
+
+Inline tokens can be mixed freely:
+```markdown
+**Redis** is used for *caching* and `session` storage. See [docs](https://redis.io).
+```
+
+#### What Is NOT Supported
+
+The renderer does **NOT** support:
+- Tables (`\|` syntax)
+- Numbered / ordered lists
+- Nested lists (indented `- ` items)
+- Blockquotes (`> `)
+- Fenced code blocks (triple backticks)
+- Horizontal rules (`---`)
+- Images
+- HTML tags
+- H1/H2 headings (`# ` or `## `)
+- Horizontal rule separators
+
+#### Styling
+
+The entire block is wrapped in `font-mono text-sm leading-relaxed` with a `space-y-5` gap between blocks. Headings get `tracking-tight` / `tracking-wide`. Code spans use `text-xs` and a subtle border+background.
 
 ### Group Rendering (`GroupNode.tsx`)
 - Rendered as a rounded rectangle with dashed/solid border
@@ -375,4 +458,5 @@ This enables the "Copy JSON" button to export accurate absolute positions after 
 8. **Left-to-right layout** is the standard convention for system design diagrams.
 9. **Keep descriptions short** — they render in ~10px font and have ~96px max-width.
 10. **Edge `id`s must be unique** across all edges. Use a prefix like `"e-"` or `"edge-"`.
-11. **Include a `summary` field** with a rich-text markdown explanation of the architecture — trade-offs, data flow, scaling decisions, and rationale. This is rendered as an "Architecture Breakdown" section below the diagram and follows the same markdown rules as `details` (§9: blank-line-separated blocks, `###`/`####` headings, `- ` lists, inline formatting, no tables/nested lists).
+11. **Include a `summary` field** with a rich-text markdown explanation of the architecture — trade-offs, data flow, scaling decisions, and rationale. This is rendered as an "Architecture Breakdown" section below the diagram. See §9a for the exact rich-text rules.
+12. **When writing `summary` or `details`, always separate blocks with a blank line.** The single most common bug is a heading immediately followed by a list item with no blank line, which collapses them into one heading block. Always write `### Heading\n\n- item` not `### Heading\n- item` (see §9a).

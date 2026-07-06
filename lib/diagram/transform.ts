@@ -119,7 +119,7 @@ export function systemDesignToFlow(design: SystemDesign): { nodes: Node[]; edges
         height: boundsForGroup.height,
         draggable: false,
         selectable: true,
-        style: { zIndex: -1, pointerEvents: 'none' },
+        style: { zIndex: -1 },
       })
     }
   }
