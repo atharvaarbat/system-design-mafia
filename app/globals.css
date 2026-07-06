@@ -157,6 +157,12 @@
   fill: currentColor;
 }
 
+/* Light mode: diagram visuals need higher base opacity (primary is muted olive vs bright lime in dark) */
+:root:not(.dark) .diagram-card-visual svg :is(circle, path, line) {
+  stroke-opacity: 0.4;
+  fill-opacity: 0.1;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

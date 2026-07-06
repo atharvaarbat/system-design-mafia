@@ -26,7 +26,6 @@ export function PremiumComponent() {
           className="absolute right-0 h-[360px] w-[360px]"
           viewBox="0 0 360 360"
         >
-          {/* Subtle grid background */}
           <pattern
             id="grid"
             width="20"
@@ -36,41 +35,39 @@ export function PremiumComponent() {
             <path
               d="M 20 0 L 0 0 0 20"
               fill="none"
-              stroke="rgba(255,255,255,0.03)"
+              className="stroke-foreground/[0.03]"
               strokeWidth="1"
             />
           </pattern>
           <rect width="360" height="360" fill="url(#grid)" />
 
-          {/* Vertical axis line on the left side of the visual (offset) */}
           <line
             x1="60"
             y1="0"
             x2="60"
             y2="360"
-            stroke="rgba(255,255,255,0.15)"
+            className="stroke-foreground/15"
             strokeWidth="1"
           />
-          {/* Horizontal axis line */}
           <line
             x1="0"
             y1="180"
             x2="360"
             y2="180"
-            stroke="rgba(255,255,255,0.1)"
+            className="stroke-foreground/10"
             strokeWidth="1"
           />
 
-          {/* Coordinate labels */}
           <text
             x="65"
             y="15"
-              fill="rgba(255,255,255,0.3)"
-            >
-              LAYER-0
+            className="fill-foreground/30"
+            fontSize="10"
+            fontFamily="monospace"
+          >
+            NODE.01
           </text>
 
-          {/* Glowing origin / crosshair */}
           <motion.line
             x1="50"
             y1="180"
@@ -94,13 +91,12 @@ export function PremiumComponent() {
             transition={{ duration: 1 }}
           />
 
-          {/* Radiating Half-Circles */}
           {[1, 2, 3, 4].map((i) => (
             <motion.path
               key={`circle-${i}`}
               d={`M 60,${180 - i * 60} A ${i * 60},${i * 60} 0 0,1 60,${180 + i * 60}`}
               fill="none"
-              stroke="rgba(255,255,255,0.2)"
+              className="stroke-foreground/20"
               strokeWidth="1"
               strokeDasharray={i % 2 === 0 ? '2 6' : '1 4'}
               initial={{ pathLength: 0, opacity: 0 }}
@@ -109,11 +105,9 @@ export function PremiumComponent() {
             />
           ))}
 
-          {/* Dots on paths */}
           {Array.from({ length: 15 }).map((_, i) => {
-            const circleIndex = Math.floor(i / 4) + 1; // 1 to 4
+            const circleIndex = Math.floor(i / 4) + 1;
             const radius = circleIndex * 60;
-            // Deterministic pseudo-random based on index 'i' to avoid hydration mismatch
             const pseudoRandomAngle = (i * 137.508) % 160;
             const angle = (pseudoRandomAngle - 80) * (Math.PI / 180);
             const x = 60 + Math.cos(angle) * radius;
@@ -127,7 +121,7 @@ export function PremiumComponent() {
                 cx={x}
                 cy={y}
                 r="1.5"
-                fill="rgba(255,255,255,0.6)"
+                className="fill-foreground/60"
                 initial={{ opacity: 0, scale: 0 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 transition={{
@@ -147,7 +141,6 @@ export function ThemingComponent() {
   return (
     <VisualWrapper className="p-8">
       <div className="relative flex w-[280px] flex-col justify-center gap-8">
-        {/* Top Info block */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
             <motion.div
@@ -161,24 +154,23 @@ export function ThemingComponent() {
             </span>
           </div>
 
-          <div className="relative mt-2 h-px w-full bg-white/5">
+          <div className="relative mt-2 h-px w-full bg-foreground/5">
             <motion.div
               className="bg-primary text-primary absolute top-0 left-0 h-full shadow-[0_0_8px_currentColor]"
               initial={{ width: 0 }}
               whileInView={{ width: '45%' }}
               transition={{ duration: 1, delay: 0.4, ease: 'easeOut' }}
             />
-            <div className="absolute top-[-3px] left-[45%] h-[7px] w-px bg-white/20" />
+            <div className="absolute top-[-3px] left-[45%] h-[7px] w-px bg-foreground/20" />
           </div>
         </div>
 
-        {/* Dash array progress block */}
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-[4px]">
             {Array.from({ length: 26 }).map((_, i) => (
               <motion.div
                 key={i}
-                className={`h-[22px] w-1.5 rounded-[2px] ${i < 12 ? 'bg-primary text-primary shadow-[0_0_8px_currentColor]' : 'bg-white/10'}`}
+                className={`h-[22px] w-1.5 rounded-[2px] ${i < 12 ? 'bg-primary text-primary shadow-[0_0_8px_currentColor]' : 'bg-foreground/10'}`}
                 initial={{ opacity: 0, scaleY: 0 }}
                 whileInView={{ opacity: 1, scaleY: i < 12 ? 1 : 0.6 }}
                 transition={{
@@ -190,9 +182,8 @@ export function ThemingComponent() {
             ))}
           </div>
 
-          {/* Faint grid below */}
           <motion.div
-            className="h-10 w-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.08)_1px,transparent_1px)]"
+            className="h-10 w-full bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--foreground)_8%,transparent)_1px,transparent_1px)]"
             style={{
               backgroundSize: '12px 12px',
               WebkitMaskImage: 'linear-gradient(to right, black, transparent)',
@@ -220,19 +211,19 @@ export function OpenSourceComponent() {
         >
           <path
             d="M 80,20 L 80,180"
-            stroke="rgba(255,255,255,0.1)"
+            className="stroke-foreground/10"
             strokeWidth="1"
             strokeDasharray="4 4"
           />
           <path
             d="M 80,60 L 40,90 L 40,130 L 80,160"
-            stroke="rgba(255,255,255,0.15)"
+            className="stroke-foreground/15"
             strokeWidth="1"
             fill="none"
           />
 
-          <circle cx="80" cy="40" r="2" fill="rgba(255,255,255,0.3)" />
-          <circle cx="80" cy="180" r="2" fill="rgba(255,255,255,0.3)" />
+          <circle cx="80" cy="40" r="2" className="fill-foreground/30" />
+          <circle cx="80" cy="180" r="2" className="fill-foreground/30" />
 
           <motion.circle
             cx="40"
@@ -273,7 +264,6 @@ export function ProductionReadyComponent() {
     <VisualWrapper>
       <div className="relative mr-8 flex h-[360px] w-[180px] items-center justify-end">
         <div className="flex flex-col gap-3">
-          {/* Status Header */}
           <div className="mb-2 flex items-center gap-2">
             <motion.div
               className="bg-primary text-primary h-1.5 w-1.5 rounded-full drop-shadow-[0_0_6px_currentColor]"
@@ -285,15 +275,13 @@ export function ProductionReadyComponent() {
             </span>
           </div>
 
-          {/* Grid of mini status blocks */}
           <div className="grid grid-cols-4 gap-1.5">
             {Array.from({ length: 16 }).map((_, i) => {
-              // Deterministic on/off pattern
               const isActive = [0, 1, 4, 5, 6, 8, 9, 13, 14].includes(i);
               return (
                 <motion.div
                   key={i}
-                  className={`h-3 w-3 rounded-[1px] ${isActive ? 'bg-primary/80 text-primary drop-shadow-[0_0_4px_currentColor]' : 'bg-white/5'}`}
+                  className={`h-3 w-3 rounded-[1px] ${isActive ? 'bg-primary/80 text-primary drop-shadow-[0_0_4px_currentColor]' : 'bg-foreground/5'}`}
                   initial={{ opacity: 0, scale: 0.5 }}
                   whileInView={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.3, delay: i * 0.03 }}
@@ -302,7 +290,7 @@ export function ProductionReadyComponent() {
             })}
           </div>
 
-          <div className="mt-2 h-px w-full bg-white/10" />
+          <div className="mt-2 h-px w-full bg-foreground/10" />
           <motion.div
             className="bg-primary text-primary h-px drop-shadow-[0_0_4px_currentColor]"
             initial={{ width: 0 }}

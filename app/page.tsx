@@ -6,7 +6,7 @@ import Features from "@/components/landing/features";
 
 export default function Home() {
   return (
-    <main className="dark min-h-screen overflow-x-hidden bg-[#101010]">
+    <main className="min-h-screen overflow-x-hidden bg-background">
       <Navbar />
       <Hero />
       <DiagramCards />

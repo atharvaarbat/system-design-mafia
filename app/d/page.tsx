@@ -79,7 +79,7 @@ export default function DiagramPage({ editable = false }: Props) {
     <>
       <Navbar />
       <section className="relative flex min-h-screen w-full flex-col overflow-x-hidden pt-28 pb-24 font-mono">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-size-[24px_24px]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px)] bg-size-[24px_24px]" />
 
       {/* Ambient Glow */}
       <motion.div
@@ -94,10 +94,10 @@ export default function DiagramPage({ editable = false }: Props) {
       />
 
       {/* Decorative Technical Borders */}
-      <div className="absolute top-24 right-0 left-0 hidden h-px bg-white/5 lg:block" />
-      <div className="absolute right-0 bottom-24 left-0 hidden h-px bg-white/5 lg:block" />
-      <div className="absolute top-0 bottom-0 left-8 hidden w-px bg-white/5 md:left-16 lg:block" />
-      <div className="absolute top-0 right-8 bottom-0 hidden w-px bg-white/5 md:right-16 lg:block" />
+      <div className="absolute top-24 right-0 left-0 hidden h-px bg-foreground/5 lg:block" />
+      <div className="absolute right-0 bottom-24 left-0 hidden h-px bg-foreground/5 lg:block" />
+      <div className="absolute top-0 bottom-0 left-8 hidden w-px bg-foreground/5 md:left-16 lg:block" />
+      <div className="absolute top-0 right-8 bottom-0 hidden w-px bg-foreground/5 md:right-16 lg:block" />
 
       {/* Crosshairs */}
       <div className="absolute top-24 left-8 hidden h-4 w-4 -translate-x-1/2 -translate-y-1/2 md:left-16 lg:block">
@@ -105,23 +105,23 @@ export default function DiagramPage({ editable = false }: Props) {
         <div className="bg-primary/50 absolute top-0 bottom-0 left-1/2 w-px" />
       </div>
       <div className="absolute top-24 right-8 hidden h-4 w-4 translate-x-1/2 -translate-y-1/2 md:right-16 lg:block">
-        <div className="absolute top-1/2 right-0 left-0 h-px bg-white/20" />
-        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/20" />
+        <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
+        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
       </div>
       <div className="absolute bottom-24 left-8 hidden h-4 w-4 -translate-x-1/2 translate-y-1/2 md:left-16 lg:block">
-        <div className="absolute top-1/2 right-0 left-0 h-px bg-white/20" />
-        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/20" />
+        <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
+        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
       </div>
       <div className="absolute right-8 bottom-24 hidden h-4 w-4 translate-x-1/2 translate-y-1/2 md:right-16 lg:block">
-        <div className="absolute top-1/2 right-0 left-0 h-px bg-white/20" />
-        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/20" />
+        <div className="absolute top-1/2 right-0 left-0 h-px bg-foreground/20" />
+        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-foreground/20" />
       </div>
 
       {/* Abstract Background Concentric Circles */}
-      <div className="pointer-events-none absolute top-1/2 left-0 flex h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/5 opacity-30">
-        <div className="flex h-[600px] w-[600px] items-center justify-center rounded-full border border-dashed border-white/20">
-          <div className="flex h-[400px] w-[400px] items-center justify-center rounded-full border border-white/20">
-            <div className="h-[200px] w-[200px] rounded-full border border-dashed border-white/10" />
+      <div className="pointer-events-none absolute top-1/2 left-0 flex h-[800px] w-[800px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-foreground/5 opacity-30">
+        <div className="flex h-[600px] w-[600px] items-center justify-center rounded-full border border-dashed border-foreground/20">
+          <div className="flex h-[400px] w-[400px] items-center justify-center rounded-full border border-foreground/20">
+            <div className="h-[200px] w-[200px] rounded-full border border-dashed border-foreground/10" />
           </div>
         </div>
       </div>
@@ -135,7 +135,7 @@ export default function DiagramPage({ editable = false }: Props) {
         >
           <Link
             href="/#diagram-cards"
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 border border-white/5 bg-white/[0.015] px-3 py-1.5 text-xs tracking-wider transition-all hover:bg-white/[0.03]"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 border border-foreground/5 bg-foreground/[0.015] px-3 py-1.5 text-xs tracking-wider transition-all hover:bg-foreground/[0.03]"
           >
             <ArrowLeft className="h-3 w-3" />
             Back to patterns
@@ -147,12 +147,12 @@ export default function DiagramPage({ editable = false }: Props) {
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-          className="flex items-center gap-2 text-xs tracking-widest text-white/30 uppercase"
+          className="flex items-center gap-2 text-xs tracking-widest text-foreground/30 uppercase"
         >
-          <span className="text-white/20">~/patterns</span>
-          <span className="text-white/10">/</span>
+          <span className="text-foreground/20">~/patterns</span>
+          <span className="text-foreground/10">/</span>
           <span className="text-primary">{design.title.toLowerCase().replace(/\s+/g, '-')}</span>
-          <span className="ml-auto border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10px] text-white/25">
+          <span className="ml-auto border border-foreground/5 bg-foreground/[0.02] px-2 py-0.5 text-[10px] text-foreground/25">
             v1.0
           </span>
         </motion.div>
@@ -194,7 +194,7 @@ export default function DiagramPage({ editable = false }: Props) {
             ].map((chip) => (
               <div
                 key={chip.label}
-                className={`inline-flex items-center border bg-white/[0.02] px-3 py-1 text-xs font-bold tracking-wider uppercase ${chip.color}`}
+                className={`inline-flex items-center border bg-foreground/[0.02] px-3 py-1 text-xs font-bold tracking-wider uppercase ${chip.color}`}
               >
                 {chip.label}
               </div>
@@ -207,22 +207,22 @@ export default function DiagramPage({ editable = false }: Props) {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.5 }}
-          className="flex flex-wrap items-center gap-x-6 gap-y-1 border border-white/5 bg-white/[0.015] px-5 py-3 text-xs text-white/35"
+          className="flex flex-wrap items-center gap-x-6 gap-y-1 border border-foreground/5 bg-foreground/[0.015] px-5 py-3 text-xs text-foreground/35"
         >
-          <span className="text-white/20">$</span>
+          <span className="text-foreground/20">$</span>
           <span>arch inspect {design.title.toLowerCase().replace(/\s+/g, '-')}</span>
-          <span className="h-3 w-px bg-white/10" />
+          <span className="h-3 w-px bg-foreground/10" />
           <span>
-            <span className="text-white/50">{stats.nodeCount}</span> nodes
+            <span className="text-foreground/50">{stats.nodeCount}</span> nodes
           </span>
           <span>
-            <span className="text-white/50">{stats.edgeCount}</span> edges
+            <span className="text-foreground/50">{stats.edgeCount}</span> edges
           </span>
           <span>
-            <span className="text-white/50">{stats.groupCount}</span> groups
+            <span className="text-foreground/50">{stats.groupCount}</span> groups
           </span>
           <span>
-            <span className="text-white/50">{stats.protocols.length}</span> protocols
+            <span className="text-foreground/50">{stats.protocols.length}</span> protocols
           </span>
           <span className="ml-auto inline-flex items-center gap-1.5">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500/60" />
@@ -232,7 +232,7 @@ export default function DiagramPage({ editable = false }: Props) {
 
         {/* Diagram */}
         <motion.div
-          className="relative overflow-hidden rounded-sm border border-white/10 bg-black/20"
+          className="relative overflow-hidden rounded-sm border border-foreground/10 bg-foreground/3"
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.5 }}
@@ -240,8 +240,8 @@ export default function DiagramPage({ editable = false }: Props) {
           <Diagram design={design} editable={editable} />
 
           {/* Protocol legend — pinned to bottom of diagram */}
-          <div className="absolute bottom-0 right-0 left-0 hidden border-t border-white/5 bg-black/60 px-4 py-2 backdrop-blur-sm lg:flex lg:items-center lg:gap-4">
-            <span className="text-[10px] font-bold tracking-widest text-white/30 uppercase">
+          <div className="absolute bottom-0 right-0 left-0 hidden border-t border-foreground/5 bg-background/60 px-4 py-2 backdrop-blur-sm lg:flex lg:items-center lg:gap-4">
+            <span className="text-[10px] font-bold tracking-widest text-foreground/30 uppercase">
               Protocol
             </span>
             {stats.protocols.map(({ protocol, count }) => {
@@ -255,8 +255,8 @@ export default function DiagramPage({ editable = false }: Props) {
                     className="inline-block h-2 w-2 rounded-full"
                     style={{ backgroundColor: info.color }}
                   />
-                  <span className="text-white/50">{info.label}</span>
-                  <span className="text-white/20">({count})</span>
+                  <span className="text-foreground/50">{info.label}</span>
+                  <span className="text-foreground/20">({count})</span>
                 </div>
               );
             })}
@@ -272,10 +272,10 @@ export default function DiagramPage({ editable = false }: Props) {
           className="pb-8"
         >
           <motion.div variants={fadeUp} className="mb-8">
-            <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-white/30 uppercase">
+            <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase">
               <span className="text-primary">//</span>
               <span>Component Breakdown</span>
-              <span className="h-px flex-1 bg-white/5" />
+              <span className="h-px flex-1 bg-foreground/5" />
             </div>
             <Heading as="h2" variant="medium" className="text-foreground">
               Key Components
@@ -348,7 +348,7 @@ export default function DiagramPage({ editable = false }: Props) {
               <motion.div
                 key={section.title}
                 variants={fadeUp}
-                className={`group border bg-white/[0.015] p-5 transition-all hover:bg-white/[0.03] ${section.color}`}
+                className={`group border bg-foreground/[0.015] p-5 transition-all hover:bg-foreground/[0.03] ${section.color}`}
               >
                 <div
                   className={`mb-3 text-xs font-bold tracking-widest uppercase ${section.accent}`}
@@ -360,14 +360,14 @@ export default function DiagramPage({ editable = false }: Props) {
                     {section.items.map((item) => (
                       <li
                         key={item}
-                        className="text-xs text-white/50 transition-colors group-hover:text-white/70"
+                        className="text-xs text-foreground/50 transition-colors group-hover:text-foreground/70"
                       >
                         {item}
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <span className="text-xs italic text-white/20">
+                  <span className="text-xs italic text-foreground/20">
                     none in this architecture
                   </span>
                 )}

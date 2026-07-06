@@ -188,15 +188,7 @@ export default function DiagramPageClient({
           </motion.div>
         </div>
 
-        {/* Scanning line - slow vertical sweep */}
-        <motion.div
-          className="pointer-events-none absolute left-0 right-0 hidden h-px lg:block"
-          style={{
-            background: 'linear-gradient(90deg, transparent 0%, rgba(163,255,18,0.3) 50%, transparent 100%)',
-          }}
-          animate={{ top: ['10%', '90%', '10%'] }}
-          transition={{ duration: 12, repeat: Infinity, ease: [0.4, 0, 0.2, 1] }}
-        />
+        
 
         {/* Floating terminal dots */}
         {[
@@ -613,8 +605,8 @@ export default function DiagramPageClient({
                     whileHover={{ y: -4, transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] } }}
                     className="group relative flex flex-col border border-foreground/10 bg-foreground/[0.02] transition-colors duration-500 ease-out hover:border-primary/30 hover:bg-primary/[0.03]"
                   >
-                    <div className="relative aspect-[4/3] overflow-hidden">
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
+                    <div className="relative aspect-[4/3] overflow-hidden diagram-card-visual">
+                      <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
                       <DiagramVisual slug={diagram.slug} />
                     </div>
                     <div className="flex flex-1 flex-col gap-2 p-5">
