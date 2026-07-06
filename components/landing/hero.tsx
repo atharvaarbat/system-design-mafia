@@ -53,7 +53,7 @@ export default function Hero() {
   };
 
   return (
-    <section className="relative flex min-h-screen w-full flex-col justify-center overflow-x-hidden pt-32 pb-24 font-mono">
+    <section className="relative flex min-h-screen w-full flex-col justify-center pt-32 pb-24 font-mono">
       {/* Background Dot Grid */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px)] bg-size-[24px_24px]" />
 
