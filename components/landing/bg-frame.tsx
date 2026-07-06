@@ -10,14 +10,14 @@ export default function BgFrame({ imageUrl, className, alt = "Image frame" }: Pr
   return (
     <div
       className={cn(
-        "relative dark:bg-accent overflow-hidden p-1.5",
+        "relative dark:bg-accent overflow-hidden",
         className
       )}
     >
       <img
         src={imageUrl}
         alt={alt}
-        className="w-full h-auto object-cover"
+        className="w-full h-full object-cover"
       />
     </div>
   );

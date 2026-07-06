@@ -10,6 +10,15 @@
       "edgeCount": 24
     },
     {
+      "slug": "URL-shortening-service-like-tinyURL",
+      "title": "URL Shortening Service like TinyURL",
+      "description": "Scalable system design for creating short URLs, redirecting users, and collecting analytics.",
+      "tags": ["url", "shortening", "microservices", "cloud-native"],
+      "difficulty": "intermediate",
+      "nodeCount": 21,
+      "edgeCount": 24
+    },
+    {
       "slug": "event-driven-architecture",
       "title": "Event-Driven Architecture",
       "description": "Asynchronous event processing with message broker",
@@ -44,6 +53,15 @@
       "difficulty": "beginner",
       "nodeCount": 5,
       "edgeCount": 4
+    },
+    {
+      "slug": "design-youtube-or-netflix",
+      "title": "Design YouTube or Netflix",
+      "description": "A video streaming platform supporting fast video upload and smooth, adaptive streaming.",
+      "tags": ["video", "streaming", "cdn", "transcoding"],
+      "difficulty": "advanced",
+      "nodeCount": 13,
+      "edgeCount": 15
     }
   ]
 }

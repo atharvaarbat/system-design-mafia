@@ -241,7 +241,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             </div>
           )}
 
-       
+
 
           {data.status && (
             <div>
@@ -256,7 +256,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             </div>
           )}
 
-          
+
         </div>
       </ExpandableNodeCard>
 

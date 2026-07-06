@@ -1,0 +1,317 @@
+{
+  "version": "1.0",
+  "title": "Design YouTube or Netflix",
+  "description": "A video streaming platform supporting fast video upload and smooth, adaptive streaming.",
+  "nodes": [
+    {
+      "id": "client-mobile",
+      "kind": "mobile-app",
+      "x": 120,
+      "y": 160,
+      "name": "Mobile Client"
+    },
+    {
+      "id": "client-web",
+      "kind": "browser",
+      "x": 120,
+      "y": 300,
+      "name": "Web Browser"
+    },
+    {
+      "id": "client-tv",
+      "kind": "desktop-app",
+      "x": 112,
+      "y": 440,
+      "name": "Smart TV Client"
+    },
+    {
+      "id": "api-gateway",
+      "kind": "api-gateway",
+      "x": 432,
+      "y": 312,
+      "name": "API Gateway"
+    },
+    {
+      "id": "api-service",
+      "kind": "rest-api",
+      "x": 640,
+      "y": 296,
+      "name": "API Service (Stateless)",
+      "description": "Handles metadata & pre-signed URLs"
+    },
+    {
+      "id": "metadata-db",
+      "kind": "cassandra",
+      "x": 1072,
+      "y": 232,
+      "name": "Metadata Database",
+      "description": "Cassandra (Partitioned by videoId)",
+      "group": "data-tier"
+    },
+    {
+      "id": "metadata-cache",
+      "kind": "redis",
+      "x": 1072,
+      "y": 352,
+      "name": "Metadata Cache",
+      "description": "Redis (For hot videos)",
+      "group": "data-tier"
+    },
+    {
+      "id": "blob-storage-upload",
+      "kind": "s3",
+      "x": 488,
+      "y": 608,
+      "name": "Original Blob Storage",
+      "description": "Stores raw uploaded videos",
+      "group": "storage-tier"
+    },
+    {
+      "id": "blob-storage-transcoded",
+      "kind": "s3",
+      "x": -208,
+      "y": 624,
+      "name": "Transcoded Blob Storage",
+      "description": "Stores segments & manifests",
+      "group": "storage-tier"
+    },
+    {
+      "id": "cdn",
+      "kind": "cdn",
+      "x": -216,
+      "y": 288,
+      "name": "Content Delivery Network (CDN)",
+      "description": "Edge caching for low-latency streaming"
+    },
+    {
+      "id": "transcoder-orchestrator",
+      "kind": "worker-service",
+      "x": 192,
+      "y": 920,
+      "name": "Transcoding Orchestrator",
+      "description": "DAG Scheduler & Resource Manager",
+      "group": "processing-tier"
+    },
+    {
+      "id": "task-workers",
+      "kind": "container",
+      "x": -112,
+      "y": 920,
+      "name": "Task Workers (DAG)",
+      "description": "Parallel video/audio processing",
+      "group": "processing-tier"
+    },
+    {
+      "id": "upload-completion-queue",
+      "kind": "sqs",
+      "x": 720,
+      "y": 768,
+      "name": "Upload Completion Queue",
+      "description": "SQS / Message Queue"
+    },
+    {
+      "id": "completion-handler",
+      "kind": "lambda-function",
+      "x": 600,
+      "y": 968,
+      "name": "Completion Handler",
+      "description": "Triggers transcoding DAG"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-mobile-gw",
+      "source": "client-mobile",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "e-web-gw",
+      "source": "client-web",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "e-tv-gw",
+      "source": "client-tv",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "e-gw-api",
+      "source": "api-gateway",
+      "target": "api-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTP",
+      "protocol": "http"
+    },
+    {
+      "id": "e-api-db",
+      "source": "api-service",
+      "target": "metadata-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Read/Write",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-api-cache",
+      "source": "api-service",
+      "target": "metadata-cache",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Read/Write",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__api-servicebottom-source-blob-storage-uploadtop-target",
+      "source": "api-service",
+      "target": "blob-storage-upload",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "Pre-signed URL",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__blob-storage-transcodedtop-source-cdnbottom-target",
+      "source": "blob-storage-transcoded",
+      "target": "cdn",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "Cache Content",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__cdnright-source-client-mobileleft-target",
+      "source": "cdn",
+      "target": "client-mobile",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Stream Segments",
+      "protocol": "https",
+      "animated": true
+    },
+    {
+      "id": "xy-edge__cdnright-source-client-webleft-target",
+      "source": "cdn",
+      "target": "client-web",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Stream Segments",
+      "protocol": "https",
+      "animated": true
+    },
+    {
+      "id": "xy-edge__cdnright-source-client-tvleft-target",
+      "source": "cdn",
+      "target": "client-tv",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Stream Segments",
+      "protocol": "https",
+      "animated": true
+    },
+    {
+      "id": "xy-edge__task-workersleft-source-blob-storage-transcodedbottom-target",
+      "source": "task-workers",
+      "target": "blob-storage-transcoded",
+      "sourceHandle": "left-source",
+      "targetHandle": "bottom-target",
+      "label": "Write Segments",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__transcoder-orchestratorright-source-blob-storage-uploadbottom-target",
+      "source": "transcoder-orchestrator",
+      "target": "blob-storage-upload",
+      "sourceHandle": "right-source",
+      "targetHandle": "bottom-target",
+      "label": "Fetch Original",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__transcoder-orchestratorleft-source-task-workersright-target",
+      "source": "transcoder-orchestrator",
+      "target": "task-workers",
+      "sourceHandle": "left-source",
+      "targetHandle": "right-target",
+      "label": "Schedule Tasks",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__upload-completion-queuebottom-source-completion-handlertop-target",
+      "source": "upload-completion-queue",
+      "target": "completion-handler",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "Pull Event",
+      "protocol": "message"
+    },
+    {
+      "id": "xy-edge__completion-handlerleft-source-transcoder-orchestratorright-target",
+      "source": "completion-handler",
+      "target": "transcoder-orchestrator",
+      "sourceHandle": "left-source",
+      "targetHandle": "right-target",
+      "label": "Start DAG",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__blob-storage-uploadbottom-source-upload-completion-queueleft-target",
+      "source": "blob-storage-upload",
+      "target": "upload-completion-queue",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "label": "Object Created",
+      "protocol": "event",
+      "style": "dotted"
+    }
+  ],
+  "groups": [
+    {
+      "id": "data-tier",
+      "label": "Data Tier",
+      "color": "#6366f1",
+      "style": "dashed",
+      "width": 280,
+      "height": 344,
+      "x": 1056,
+      "y": 184
+    },
+    {
+      "id": "storage-tier",
+      "label": "Blob Storage Tier",
+      "color": "#f59e0b",
+      "style": "dashed",
+      "width": 960,
+      "height": 164,
+      "x": -256,
+      "y": 580
+    },
+    {
+      "id": "processing-tier",
+      "label": "Video Processing Tier",
+      "color": "#10b981",
+      "style": "dashed",
+      "width": 560,
+      "height": 344,
+      "x": -152,
+      "y": 844
+    }
+  ]
+}
