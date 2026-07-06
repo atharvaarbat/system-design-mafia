@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import { X } from 'lucide-react'
 import { useEditable } from '@/lib/diagram/editable-context'
+import { usePortalTarget } from '@/lib/diagram/portal-target-context'
 
 interface ExpandableNodeCardProps {
   trigger: React.ReactNode
@@ -60,6 +61,7 @@ export default function ExpandableNodeCard({
   const [origin, setOrigin] = useState<PortalOrigin>({ clipAt: '50% 50%', initRadiusPx: 20 })
   const triggerRef = useRef<HTMLDivElement>(null)
   const editable = useEditable()
+  const portalTarget = usePortalTarget()
 
   const handleOpen = () => {
     if (editable) return
@@ -163,7 +165,7 @@ export default function ExpandableNodeCard({
             </div>
           )}
         </AnimatePresence>,
-        document.body
+        portalTarget ?? document.body
       )}
     </>
   )

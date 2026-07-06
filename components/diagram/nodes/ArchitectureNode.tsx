@@ -44,6 +44,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
   const label = data.name || kindDef.label
   const shapePath = CATEGORY_SHAPE_PATH[kindDef.category]
   const shapeAvailable = useShapeAvailable(shapePath)
+  const hasBrandLogo = !!kindDef.brandLogo
 
   const [menuState, setMenuState] = useState<{
     x: number
@@ -194,7 +195,9 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
                       : {}),
                   }}
                 />
-                <Icon className="absolute inset-0 m-auto h-5 w-5 text-white" strokeWidth={2} />
+                {hasBrandLogo
+                  ? <img src={kindDef.brandLogo} alt="" className="absolute inset-0 m-auto h-8 w-8 object-contain" />
+                  : <Icon className="absolute inset-0 m-auto h-5 w-5 text-white" strokeWidth={2} />}
               </div>
 
               <span className="max-w-24 truncate text-center text-xs font-semibold text-zinc-800 dark:text-zinc-100">
@@ -215,14 +218,14 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
         }
         title={label}
         subtitle={kindDef.label}
-        icon={<Icon className="w-full h-full" strokeWidth={2} />}
+        icon={hasBrandLogo
+          ? <img src={kindDef.brandLogo} alt="" className="w-full h-full object-contain" />
+          : <Icon className="w-full h-full" strokeWidth={2} />}
         color={kindDef.color}
       >
+        <p className="bg-foreground text-background rounded-full w-fit px-2 py-1 mb-2 text-xs capitalize">{kindDef.category}</p>
         <div className="space-y-6">
-          <div>
-            <h4 className="text-foreground font-semibold tracking-tight mb-2">Category</h4>
-            <p className="text-muted-foreground capitalize">{kindDef.category}</p>
-          </div>
+
 
           {data.description && (
             <div>
@@ -238,10 +241,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             </div>
           )}
 
-          <div>
-            <h4 className="text-foreground font-semibold tracking-tight mb-2">Connections</h4>
-            <p className="text-muted-foreground">{connectedEdgeCount} edge{connectedEdgeCount !== 1 ? 's' : ''}</p>
-          </div>
+       
 
           {data.status && (
             <div>
@@ -256,10 +256,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             </div>
           )}
 
-          <div>
-            <h4 className="text-foreground font-semibold tracking-tight mb-2">ID</h4>
-            <code className="text-xs text-muted-foreground">{data.id}</code>
-          </div>
+          
         </div>
       </ExpandableNodeCard>
 
