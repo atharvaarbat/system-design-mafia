@@ -3,7 +3,6 @@ import Heading from './heading';
 import SubHeading from './subheading';
 import { motion, type Variants, AnimatePresence } from 'motion/react';
 import { useEffect, useState } from 'react';
-import BgFrame from './bg-frame';
 import { ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
 
@@ -13,24 +12,6 @@ const ROTATING_WORDS = [
   'microservices',
   'scalability',
 ] as const;
-
-const HERO_IMAGES = Array.from({ length: 10 }).map(
-  (_, i) =>
-    `https://assets.watermelon.sh/lp-hero-${(i + 1).toString().padStart(2, '0')}.avif`,
-);
-
-const IMAGE_POSITIONS = [
-  { top: '-30%', left: '-15%', width: '24%', rotate: '-15deg', zIndex: 1 },
-  { top: '-30%', right: '-15%', width: '24%', rotate: '15deg', zIndex: 1 },
-  { top: '-10%', left: '-5%', width: '28%', rotate: '-10deg', zIndex: 2 },
-  { top: '-10%', right: '-5%', width: '28%', rotate: '10deg', zIndex: 2 },
-  { top: '10%', left: '5%', width: '34%', rotate: '-5deg', zIndex: 3 },
-  { top: '10%', right: '5%', width: '34%', rotate: '5deg', zIndex: 3 },
-  { top: '25%', left: '15%', width: '42%', rotate: '-2deg', zIndex: 4 },
-  { top: '25%', right: '15%', width: '42%', rotate: '2deg', zIndex: 4 },
-  { top: '40%', left: '24%', width: '52%', rotate: '0deg', zIndex: 10 },
-  { top: '15%', left: '38%', width: '24%', rotate: '0deg', zIndex: 0 },
-];
 
 export default function Hero() {
   const [wordIndex, setWordIndex] = useState(0);
@@ -248,52 +229,6 @@ export default function Hero() {
               )}
             </motion.div>
           </motion.div>
-        </motion.div>
-
-        {/* Images Collage */}
-        <motion.div
-          className="pointer-events-none relative mx-auto mt-32 flex h-[400px] w-full max-w-6xl items-center justify-center sm:h-[600px] md:h-[800px]"
-          initial="hidden"
-          animate="visible"
-          variants={{
-            hidden: {},
-            visible: {
-              transition: {
-                staggerChildren: 0.1,
-                delayChildren: 0.8,
-              },
-            },
-          }}
-        >
-          {HERO_IMAGES.map((url, i) => (
-            <motion.div
-              key={url}
-              className="pointer-events-auto absolute shadow-2xl"
-              style={{
-                ...IMAGE_POSITIONS[i],
-                transformOrigin: 'center center',
-              }}
-              variants={{
-                hidden: { opacity: 0, y: 12, filter: 'blur(4px)' },
-                visible: {
-                  opacity: 1,
-                  y: 0,
-                  filter: 'blur(0px)',
-                  transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] },
-                },
-              }}
-              whileHover={{
-                scale: 1.05,
-                zIndex: 50,
-                transition: { duration: 0.4 },
-              }}
-            >
-              <BgFrame
-                imageUrl={url}
-                className="bg-background w-full border-foreground/10 shadow-2xl"
-              />
-            </motion.div>
-          ))}
         </motion.div>
       </Container>
     </section>

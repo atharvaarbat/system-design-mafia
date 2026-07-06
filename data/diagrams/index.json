@@ -10,6 +10,15 @@
       "edgeCount": 15
     },
     {
+      "slug": "design-instagram",
+      "title": "Design Instagram",
+      "description": "A social media platform for short-form video content.",
+      "tags": ["video", "streaming", "cdn", "transcoding"],
+      "difficulty": "advanced",
+      "nodeCount": 13,
+      "edgeCount": 15
+    },
+    {
       "slug": "e-commerce-microservices",
       "title": "E-Commerce Microservices",
       "description": "Cloud-native e-commerce platform on AWS",

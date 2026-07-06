@@ -214,7 +214,7 @@ export default function DiagramPageClient({
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           >
             <Link
-              href="/#diagram-cards"
+              href="/patterns"
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5  px-3 py-1.5 text-xs tracking-wider transition-all hover:bg-foreground/3"
             >
               <ArrowLeft className="h-3 w-3" />
@@ -249,7 +249,7 @@ export default function DiagramPageClient({
               <Heading
                 as="h1"
                 variant="big"
-                className="text-foreground font-sans leading-[0.9]"
+                className="text-foreground font-doto font-black"
               >
                 {design.title}
               </Heading>

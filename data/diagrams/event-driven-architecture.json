@@ -3,21 +3,122 @@
   "title": "Event-Driven Architecture",
   "description": "Asynchronous event producers and consumers connected through a message broker for decoupled communication.",
   "nodes": [
-    { "id": "client", "kind": "browser", "name": "Client App", "x": 100, "y": 300 },
-    { "id": "api-gw", "kind": "api-gateway", "name": "API Gateway", "x": 350, "y": 300 },
-    { "id": "producer", "kind": "rest-api", "name": "Event Producer", "x": 600, "y": 150, "description": "Publishes events" },
-    { "id": "broker", "kind": "kafka", "name": "Message Broker", "x": 600, "y": 400, "description": "Event Bus / Kafka" },
-    { "id": "consumer-1", "kind": "worker-service", "name": "Consumer A", "x": 900, "y": 150, "description": "Processes events" },
-    { "id": "consumer-2", "kind": "worker-service", "name": "Consumer B", "x": 900, "y": 400, "description": "Processes events" },
-    { "id": "db", "kind": "postgres", "name": "Database", "x": 900, "y": 650 }
+    {
+      "id": "client",
+      "kind": "browser",
+      "x": 100,
+      "y": 300,
+      "name": "Client App"
+    },
+    {
+      "id": "api-gw",
+      "kind": "api-gateway",
+      "x": 350,
+      "y": 300,
+      "name": "API Gateway"
+    },
+    {
+      "id": "producer",
+      "kind": "rest-api",
+      "x": 600,
+      "y": 150,
+      "name": "Event Producer",
+      "description": "Publishes events"
+    },
+    {
+      "id": "broker",
+      "kind": "kafka",
+      "x": 600,
+      "y": 368,
+      "name": "Message Broker",
+      "description": "Event Bus / Kafka"
+    },
+    {
+      "id": "consumer-1",
+      "kind": "worker-service",
+      "x": 976,
+      "y": 136,
+      "name": "Consumer A",
+      "description": "Processes events"
+    },
+    {
+      "id": "consumer-2",
+      "kind": "worker-service",
+      "x": 816,
+      "y": 376,
+      "name": "Consumer B",
+      "description": "Processes events"
+    },
+    {
+      "id": "db",
+      "kind": "postgres",
+      "x": 1000,
+      "y": 384,
+      "name": "Database"
+    }
   ],
   "edges": [
-    { "id": "e-client-gw", "source": "client", "target": "api-gw", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-gw-producer", "source": "api-gw", "target": "producer", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-producer-broker", "source": "producer", "target": "broker", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "message", "animated": true, "label": "Events" },
-    { "id": "e-broker-c1", "source": "broker", "target": "consumer-1", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "message", "animated": true },
-    { "id": "e-broker-c2", "source": "broker", "target": "consumer-2", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "message", "animated": true },
-    { "id": "e-c1-db", "source": "consumer-1", "target": "db", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "database", "style": "dashed" },
-    { "id": "e-c2-db", "source": "consumer-2", "target": "db", "sourceHandle": "bottom-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" }
+    {
+      "id": "e-client-gw",
+      "source": "client",
+      "target": "api-gw",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-gw-producer",
+      "source": "api-gw",
+      "target": "producer",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-producer-broker",
+      "source": "producer",
+      "target": "broker",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "Events",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-broker-c1",
+      "source": "broker",
+      "target": "consumer-1",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-broker-c2",
+      "source": "broker",
+      "target": "consumer-2",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "message",
+      "animated": true
+    },
+    {
+      "id": "e-c1-db",
+      "source": "consumer-1",
+      "target": "db",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__consumer-2right-source-dbleft-target",
+      "source": "consumer-2",
+      "target": "db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "database",
+      "style": "dashed"
+    }
   ]
 }

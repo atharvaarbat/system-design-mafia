@@ -1,0 +1,409 @@
+{
+  "version": "1.0",
+  "title": "Instagram System Architecture",
+  "summary": "### 1. Media Upload & Processing Pipeline\n\nHandles the ingestion and storage of user-uploaded photos and videos. The client requests a pre-signed URL from the Post Service, uploads the media directly to Object Storage (S3), and then notifies the backend. The Post Service saves the metadata in a relational database and publishes a 'new post' event to Kafka to trigger asynchronous processes like feed updates.\n\n### 2. Feed Generation & Read Path\n\nFocuses on serving a user's personalized news feed. The Feed Service retrieves posts from the user's followers. A hybrid approach is used: for normal users with few followers, posts are pre-computed and pushed to a Redis cache (fan-out-on-write). For celebrities with millions of followers, posts are fetched on-demand (fan-out-on-read) and merged with the cached feed for the user.\n\n### 3. Engagement & Search Service\n\nManages user interactions (likes, comments) and search functionality. The Engagement Service asynchronously processes likes and comments via a message queue (Kafka) to update databases and caches. The Search Service uses Elasticsearch to index user profiles and posts, providing fast full-text search capabilities, with results cached in Redis for performance.",
+  "nodes": [
+    {
+      "id": "upload-client",
+      "kind": "mobile-app",
+      "x": 240,
+      "y": 320,
+      "name": "Client (Mobile/Web)",
+      "group": "frame-upload"
+    },
+    {
+      "id": "upload-api-gw",
+      "kind": "api-gateway",
+      "x": 480,
+      "y": 304,
+      "name": "API Gateway",
+      "description": "Auth, rate limiting",
+      "group": "frame-upload"
+    },
+    {
+      "id": "upload-post-svc",
+      "kind": "rest-api",
+      "x": 728,
+      "y": 296,
+      "name": "Post Service",
+      "description": "Generates pre-signed URLs, metadata",
+      "group": "frame-upload"
+    },
+    {
+      "id": "upload-s3",
+      "kind": "s3",
+      "x": 496,
+      "y": 120,
+      "name": "Object Storage (S3)",
+      "description": "Stores photos & videos",
+      "group": "frame-upload"
+    },
+    {
+      "id": "upload-metadata-db",
+      "kind": "postgres",
+      "x": 1040,
+      "y": 360,
+      "name": "Metadata DB (PostgreSQL)",
+      "description": "Posts, Users, Followers",
+      "group": "frame-upload"
+    },
+    {
+      "id": "upload-kafka",
+      "kind": "kafka",
+      "x": 1040,
+      "y": 192,
+      "name": "Message Queue (Kafka)",
+      "description": "\"New Post\" events",
+      "group": "frame-upload"
+    },
+    {
+      "id": "feed-client",
+      "kind": "mobile-app",
+      "x": 272,
+      "y": 672,
+      "name": "Client (Mobile/Web)",
+      "group": "frame-feed"
+    },
+    {
+      "id": "feed-api-gw",
+      "kind": "api-gateway",
+      "x": 504,
+      "y": 656,
+      "name": "API Gateway",
+      "description": "Auth, rate limiting",
+      "group": "frame-feed"
+    },
+    {
+      "id": "feed-svc",
+      "kind": "rest-api",
+      "x": 736,
+      "y": 656,
+      "name": "Feed Service",
+      "description": "Generates and serves feed",
+      "group": "frame-feed"
+    },
+    {
+      "id": "feed-redis",
+      "kind": "redis",
+      "x": 856,
+      "y": 808,
+      "name": "Feed Cache (Redis)",
+      "description": "Pre-computed timelines",
+      "group": "frame-feed"
+    },
+    {
+      "id": "feed-posts-db",
+      "kind": "postgres",
+      "x": 992,
+      "y": 656,
+      "name": "Posts DB (PostgreSQL)",
+      "description": "For celebrity posts",
+      "group": "frame-feed"
+    },
+    {
+      "id": "feed-kafka-consumer",
+      "kind": "worker-service",
+      "x": 512,
+      "y": 816,
+      "name": "Feed Worker",
+      "description": "Consumes 'New Post' events",
+      "group": "frame-feed"
+    },
+    {
+      "id": "eng-client",
+      "kind": "mobile-app",
+      "x": 1528,
+      "y": 376,
+      "name": "Client (Mobile/Web)",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "eng-api-gw",
+      "kind": "api-gateway",
+      "x": 1748,
+      "y": 364,
+      "name": "API Gateway",
+      "description": "Auth, rate limiting",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "eng-svc",
+      "kind": "rest-api",
+      "x": 1984,
+      "y": 320,
+      "name": "Engagement Service",
+      "description": "Likes, comments, shares",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "eng-kafka",
+      "kind": "kafka",
+      "x": 2192,
+      "y": 208,
+      "name": "Message Queue (Kafka)",
+      "description": "Engagement events",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "eng-worker",
+      "kind": "worker-service",
+      "x": 2440,
+      "y": 256,
+      "name": "Engagement Worker",
+      "description": "Async processing",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "eng-redis",
+      "kind": "redis",
+      "x": 2232,
+      "y": 352,
+      "name": "Engagement Cache (Redis)",
+      "description": "Counts, top comments",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "search-svc",
+      "kind": "rest-api",
+      "x": 1896,
+      "y": 520,
+      "name": "Search Service",
+      "description": "Handles search queries",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "search-es",
+      "kind": "elasticsearch",
+      "x": 2168,
+      "y": 464,
+      "name": "Search Index (Elasticsearch)",
+      "description": "Full-text search",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "search-redis",
+      "kind": "redis",
+      "x": 2168,
+      "y": 576,
+      "name": "Search Cache (Redis)",
+      "description": "Recent search results",
+      "group": "frame-engagement"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-upload-1",
+      "source": "upload-client",
+      "target": "upload-api-gw",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "e-upload-2",
+      "source": "upload-api-gw",
+      "target": "upload-post-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc"
+    },
+    {
+      "id": "e-feed-1",
+      "source": "feed-client",
+      "target": "feed-api-gw",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "e-feed-2",
+      "source": "feed-api-gw",
+      "target": "feed-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc"
+    },
+    {
+      "id": "e-feed-5",
+      "source": "feed-kafka-consumer",
+      "target": "feed-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Update Feed",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "e-eng-1",
+      "source": "eng-client",
+      "target": "eng-api-gw",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "e-eng-2",
+      "source": "eng-api-gw",
+      "target": "eng-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc"
+    },
+    {
+      "id": "e-eng-4",
+      "source": "eng-kafka",
+      "target": "eng-worker",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Consume",
+      "protocol": "message",
+      "style": "dashed"
+    },
+    {
+      "id": "e-eng-5",
+      "source": "eng-svc",
+      "target": "eng-redis",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Increment/Get",
+      "protocol": "database",
+      "style": "solid"
+    },
+    {
+      "id": "e-eng-7",
+      "source": "search-svc",
+      "target": "search-es",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Query",
+      "protocol": "internal",
+      "style": "solid"
+    },
+    {
+      "id": "xy-edge__upload-clienttop-source-upload-s3left-target",
+      "source": "upload-client",
+      "target": "upload-s3",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "label": "Direct Upload",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__upload-post-svcbottom-source-upload-metadata-dbleft-target",
+      "source": "upload-post-svc",
+      "target": "upload-metadata-db",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "label": "Write",
+      "protocol": "database",
+      "style": "solid"
+    },
+    {
+      "id": "xy-edge__upload-post-svctop-source-upload-s3right-target",
+      "source": "upload-post-svc",
+      "target": "upload-s3",
+      "sourceHandle": "top-source",
+      "targetHandle": "right-target",
+      "label": "Pre-signed URL",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__upload-post-svcright-source-upload-kafkaleft-target",
+      "source": "upload-post-svc",
+      "target": "upload-kafka",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Publish",
+      "protocol": "message",
+      "style": "solid"
+    },
+    {
+      "id": "xy-edge__feed-svcbottom-source-feed-redisleft-target",
+      "source": "feed-svc",
+      "target": "feed-redis",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "label": "Read",
+      "protocol": "database"
+    },
+    {
+      "id": "xy-edge__feed-svcright-source-feed-posts-dbleft-target",
+      "source": "feed-svc",
+      "target": "feed-posts-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Read",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__eng-svctop-source-eng-kafkaleft-target",
+      "source": "eng-svc",
+      "target": "eng-kafka",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "label": "Publish",
+      "protocol": "message",
+      "style": "solid"
+    },
+    {
+      "id": "xy-edge__eng-api-gwbottom-source-search-svcleft-target",
+      "source": "eng-api-gw",
+      "target": "search-svc",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "label": "gRPC",
+      "protocol": "grpc",
+      "style": "solid"
+    },
+    {
+      "id": "xy-edge__search-svcright-source-search-redisleft-target",
+      "source": "search-svc",
+      "target": "search-redis",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Cache",
+      "protocol": "database",
+      "style": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "frame-upload",
+      "label": "1. Media Upload & Processing Pipeline",
+      "color": "#f59e0b",
+      "style": "solid",
+      "width": 1300,
+      "height": 500,
+      "x": 80,
+      "y": 40
+    },
+    {
+      "id": "frame-feed",
+      "label": "2. Feed Generation & Read Path",
+      "color": "#6366f1",
+      "style": "solid",
+      "width": 1300,
+      "height": 392,
+      "x": 80,
+      "y": 580
+    },
+    {
+      "id": "frame-engagement",
+      "label": "3. Engagement & Search Service",
+      "color": "#10b981",
+      "style": "solid",
+      "width": 1300,
+      "height": 550,
+      "x": 1448,
+      "y": 164
+    }
+  ]
+}

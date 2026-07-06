@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "gsap",
+  "owner": "lobbi-docs",
+  "repo": "claude",
+  "path": "plugins/react-animation-studio/skills/gsap",
+  "branch": "main",
+  "sha": "32c1292003cc4d489ca033a2c2e93f867902f471",
+  "source": "manual"
+}

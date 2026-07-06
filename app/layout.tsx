@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Inter } from "next/font/google";
+import { Geist, Geist_Mono, Inter, Doto, Poppins } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
+const doto = Doto({ subsets: ['latin'], variable: '--font-doto' });
+
+const poppins = Poppins({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-poppins' });
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,7 +32,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", inter.variable)}
+      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", inter.variable, poppins.variable, doto.variable)}
     >
       <head>
         <link rel="icon" type="image/x-icon" href="/favicon-light.ico" media="(prefers-color-scheme: dark)" />
