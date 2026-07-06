@@ -19,6 +19,8 @@ export interface SystemDesignNode {
   kind: NodeKind
   name?: string
   description?: string
+  /** Markdown body rendered in the expanded node card. */
+  details?: string
   x: number
   y: number
   width?: number

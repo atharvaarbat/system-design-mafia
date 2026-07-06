@@ -36,7 +36,7 @@ export default function Navbar() {
             <img src="/logo.svg" alt="Logo" className="w-full h-full" />
 
           </div>
-            <img src="/mafia.svg" alt="Logo" className="h-5" />
+            <img src="/mafia.svg" alt="Logo" className="h-5 invert dark:invert-0" />
         </Link>
 
 

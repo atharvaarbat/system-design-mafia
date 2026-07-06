@@ -8,6 +8,7 @@ import { CATEGORY_SHAPE_PATH, resolveNodeKind } from '@/lib/diagram/registry'
 import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
 import { useSelectionActions } from '@/lib/diagram/selection-actions-context'
 import { useEditable } from '@/lib/diagram/editable-context'
+import RichText from '@/components/ui/rich-text'
 import ExpandableNodeCard from './expandable-node-card'
 
 type ArchitectureFlowNode = Node<SystemDesignNode & Record<string, unknown>>
@@ -227,6 +228,13 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             <div>
               <h4 className="text-foreground font-semibold tracking-tight mb-2">Description</h4>
               <p className="text-muted-foreground">{data.description}</p>
+            </div>
+          )}
+
+          {data.details && (
+            <div>
+              <h4 className="text-foreground font-semibold tracking-tight mb-2">Details</h4>
+              <RichText content={data.details} />
             </div>
           )}
 

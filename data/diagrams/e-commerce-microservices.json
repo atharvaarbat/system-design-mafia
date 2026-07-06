@@ -64,6 +64,7 @@
       "y": 80,
       "name": "User Service",
       "description": "Auth & Profiles",
+      "details": "### Responsibilities\n\n- User registration & login\n- Session & JWT issuance\n- Profile CRUD\n\n### Tech\n\nNode.js REST API backed by **PostgreSQL**, cached in `Redis` for session lookups.",
       "group": "aws-cloud"
     },
     {

@@ -14,6 +14,13 @@ const DIAGRAMS = [
     image: '/diagrams/microservices.avif',
   },
   {
+    slug: 'URL-shortening-service-like-tinyURL',
+    title: 'URL Shortening Service like TinyURL',
+    description:
+      'Scalable system design for creating short URLs, redirecting users, and collecting analytics.',
+    image: '/diagrams/microservices.avif',
+  },
+  {
     slug: 'event-driven-architecture',
     title: 'Event-Driven Architecture',
     description:

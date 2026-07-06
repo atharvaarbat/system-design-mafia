@@ -1,0 +1,259 @@
+{
+  "version": "1.0",
+  "title": "URL Shortening Service like TinyURL",
+  "description": "Scalable system design for creating short URLs, redirecting users, and collecting analytics.",
+  "nodes": [
+    {
+      "id": "browser-user",
+      "kind": "browser",
+      "x": 176,
+      "y": 168,
+      "name": "User Browser",
+      "description": "Client"
+    },
+    {
+      "id": "mobile-app-user",
+      "kind": "mobile-app",
+      "x": 168,
+      "y": 576,
+      "name": "Mobile App",
+      "description": "Client"
+    },
+    {
+      "id": "api-gateway",
+      "kind": "api-gateway",
+      "x": 272,
+      "y": 368,
+      "name": "API Gateway",
+      "description": "Rate Limiting, Auth"
+    },
+    {
+      "id": "load-balancer",
+      "kind": "load-balancer",
+      "x": 440,
+      "y": 376,
+      "name": "Load Balancer",
+      "description": "Round Robin"
+    },
+    {
+      "id": "app-server-1",
+      "kind": "rest-api",
+      "x": 672,
+      "y": 176,
+      "name": "App Server 1",
+      "description": "Create/Redirect"
+    },
+    {
+      "id": "app-server-2",
+      "kind": "rest-api",
+      "x": 672,
+      "y": 600,
+      "name": "App Server 2",
+      "description": "Create/Redirect"
+    },
+    {
+      "id": "key-generation-service",
+      "kind": "generic-service",
+      "x": 672,
+      "y": 384,
+      "name": "Key Generation Service",
+      "description": "Generates unique keys",
+      "details": "### Responsibilities\n\n- Generate unique six-letter keys offline\n- Store keys in key-DB\n- Provide keys to app servers\n- Single point of failure, requires standby replica"
+    },
+    {
+      "id": "cache",
+      "kind": "redis",
+      "x": 808,
+      "y": 384,
+      "name": "Cache",
+      "description": "Redis/Memcached",
+      "details": "### Caching Strategy\n\n- Caches frequently accessed URLs\n- LRU eviction policy\n- Cache 20% of daily traffic (~70-170GB memory)"
+    },
+    {
+      "id": "database",
+      "kind": "dynamodb",
+      "x": 1048,
+      "y": 376,
+      "name": "Database",
+      "description": "NoSQL (DynamoDB/Cassandra)",
+      "details": "### Database Schema\n\n#### URL Mapping Table\n- **shortUrl**: string (primary key)\n- **originalUrl**: string\n- **userId**: string\n- **createdAt**: timestamp\n- **expiresAt**: timestamp\n\n#### User Table\n- **userId**: string (primary key)\n- **name**: string\n- **email**: string\n- **createdAt**: timestamp\n\n### Data Partitioning\n\n- Hash-based partitioning on shortUrl\n- Consistent hashing for even distribution"
+    },
+    {
+      "id": "analytics-service",
+      "kind": "monitoring-service",
+      "x": 1656,
+      "y": 376,
+      "name": "Analytics Service",
+      "description": "Metrics & Telemetry",
+      "details": "### Analytics\n\n- Tracks URL redirections\n- User locations, referrers\n- Platform and browser stats"
+    },
+    {
+      "id": "message-queue",
+      "kind": "kafka",
+      "x": 1424,
+      "y": 384,
+      "name": "Message Queue",
+      "description": "Kafka"
+    },
+    {
+      "id": "cleanup-service",
+      "kind": "worker-service",
+      "x": 1248,
+      "y": 384,
+      "name": "Cleanup Service",
+      "description": "Lazy cleanup",
+      "details": "### Cleanup Strategy\n\n- Runs periodically during low traffic\n- Removes expired links and puts keys back into key-DB"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-gateway-lb",
+      "source": "api-gateway",
+      "target": "load-balancer",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "http"
+    },
+    {
+      "id": "e-lb-server1",
+      "source": "load-balancer",
+      "target": "app-server-1",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "http"
+    },
+    {
+      "id": "e-lb-server2",
+      "source": "load-balancer",
+      "target": "app-server-2",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "http"
+    },
+    {
+      "id": "e-server1-db",
+      "source": "app-server-1",
+      "target": "database",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Read/Write",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-mq-analytics",
+      "source": "message-queue",
+      "target": "analytics-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Process",
+      "protocol": "message"
+    },
+    {
+      "id": "e-cache-db",
+      "source": "cache",
+      "target": "database",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Miss",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__app-server-1bottom-source-key-generation-servicetop-target",
+      "source": "app-server-1",
+      "target": "key-generation-service",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "Get Key",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__app-server-2top-source-key-generation-servicebottom-target",
+      "source": "app-server-2",
+      "target": "key-generation-service",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "Get Key",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__app-server-2right-source-databaseleft-target",
+      "source": "app-server-2",
+      "target": "database",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Read/Write",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__app-server-2right-source-cachebottom-target",
+      "source": "app-server-2",
+      "target": "cache",
+      "sourceHandle": "right-source",
+      "targetHandle": "bottom-target",
+      "label": "Read/Write",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__app-server-1right-source-cachetop-target",
+      "source": "app-server-1",
+      "target": "cache",
+      "sourceHandle": "right-source",
+      "targetHandle": "top-target",
+      "label": "Read/Write",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__app-server-1top-source-message-queuetop-target",
+      "source": "app-server-1",
+      "target": "message-queue",
+      "sourceHandle": "top-source",
+      "targetHandle": "top-target",
+      "label": "Log Events",
+      "protocol": "message",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__app-server-2right-source-message-queuebottom-target",
+      "source": "app-server-2",
+      "target": "message-queue",
+      "sourceHandle": "right-source",
+      "targetHandle": "bottom-target",
+      "label": "Log Events",
+      "protocol": "message",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__databaseright-source-cleanup-serviceleft-target",
+      "source": "database",
+      "target": "cleanup-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Clean",
+      "protocol": "internal",
+      "style": "dotted",
+      "animated": true
+    },
+    {
+      "id": "xy-edge__browser-userbottom-source-api-gatewaytop-target",
+      "source": "browser-user",
+      "target": "api-gateway",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__mobile-app-usertop-source-api-gatewaybottom-target",
+      "source": "mobile-app-user",
+      "target": "api-gateway",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "HTTPS",
+      "protocol": "https"
+    }
+  ],
+  "summary": "### Architecture Overview\n\nThis system designs a scalable, highly available URL shortening service, akin to TinyURL or Bitly. The architecture prioritizes low-latency redirects and high write throughput for creating new short links. It uses a read-heavy, async-first approach to handle massive traffic.\n\n### Core Data Flow\n\n1.  **Short URL Creation (Write Path):**\n    - A client (browser or mobile app) sends a `POST` request with a long URL to the **API Gateway**.\n    - The gateway handles authentication, rate limiting, and passes the request to the **Load Balancer**.\n    - The load balancer routes the request to an available **Application Server**.\n    - The application server requests a unique, pre-generated short code from the **Key Generation Service (KGS)**.\n    - The server then stores the mapping (`shortCode` -> `originalUrl`) in the **Database**. The database is a NoSQL store (like DynamoDB or Cassandra), chosen for its scalability and fast key-value lookups.\n    - The newly created short URL is returned to the client.\n\n2.  **URL Redirection (Read Path):**\n    - A client makes a `GET` request to a short URL (e.g., `GET /abc123`).\n    - The request passes through the API Gateway and Load Balancer to an Application Server.\n    - The application server first checks the **Cache** (Redis/Memcached) for the mapping.\n    - If the mapping is not in the cache (a cache miss), the server queries the Database.\n    - The retrieved original URL is returned as an `HTTP 302 Redirect` to the client.\n\n3.  **Analytics & Cleanup (Async Paths):**\n    - Every redirection event is asynchronously logged to a **Message Queue** (Kafka).\n    - An **Analytics Service** consumes these events to provide metrics like click counts, user locations, and referrers.\n    - A separate **Cleanup Service** periodically removes expired links from the Database and Cache, and recycles their short codes back to the KGS.\n\n### Key Design Decisions & Trade-offs\n\n- **Short Code Generation (Key Generation Service):**\n  - The system uses a standalone **Key Generation Service (KGS)** to pre-generate unique, 6-7 character keys offline using Base62 encoding (`[0-9][a-z][A-Z]`). This approach avoids the overhead and collisions of hashing algorithms (like MD5) and ensures fast, conflict-free key assignment at scale.\n  - **Trade-off:** The KGS introduces a single point of failure. This is mitigated by having a standby replica of the KGS and having application servers cache a small pool of keys locally.\n\n- **Database Choice (NoSQL):**\n  - **NoSQL** (e.g., DynamoDB, Cassandra) was chosen over a traditional RDBMS.\n  - **Rationale:** The system requires storing billions of small objects with a simple key-value access pattern, and NoSQL databases offer superior horizontal scaling, high availability, and low-latency performance for this use case.\n  - **Trade-off:** NoSQL systems are often eventually consistent, but the simple data model and use of `INSERT-IF-NOT-EXIST` (or similar) can be managed to ensure data integrity for new URL creations.\n\n- **Scaling the Database (Sharding):**\n  - The database is scaled out using **hash-based partitioning** on the `shortCode`. This distributes data evenly across shards and avoids hotspots that can occur with range-based partitioning.\n  - **Trade-off:** Hash-based partitioning makes range queries difficult, but the system's primary operations (point lookups and inserts) don't require them.\n\n- **Caching Strategy:**\n  - A distributed cache (Redis/Memcached) is employed to serve the 20% of 'hot' URLs that generate 80% of the traffic, significantly reducing database load and improving read latency.\n  - An **LRU (Least Recently Used)** eviction policy is used to manage cache size and keep the most relevant data in memory.\n\n- **Purging & Data Lifecycle:**\n  - A **lazy cleanup** strategy is used. Expired links are not actively sought out. Instead, they are deleted when a user tries to access them, and a background Cleanup Service handles bulk removals during off-peak hours. This minimizes pressure on the database.\n  - **Trade-off:** This approach means expired links may remain in storage for some time, but storage is cheap, and this strategy keeps the critical read/write paths fast.\n\n- **Analytics with 302 Redirect:**\n  - The system uses an `HTTP 302` (temporary) redirect instead of a `301` (permanent).\n  - **Rationale:** This ensures that every redirection request reaches the backend servers, allowing the system to log and count clicks for analytics, which is a key functional requirement.\n\n- **Security:**\n  - The system includes **rate limiting** via API keys to prevent abuse and ensure fair usage. It also plans for **blacklisting** of malicious URLs and **user authentication** for custom aliases.\n\nThis architecture is designed to handle the high throughput and storage requirements of a global URL shortening service, balancing performance, scalability, and cost."
+}

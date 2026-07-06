@@ -33,6 +33,7 @@ export function flowToSystemDesign(nodes: Node[], edges: Edge[], original?: Syst
       }
       if (nd.name) sn.name = String(nd.name)
       if (nd.description) sn.description = String(nd.description)
+      if (nd.details) sn.details = String(nd.details)
       if (nd.status) sn.status = nd.status as SystemDesignNode['status']
       if (node.parentId) sn.group = node.parentId
       systemNodes.push(sn)

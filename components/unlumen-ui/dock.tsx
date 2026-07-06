@@ -20,6 +20,8 @@ export interface DockItem {
   onClick?: () => void;
   /** renders a visual separator after this item */
   separator?: boolean;
+  /** applies a highlighted background state */
+  active?: boolean;
 }
 
 export interface DockProps {
@@ -129,6 +131,7 @@ function DockIcon({
             "hover:bg-foreground/[0.06] hover:text-foreground",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20",
             "[&_svg]:size-[55%]",
+            item.active && "bg-primary hover:bg-primary/80 text-white",
           )}
         >
           {item.icon}

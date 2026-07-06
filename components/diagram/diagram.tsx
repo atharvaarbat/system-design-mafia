@@ -35,7 +35,7 @@ import { EditableContext } from '@/lib/diagram/editable-context'
 import type { SystemDesign } from '@/types/diagram'
 import { flowToSystemDesign } from '@/lib/diagram/flow-to-system-design'
 import { Dock } from '../unlumen-ui/dock'
-import { Copy, Minimize2, MoveDiagonal, RefreshCcw } from 'lucide-react'
+import { Copy, Minimize2, MoveDiagonal, RefreshCcw, Pencil } from 'lucide-react'
 
 const nodeTypes = {
   architectureNode: ArchitectureNodeComponent,
@@ -51,7 +51,11 @@ interface Props {
   editable?: boolean
 }
 
-export default function Diagram({ design, editable = true }: Props) {
+export default function Diagram({ design, editable: editableProp = true }: Props) {
+  const [isEditable, setIsEditable] = useState(editableProp)
+  const isEditableRef = useRef(isEditable)
+  useEffect(() => { isEditableRef.current = isEditable }, [isEditable])
+
   const diagram = design
   const { resolvedTheme, setTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
@@ -65,15 +69,22 @@ export default function Diagram({ design, editable = true }: Props) {
   const [edges, setEdges] = useState<Edge[]>(initialEdges)
 
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) => setNodes((n) => applyNodeChanges(changes, n)),
+    (changes: NodeChange[]) => {
+      if (!isEditableRef.current) return
+      setNodes((n) => applyNodeChanges(changes, n))
+    },
     [],
   )
   const onEdgesChange = useCallback(
-    (changes: EdgeChange[]) => setEdges((e) => applyEdgeChanges(changes, e)),
+    (changes: EdgeChange[]) => {
+      if (!isEditableRef.current) return
+      setEdges((e) => applyEdgeChanges(changes, e))
+    },
     [],
   )
   const onConnect = useCallback(
     (params: Connection) => {
+      if (!isEditableRef.current) return
       if (params.source === params.target) return
       setEdges((e) => addEdge(params, e))
     },
@@ -82,6 +93,7 @@ export default function Diagram({ design, editable = true }: Props) {
 
   const onReconnect: OnReconnect = useCallback(
     (oldEdge, newConnection) => {
+      if (!isEditableRef.current) return
       if (newConnection.source === newConnection.target) return
       setEdges((els) => reconnectEdge(oldEdge, newConnection, els))
     },
@@ -123,7 +135,7 @@ export default function Diagram({ design, editable = true }: Props) {
   )
 
   const translateExtent = useMemo((): [[number, number], [number, number]] | undefined => {
-    if (editable) return undefined
+    if (isEditable) return undefined
 
     const PADDING = 300
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -154,7 +166,7 @@ export default function Diagram({ design, editable = true }: Props) {
     if (!isFinite(minX)) return undefined
 
     return [[minX - PADDING, minY - PADDING], [maxX + PADDING, maxY + PADDING]]
-  }, [nodes, editable])
+  }, [nodes, isEditable])
 
   // Groups the given architecture-node ids into a new groupNode, preserving
   // absolute screen position. Nodes must share a common parent (or have none).
@@ -302,6 +314,7 @@ export default function Diagram({ design, editable = true }: Props) {
   const closeSelectionMenu = useCallback(() => setSelectionMenu(null), [])
 
   const onSelectionContextMenu = useCallback((event: React.MouseEvent, selNodes: Node[]) => {
+    if (!isEditableRef.current) return
     const archIds = selNodes.filter((n) => n.type === 'architectureNode').map((n) => n.id)
     if (archIds.length < 2) return
     event.preventDefault()
@@ -325,7 +338,7 @@ export default function Diagram({ design, editable = true }: Props) {
   }, [nodes])
 
   useEffect(() => {
-    if (!editable) return
+    if (!isEditable) return
     const handler = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'g') return
       const archIds = nodesRef.current
@@ -337,7 +350,7 @@ export default function Diagram({ design, editable = true }: Props) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [groupNodes, editable])
+  }, [groupNodes, isEditable])
   const containerRef = useRef<HTMLDivElement>(null)
   function DiagramDock() {
     const { fitView } = useReactFlow()
@@ -368,10 +381,15 @@ export default function Diagram({ design, editable = true }: Props) {
       setTimeout(() => setUrlCopied(false), 2000)
     }, [])
 
+    const handleToggleEditable = useCallback(() => {
+      setIsEditable((prev) => !prev)
+    }, [])
+
     const items = [
       { icon: <RefreshCcw />, label: "Reset", onClick: handleReset },
       { icon: isFullscreen ? <Minimize2 /> : <MoveDiagonal />, label: isFullscreen ? "Exit full screen" : "Full screen", onClick: handleFullscreen },
       { icon: <Copy />, label: urlCopied ? "Copied!" : "Copy", onClick: handleCopyUrl },
+      { icon: <Pencil />, label: isEditable ? "Editing" : "Read only", onClick: handleToggleEditable, active: isEditable },
     ]
 
     return (
@@ -393,26 +411,26 @@ export default function Diagram({ design, editable = true }: Props) {
     <ReactFlowProvider>
         <div ref={containerRef} style={{ width: '100%', height: '100vh' }} className="mx-auto bg-background relative overflow-hidden">
     
-          <EditableContext.Provider value={editable}>
+          <EditableContext.Provider value={isEditable}>
             <SelectionActionsContext.Provider value={selectionActions}>
               <EdgeHoverContext.Provider value={{ hoveredEdgeIds }}>
                 <ReactFlow
                   nodes={nodes}
                   edges={edges}
-                  onNodesChange={editable ? onNodesChange : undefined}
-                  onEdgesChange={editable ? onEdgesChange : undefined}
-                  onConnect={editable ? onConnect : undefined}
-                  onReconnect={editable ? onReconnect : undefined}
-                  edgesReconnectable={editable}
-                  nodesDraggable={editable}
-                  nodesConnectable={editable}
-                  elementsSelectable={editable}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onReconnect={onReconnect}
+                  edgesReconnectable={isEditable}
+                  nodesDraggable={isEditable}
+                  nodesConnectable={isEditable}
+                  elementsSelectable={isEditable}
                   colorMode={isDark ? 'dark' : 'light'}
-                  nodesFocusable={editable}
-                  edgesFocusable={editable}
+                  nodesFocusable={isEditable}
+                  edgesFocusable={isEditable}
                   onEdgeMouseEnter={onEdgeMouseEnter}
                   onEdgeMouseLeave={onEdgeMouseLeave}
-                  onSelectionContextMenu={editable ? onSelectionContextMenu : undefined}
+                  onSelectionContextMenu={onSelectionContextMenu}
                   nodeTypes={nodeTypes}
                   edgeTypes={edgeTypes}
                   defaultEdgeOptions={defaultEdgeOptions}
@@ -432,11 +450,11 @@ export default function Diagram({ design, editable = true }: Props) {
                     gap={24}
                     size={2}
                   />
-                  {editable && (
+                  {isEditable && (
                     <Controls className='bg-background' position="bottom-left">
-                      <ControlButton onClick={handleCopyJson} title="Copy JSON">
+                      {/* <ControlButton onClick={handleCopyJson} title="Copy JSON">
                         <span className="text-xs font-mono">{copied ? '✓' : '</>'}</span>
-                      </ControlButton>
+                      </ControlButton> */}
                     </Controls>
                   )}
                 </ReactFlow>

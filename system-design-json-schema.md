@@ -11,6 +11,7 @@ This document defines the JSON schema used to describe system architecture diagr
   "version": "1.0",          // required, schema version
   "title": "My Architecture", // required, diagram title
   "description": "...",      // optional, subtitle
+  "summary": "...",          // optional, rich-text markdown deep-dive rendered below the diagram as "Architecture Breakdown"
   "theme": "light",          // optional: "light" | "dark"
   "nodes": [ /* ... */ ],    // required, array of SystemDesignNode
   "edges": [ /* ... */ ],    // required, array of SystemDesignEdge
@@ -30,6 +31,7 @@ This document defines the JSON schema used to describe system architecture diagr
   "y": 48,                  // required, absolute Y position in the canvas
   "name": "User Service",   // optional, display label (falls back to kind label)
   "description": "Auth & Profiles", // optional, subtitle shown below name
+  "details": "### Responsibilities\n\n- Auth\n- Profiles", // optional, markdown body shown in the expanded card
   "status": "active",       // optional: "active" | "warning" | "error" | "inactive"
   "group": "aws-cloud"      // optional, ID of the parent SystemDesignGroup
 }
@@ -321,6 +323,9 @@ This enables the "Copy JSON" button to export accurate absolute positions after 
 - The node is a flex column: icon + label + optional description
 - 8 handles are present but only visible on hover (or when an edge is connected)
 - Status colors: green (active), amber (warning), red (error), gray (inactive)
+- Clicking a node opens an expanded card (`ExpandableNodeCard`) with Category, Description, Details, Connections, Status, and ID sections
+- `details` is rendered with `RichText` (`components/ui/rich-text.tsx`), a lightweight markdown subset: `### `/`#### ` headings, `- ` list items, blank-line-separated paragraphs, and inline `**bold**`, `*italic*`, `__underline__`, `` `code` ``, `[text](url)` links. Full CommonMark (tables, numbered lists, nested lists, images) is not supported.
+- Blocks are split on blank lines (`\n\n`) only — a heading or list must be followed by a blank line before the next block, or it gets swallowed into the same block (e.g. a `### Heading` immediately followed by `- item` with no blank line renders as one heading containing the raw `- item` text, not a separate list).
 
 ### Group Rendering (`GroupNode.tsx`)
 - Rendered as a rounded rectangle with dashed/solid border
@@ -370,3 +375,4 @@ This enables the "Copy JSON" button to export accurate absolute positions after 
 8. **Left-to-right layout** is the standard convention for system design diagrams.
 9. **Keep descriptions short** — they render in ~10px font and have ~96px max-width.
 10. **Edge `id`s must be unique** across all edges. Use a prefix like `"e-"` or `"edge-"`.
+11. **Include a `summary` field** with a rich-text markdown explanation of the architecture — trade-offs, data flow, scaling decisions, and rationale. This is rendered as an "Architecture Breakdown" section below the diagram and follows the same markdown rules as `details` (§9: blank-line-separated blocks, `###`/`####` headings, `- ` lists, inline formatting, no tables/nested lists).
