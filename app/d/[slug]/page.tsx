@@ -60,8 +60,8 @@ export default async function DiagramPage({
       name: 'Atharva Arbat',
       url: 'https://x.com/arbat_atharva',
     },
-    url: `https://systemdesignhub.com/d/${slug}`,
-    image: 'https://systemdesignhub.com/logo.png',
+    url: `https://sdmafia.hdtl.in/d/${slug}`,
+    image: 'https://sdmafia.hdtl.in/logo.png',
   };
 
   return (

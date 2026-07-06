@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://systemdesignhub.com'),
+  metadataBase: new URL('https://sdmafia.hdtl.in'),
   title: {
     default: 'System Design Hub — Architecture Diagrams & Visual Guides',
     template: '%s — System Design Hub',
@@ -64,8 +64,8 @@ const organizationSchema = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'System Design Hub',
-  url: 'https://systemdesignhub.com',
-  logo: 'https://systemdesignhub.com/logo.png',
+  url: 'https://sdmafia.hdtl.in',
+  logo: 'https://sdmafia.hdtl.in/logo.png',
   description: 'Free, open-source system design guides with interactive architecture diagrams.',
   sameAs: [
     'https://github.com/atharvaarbat',
@@ -77,13 +77,13 @@ const websiteSchema = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
   name: 'System Design Hub',
-  url: 'https://systemdesignhub.com',
+  url: 'https://sdmafia.hdtl.in',
   description: 'Free, open-source system design guides with interactive architecture diagrams.',
   potentialAction: {
     '@type': 'SearchAction',
     target: {
       '@type': 'EntryPoint',
-      urlTemplate: 'https://systemdesignhub.com/patterns?search={search_term_string}',
+      urlTemplate: 'https://sdmafia.hdtl.in/patterns?search={search_term_string}',
     },
     'query-input': 'required name=search_term_string',
   },

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://systemdesignhub.com/sitemap.xml
+Sitemap: https://sdmafia.hdtl.in/sitemap.xml
