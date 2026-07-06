@@ -16,9 +16,25 @@ export async function generateMetadata({
   const { slug } = await params;
   const meta = await getDiagramMeta(slug);
   if (!meta) return {};
+  const title = `${meta.title} — System Design Hub`;
   return {
-    title: `${meta.title} — System Design`,
+    title: meta.title,
     description: meta.description,
+    keywords: meta.tags,
+    openGraph: {
+      title,
+      description: meta.description,
+      url: `/d/${slug}`,
+      images: ['/logo.png'],
+    },
+    twitter: {
+      title,
+      description: meta.description,
+      images: ['/logo.png'],
+    },
+    alternates: {
+      canonical: `/d/${slug}`,
+    },
   };
 }
 
@@ -34,5 +50,27 @@ export default async function DiagramPage({
     notFound();
   }
 
-  return <DiagramPageClient slug={slug} design={design} editable={false} />;
+  const articleSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: design.title,
+    description: design.description || `System design architecture diagram and guide for ${design.title}`,
+    author: {
+      '@type': 'Person',
+      name: 'Atharva Arbat',
+      url: 'https://x.com/arbat_atharva',
+    },
+    url: `https://systemdesignhub.com/d/${slug}`,
+    image: 'https://systemdesignhub.com/logo.png',
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }}
+      />
+      <DiagramPageClient slug={slug} design={design} editable={false} />
+    </>
+  );
 }

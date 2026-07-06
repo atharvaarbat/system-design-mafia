@@ -97,38 +97,40 @@ export default function DiagramCards() {
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {diagrams.diagrams.map((diagram) => (
-              <Link key={diagram.slug} href={`/d/${diagram.slug}`} className="block">
-                <motion.div
-                  variants={cardVariants}
-                  whileHover="hover"
-                  className="group relative flex flex-col border border-foreground/10 bg-foreground/[0.02] transition-colors duration-500 ease-out hover:border-primary/30 hover:bg-primary/[0.03]"
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden diagram-card-visual">
-                    <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
-                    <DiagramVisual slug={diagram.slug} />
-                  </div>
-                  <div className="flex flex-1 flex-col gap-2 p-5">
-                    <h3 className="text-foreground text-sm font-bold tracking-wide uppercase">
-                      {diagram.title}
-                    </h3>
-                    <p className="text-muted-foreground text-xs leading-relaxed">
-                      {diagram.description}
-                    </p>
-                  </div>
-
+              <article key={diagram.slug}>
+                <Link href={`/d/${diagram.slug}`} className="block" aria-label={`View ${diagram.title} architecture diagram`}>
                   <motion.div
-                    className="absolute right-0 top-0 m-3 h-2 w-2 rounded-full border border-foreground/10 bg-foreground/5"
-                    variants={{
-                      hover: {
-                        scale: 1.6,
-                        borderColor: 'var(--color-primary)',
-                        backgroundColor: 'var(--color-primary)',
-                        transition: { duration: 0.4, ease: easePremium },
-                      },
-                    }}
-                  />
-                </motion.div>
-              </Link>
+                    variants={cardVariants}
+                    whileHover="hover"
+                    className="group relative flex flex-col border border-foreground/10 bg-foreground/[0.02] transition-colors duration-500 ease-out hover:border-primary/30 hover:bg-primary/[0.03]"
+                  >
+                    <figure className="relative aspect-[4/3] overflow-hidden diagram-card-visual">
+                      <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
+                      <DiagramVisual slug={diagram.slug} />
+                    </figure>
+                    <div className="flex flex-1 flex-col gap-2 p-5">
+                      <h3 className="text-foreground text-sm font-bold tracking-wide uppercase">
+                        {diagram.title}
+                      </h3>
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        {diagram.description}
+                      </p>
+                    </div>
+
+                    <motion.div
+                      className="absolute right-0 top-0 m-3 h-2 w-2 rounded-full border border-foreground/10 bg-foreground/5"
+                      variants={{
+                        hover: {
+                          scale: 1.6,
+                          borderColor: 'var(--color-primary)',
+                          backgroundColor: 'var(--color-primary)',
+                          transition: { duration: 0.4, ease: easePremium },
+                        },
+                      }}
+                    />
+                  </motion.div>
+                </Link>
+              </article>
             ))}
           </div>
         </motion.div>

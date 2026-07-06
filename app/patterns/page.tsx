@@ -9,6 +9,7 @@ import Heading from '@/components/landing/heading';
 import SubHeading from '@/components/landing/subheading';
 import DiagramVisual from '@/components/landing/diagram-visuals';
 import diagrams from '@/data/diagrams/index.json';
+import Footer from '@/components/landing/footer';
 
 const easePremium = [0.4, 0, 0.2, 1] as const;
 
@@ -52,8 +53,9 @@ export default function PatternsPage() {
   }, [search, activeDifficulty]);
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-background font-mono">
+    <>
       <Navbar />
+      <main id="main-content" className="min-h-screen overflow-x-hidden bg-background font-mono">
 
       {/* Background Dot Grid */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px)] bg-size-[24px_24px]" />
@@ -225,71 +227,73 @@ export default function PatternsPage() {
             {/* Cards Grid */}
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {filtered.map((diagram) => (
-                <Link key={diagram.slug} href={`/d/${diagram.slug}`} className="block">
-                  <motion.div
-                    variants={cardVariants}
-                    whileHover="hover"
-                    className="group relative flex flex-col border border-foreground/10 bg-foreground/[0.02] transition-colors duration-500 ease-out hover:border-primary/30 hover:bg-primary/[0.03]"
-                  >
-                    {/* Visual */}
-                    <div className="relative aspect-[4/3] overflow-hidden diagram-card-visual">
-                      <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
-                      <DiagramVisual slug={diagram.slug} />
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex flex-1 flex-col gap-3 p-5">
-                      {/* Title + Difficulty */}
-                      <div className="flex items-start justify-between gap-3">
-                        <h3 className="text-foreground text-sm font-bold tracking-wide uppercase leading-snug">
-                          {diagram.title}
-                        </h3>
-                        <span
-                          className={`shrink-0 border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
-                            difficultyColors[diagram.difficulty] ?? 'border-foreground/20 text-foreground/50'
-                          }`}
-                        >
-                          {diagram.difficulty}
-                        </span>
-                      </div>
-
-                      <p className="text-muted-foreground text-xs leading-relaxed">
-                        {diagram.description}
-                      </p>
-
-                      {/* Tags */}
-                      <div className="mt-auto flex flex-wrap gap-1.5">
-                        {diagram.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="border border-foreground/5 bg-foreground/[0.03] px-2 py-0.5 text-[10px] font-bold tracking-wider text-foreground/50 uppercase"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-
-                      {/* Stats */}
-                      <div className="mt-2 flex items-center gap-4 text-[10px] tracking-wider text-foreground/35 uppercase">
-                        <span>{diagram.nodeCount} nodes</span>
-                        <span>{diagram.edgeCount} edges</span>
-                      </div>
-                    </div>
-
-                    {/* Hover Dot */}
+                <article key={diagram.slug}>
+                  <Link href={`/d/${diagram.slug}`} className="block" aria-label={`View ${diagram.title} architecture diagram`}>
                     <motion.div
-                      className="absolute right-0 top-0 m-3 h-2 w-2 rounded-full border border-foreground/10 bg-foreground/5"
-                      variants={{
-                        hover: {
-                          scale: 1.6,
-                          borderColor: 'var(--color-primary)',
-                          backgroundColor: 'var(--color-primary)',
-                          transition: { duration: 0.4, ease: easePremium },
-                        },
-                      }}
-                    />
-                  </motion.div>
-                </Link>
+                      variants={cardVariants}
+                      whileHover="hover"
+                      className="group relative flex flex-col border border-foreground/10 bg-foreground/[0.02] transition-colors duration-500 ease-out hover:border-primary/30 hover:bg-primary/[0.03]"
+                    >
+                      {/* Visual */}
+                      <figure className="relative aspect-[4/3] overflow-hidden diagram-card-visual">
+                        <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
+                        <DiagramVisual slug={diagram.slug} />
+                      </figure>
+
+                      {/* Content */}
+                      <div className="flex flex-1 flex-col gap-3 p-5">
+                        {/* Title + Difficulty */}
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="text-foreground text-sm font-bold tracking-wide uppercase leading-snug">
+                            {diagram.title}
+                          </h3>
+                          <span
+                            className={`shrink-0 border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                              difficultyColors[diagram.difficulty] ?? 'border-foreground/20 text-foreground/50'
+                            }`}
+                          >
+                            {diagram.difficulty}
+                          </span>
+                        </div>
+
+                        <p className="text-muted-foreground text-xs leading-relaxed">
+                          {diagram.description}
+                        </p>
+
+                        {/* Tags */}
+                        <div className="mt-auto flex flex-wrap gap-1.5">
+                          {diagram.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="border border-foreground/5 bg-foreground/[0.03] px-2 py-0.5 text-[10px] font-bold tracking-wider text-foreground/50 uppercase"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Stats */}
+                        <div className="mt-2 flex items-center gap-4 text-[10px] tracking-wider text-foreground/35 uppercase">
+                          <span>{diagram.nodeCount} nodes</span>
+                          <span>{diagram.edgeCount} edges</span>
+                        </div>
+                      </div>
+
+                      {/* Hover Dot */}
+                      <motion.div
+                        className="absolute right-0 top-0 m-3 h-2 w-2 rounded-full border border-foreground/10 bg-foreground/5"
+                        variants={{
+                          hover: {
+                            scale: 1.6,
+                            borderColor: 'var(--color-primary)',
+                            backgroundColor: 'var(--color-primary)',
+                            transition: { duration: 0.4, ease: easePremium },
+                          },
+                        }}
+                      />
+                    </motion.div>
+                  </Link>
+                </article>
               ))}
             </div>
 
@@ -317,7 +321,9 @@ export default function PatternsPage() {
           </motion.div>
         </Container>
       </section>
-    </main>
+      </main>
+      <Footer />
+    </>
   );
 }
 
@@ -325,11 +331,11 @@ function Navbar() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 py-4 backdrop-blur-md">
       <Container className="flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link href="/" className="flex items-center gap-3 group" aria-label="System Design Hub home">
           <div className="h-5 flex items-center invert dark:invert-0 justify-center relative transition-transform duration-300 group-hover:scale-105">
-            <img src="/logo.svg" alt="Logo" className="w-full h-full" />
+            <img src="/logo.svg" alt="System Design Hub" width="20" height="20" className="w-full h-full" />
           </div>
-          <img src="/mafia.svg" alt="Logo" className="h-5 invert dark:invert-0" />
+          <img src="/mafia.svg" alt="" width="20" height="20" className="h-5 invert dark:invert-0" />
         </Link>
 
         <div className="flex items-center gap-4">

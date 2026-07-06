@@ -172,18 +172,18 @@ export default function Hero() {
             className="flex flex-col gap-4 sm:flex-row"
           >
             <Link
-              href="/learn"
+              href="/patterns"
               className="group text-background bg-primary hover:bg-primary/90 inline-flex items-center justify-center gap-2 px-8 py-3 text-sm font-bold transition-all active:scale-[0.97]"
             >
               Start Learning
               <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </Link>
-            <a
+            {/* <a
               href="/patterns"
               className="text-foreground inline-flex items-center justify-center border border-foreground/10 px-8 py-3 text-sm font-bold transition-all hover:bg-foreground/5 active:scale-[0.97]"
             >
               Explore Diagrams
-            </a>
+            </a> */}
           </motion.div>
 
           {/* Social proof strip */}
