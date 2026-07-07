@@ -30,9 +30,9 @@ export default function Navbar() {
     >
       <div className="container mx-auto px-4 md:px-8 lg:px-12 xl:px-16 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 group" aria-label="System Design Hub home">
+        <Link href="/" className="flex items-center gap-3 group" aria-label="System Design Mafia home">
           <div className="h-5 flex items-center invert dark:invert-0 justify-center relative transition-transform duration-300 group-hover:scale-105">
-            <img src="/logo.svg" alt="System Design Hub" width="20" height="20" className="w-full h-full" />
+            <img src="/logo.svg" alt="System Design Mafia" width="20" height="20" className="w-full h-full" />
           </div>
           <img src="/mafia.svg" alt=""  className="h-5 w-auto invert dark:invert-0" />
         </Link>

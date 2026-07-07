@@ -22,8 +22,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL('https://sdmafia.hdtl.in'),
   title: {
-    default: 'System Design Hub — Architecture Diagrams & Visual Guides',
-    template: '%s — System Design Hub',
+    default: 'System Design Mafia — Architecture Diagrams & Visual Guides',
+    template: '%s — System Design Mafia',
   },
   description: 'Free, open-source system design guides with interactive architecture diagrams. Explore microservices, event-driven, CQRS, hexagonal, and layered architecture patterns.',
   keywords: ['system design', 'architecture diagrams', 'microservices', 'distributed systems', 'CQRS', 'event-driven architecture', 'system design interview', 'software architecture', 'scalability'],
@@ -33,21 +33,21 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: '/',
-    siteName: 'System Design Hub',
-    title: 'System Design Hub — Architecture Diagrams & Visual Guides',
+    siteName: 'System Design Mafia',
+    title: 'System Design Mafia — Architecture Diagrams & Visual Guides',
     description: 'Free, open-source system design guides with interactive diagrams. Explore microservices, event-driven, CQRS, hexagonal, and layered architectures.',
     images: [
       {
         url: '/logo.png',
         width: 512,
         height: 512,
-        alt: 'System Design Hub',
+        alt: 'System Design Mafia',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'System Design Hub — Architecture Diagrams & Visual Guides',
+    title: 'System Design Mafia — Architecture Diagrams & Visual Guides',
     description: 'Free, open-source system design guides with interactive diagrams. Explore microservices, event-driven, CQRS, hexagonal, and layered architectures.',
     images: ['/logo.png'],
   },
@@ -63,7 +63,7 @@ export const metadata: Metadata = {
 const organizationSchema = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
-  name: 'System Design Hub',
+  name: 'System Design Mafia',
   url: 'https://sdmafia.hdtl.in',
   logo: 'https://sdmafia.hdtl.in/logo.png',
   description: 'Free, open-source system design guides with interactive architecture diagrams.',
@@ -76,7 +76,7 @@ const organizationSchema = {
 const websiteSchema = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
-  name: 'System Design Hub',
+  name: 'System Design Mafia',
   url: 'https://sdmafia.hdtl.in',
   description: 'Free, open-source system design guides with interactive architecture diagrams.',
   potentialAction: {

@@ -10,6 +10,7 @@ import SubHeading from '@/components/landing/subheading';
 import DiagramVisual from '@/components/landing/diagram-visuals';
 import diagrams from '@/data/diagrams/index.json';
 import Footer from '@/components/landing/footer';
+import Navbar from '@/components/landing/navbar';
 
 const easePremium = [0.4, 0, 0.2, 1] as const;
 
@@ -327,27 +328,3 @@ export default function PatternsPage() {
   );
 }
 
-function Navbar() {
-  return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 py-4 backdrop-blur-md">
-      <Container className="flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3 group" aria-label="System Design Hub home">
-          <div className="h-5 flex items-center invert dark:invert-0 justify-center relative transition-transform duration-300 group-hover:scale-105">
-            <img src="/logo.svg" alt="System Design Hub" width="20" height="20" className="w-full h-full" />
-          </div>
-          <img src="/mafia.svg" alt="" width="20" height="20" className="h-5 invert dark:invert-0" />
-        </Link>
-
-        <div className="flex items-center gap-4">
-          <Link
-            href="/"
-            className="text-foreground/50 hover:text-foreground flex items-center gap-1.5 text-xs font-bold tracking-widest uppercase transition-colors"
-          >
-            <ArrowUpRight className="h-3 w-3" />
-            Home
-          </Link>
-        </div>
-      </Container>
-    </header>
-  );
-}

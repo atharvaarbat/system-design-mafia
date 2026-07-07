@@ -16,7 +16,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const meta = await getDiagramMeta(slug);
   if (!meta) return {};
-  const title = `${meta.title} — System Design Hub`;
+  const title = `${meta.title} — System Design Mafia`;
   return {
     title: meta.title,
     description: meta.description,
