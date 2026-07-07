@@ -4,6 +4,7 @@ import { useRef } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import Container from './container';
+import HeroVisual from './hero-visual';
 import { gsap, useGSAP, ScrollSmoother, SplitText, SCRAMBLE_CHARS } from '@/lib/gsap';
 
 const TOPICS = [
@@ -15,45 +16,7 @@ const TOPICS = [
   'load balancing',
 ];
 
-/**
- * The exploded system diagram floating behind/beside the headline.
- * `speed` feeds ScrollSmoother's data-speed (scroll depth) and scales the
- * mouse-parallax strength; `depth` sets the resting blur/opacity layer.
- */
-const CHIPS: {
-  label: string;
-  x: string;
-  y: string;
-  speed: number;
-  depth: 'far' | 'mid' | 'near';
-}[] = [
-  { label: 'CLIENT', x: '54%', y: '16%', speed: 0.82, depth: 'far' },
-  { label: 'CDN', x: '88%', y: '12%', speed: 1.24, depth: 'near' },
-  { label: 'API GATEWAY', x: '65%', y: '30%', speed: 1.06, depth: 'mid' },
-  { label: 'LOAD BALANCER', x: '85%', y: '42%', speed: 0.9, depth: 'mid' },
-  { label: 'AUTH SVC', x: '58%', y: '54%', speed: 1.16, depth: 'near' },
-  { label: 'CACHE', x: '74%', y: '62%', speed: 0.84, depth: 'far' },
-  { label: 'MESSAGE QUEUE', x: '88%', y: '72%', speed: 1.1, depth: 'mid' },
-  { label: 'DATABASE', x: '66%', y: '82%', speed: 0.94, depth: 'far' },
-];
-
-const DEPTH_STYLE = {
-  far: 'opacity-50 blur-[1.5px]',
-  mid: 'opacity-75 blur-[0.5px]',
-  near: 'opacity-100',
-} as const;
-
-/** Wire runs between chip anchor points (viewBox units == chip % coords). */
-const WIRES = [
-  'M54,16 L65,30',
-  'M88,12 L65,30',
-  'M65,30 L85,42',
-  'M85,42 L58,54',
-  'M85,42 L88,72',
-  'M58,54 L74,62',
-  'M88,72 L66,82',
-  'M74,62 L66,82',
-];
+const HEX_POINTS = '190,100 145,177.9 55,177.9 10,100 55,22.1 145,22.1';
 
 export default function Hero() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -108,23 +71,7 @@ export default function Hero() {
             },
             0.95,
           )
-          .from(
-            '.hero-chip',
-            {
-              autoAlpha: 0,
-              y: 26,
-              scale: 0.85,
-              duration: 0.7,
-              ease: 'back.out(1.7)',
-              stagger: 0.07,
-            },
-            0.8,
-          )
-          .from(
-            '.hero-wire',
-            { drawSVG: '0%', duration: 1.1, ease: 'power2.inOut', stagger: 0.07 },
-            1.0,
-          )
+          .from('.hero-stage-in', { x: 70, autoAlpha: 0, duration: 1.3 }, 0.8)
           .from('.hero-scroll-hint', { autoAlpha: 0, duration: 0.8 }, 1.6);
 
         // -- Terminal line: scramble through topics forever ----------------
@@ -136,10 +83,17 @@ export default function Hero() {
           }, '+=1.7');
         });
 
-        // -- Ambient: concentric circles slowly rotating -------------------
+        // -- Ambient rotation: survey rings + hexagon ----------------------
         gsap.to('.hero-rings', {
           rotation: 360,
           duration: 140,
+          repeat: -1,
+          ease: 'none',
+          transformOrigin: '50% 50%',
+        });
+        gsap.to('.hero-hex', {
+          rotation: -360,
+          duration: 90,
           repeat: -1,
           ease: 'none',
           transformOrigin: '50% 50%',
@@ -180,30 +134,6 @@ export default function Hero() {
 
         return () => splits.forEach((s) => s.revert());
       });
-
-      // -- Mouse depth parallax (fine pointers only) ------------------------
-      mm.add('(prefers-reduced-motion: no-preference) and (pointer: fine)', () => {
-        const chips = gsap.utils.toArray<HTMLElement>('.hero-chip-inner');
-        const movers = chips.map((chip, i) => {
-          const strength = (CHIPS[i].speed - 1) * 90;
-          return {
-            x: gsap.quickTo(chip, 'x', { duration: 0.8, ease: 'power3.out' }),
-            y: gsap.quickTo(chip, 'y', { duration: 0.8, ease: 'power3.out' }),
-            strength,
-          };
-        });
-
-        const onMove = (e: MouseEvent) => {
-          const nx = e.clientX / window.innerWidth - 0.5;
-          const ny = e.clientY / window.innerHeight - 0.5;
-          movers.forEach((m) => {
-            m.x(nx * m.strength * 2);
-            m.y(ny * m.strength);
-          });
-        };
-        window.addEventListener('mousemove', onMove);
-        return () => window.removeEventListener('mousemove', onMove);
-      });
     },
     { scope: sectionRef },
   );
@@ -232,68 +162,65 @@ export default function Hero() {
         </div>
       </div>
 
-      {/* Ambient primary glow */}
+      {/* Ambient primary glow behind the monitor panel */}
       <div
         data-speed="0.9"
-        className="pointer-events-none absolute top-1/3 right-[10%] h-[420px] w-[560px] rounded-full"
+        className="pointer-events-none absolute top-1/3 right-[5%] h-[420px] w-[560px] rounded-full"
         style={{
           background:
             'radial-gradient(ellipse at center, color-mix(in oklab, var(--primary) 7%, transparent) 0%, color-mix(in oklab, var(--primary) 2%, transparent) 45%, transparent 70%)',
         }}
       />
 
-      {/* The exploded system diagram — desktop only */}
-      <div className="hero-stage pointer-events-none absolute inset-0 hidden lg:block" aria-hidden>
-        <svg
-          className="absolute inset-0 h-full w-full"
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          data-speed="1.02"
-        >
-          {WIRES.map((d) => (
-            <path
-              key={d}
-              d={d}
-              className="hero-wire"
-              fill="none"
-              stroke="color-mix(in oklab, var(--foreground) 14%, transparent)"
-              strokeWidth="1"
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
+      {/* Dashed hexagon orbiting behind the panel — its own depth layer */}
+      <div
+        data-speed="0.92"
+        className="pointer-events-none absolute top-1/2 right-[1vw] hidden -translate-y-1/2 lg:block"
+        aria-hidden
+      >
+        <svg viewBox="0 0 200 200" className="hero-hex h-[46vw] max-h-[680px] w-[46vw] max-w-[680px]">
+          <polygon
+            points={HEX_POINTS}
+            fill="none"
+            stroke="var(--color-foreground)"
+            strokeOpacity="0.08"
+            strokeWidth="0.5"
+            strokeDasharray="3 6"
+          />
+          <polygon
+            points={HEX_POINTS}
+            transform="translate(100 100) scale(0.72) translate(-100 -100)"
+            fill="none"
+            stroke="var(--color-primary)"
+            strokeOpacity="0.1"
+            strokeWidth="0.5"
+          />
         </svg>
+      </div>
 
-        {CHIPS.map((chip) => (
-          <div
-            key={chip.label}
-            data-speed={chip.speed}
-            className="hero-chip absolute -translate-x-1/2 -translate-y-1/2"
-            style={{ left: chip.x, top: chip.y }}
-          >
-            <div
-              className={`hero-chip-inner flex items-center gap-2 border border-foreground/15 bg-background/70 px-3 py-1.5 backdrop-blur-sm ${DEPTH_STYLE[chip.depth]}`}
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_6px_var(--primary)]" />
-              <span className="text-[10px] font-bold tracking-[0.2em] text-foreground/70">
-                {chip.label}
-              </span>
-            </div>
-          </div>
-        ))}
+      {/* Live system monitor — desktop only */}
+      <div
+        className="hero-stage pointer-events-none absolute top-1/2 right-[3vw] z-0 hidden w-[38vw] max-w-[540px] -translate-y-1/2 lg:block xl:right-[5vw]"
+        data-speed="1.06"
+        aria-hidden
+      >
+        <div className="hero-stage-in">
+          <HeroVisual />
+        </div>
       </div>
 
       <Container className="relative z-10">
-        <div className="hero-inner flex max-w-5xl flex-col items-start">
+        <div className="hero-inner flex max-w-5xl flex-col items-start lg:max-w-[54vw]">
           {/* Badge — decodes on load */}
           <span
             ref={badgeRef}
             className="mb-8 inline-block border border-foreground/10 bg-foreground/[0.03] px-4 py-1.5 text-xs font-bold tracking-[0.25em] text-primary uppercase backdrop-blur-sm"
           >
-            {' '}
+            {' '}
           </span>
 
           {/* Headline */}
-          <h1 className="mb-8 text-[clamp(2.9rem,9vw,8.5rem)] leading-[0.94] tracking-tight uppercase">
+          <h1 className="mb-8 text-[clamp(2.9rem,7vw,7.5rem)] leading-[0.94] tracking-tight uppercase">
             <span className="hero-line block font-heading font-bold text-foreground">
               How big
             </span>

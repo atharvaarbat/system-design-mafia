@@ -7,6 +7,7 @@ import { ScrollSmoother } from 'gsap/ScrollSmoother';
 import { SplitText } from 'gsap/SplitText';
 import { ScrambleTextPlugin } from 'gsap/ScrambleTextPlugin';
 import { DrawSVGPlugin } from 'gsap/DrawSVGPlugin';
+import { MotionPathPlugin } from 'gsap/MotionPathPlugin';
 
 gsap.registerPlugin(
   useGSAP,
@@ -15,6 +16,7 @@ gsap.registerPlugin(
   SplitText,
   ScrambleTextPlugin,
   DrawSVGPlugin,
+  MotionPathPlugin,
 );
 
 /** Charset used by every scramble effect so the whole page decodes the same way. */
