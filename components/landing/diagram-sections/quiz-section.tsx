@@ -6,10 +6,11 @@ import { Plus, Minus } from 'lucide-react';
 import type { QuizItem } from '@/types/diagram';
 import RichText from '@/components/ui/rich-text';
 import { Section, SectionHeader, fadeUp } from './section-shell';
+import { WigglingCards } from './wiggling-cards';
 
 export default function QuizSection({ quiz }: { quiz: QuizItem[] }) {
   const [open, setOpen] = useState<Set<number>>(new Set());
-
+  const cardItems = quiz.map((item, i) => ({ id: i, question: item.question, answer: item.answer }));
   const toggle = (i: number) => {
     setOpen((prev) => {
       const next = new Set(prev);
@@ -77,6 +78,8 @@ export default function QuizSection({ quiz }: { quiz: QuizItem[] }) {
             </div>
           );
         })}
+
+        {/* <WigglingCards cards={cardItems} /> */}
       </motion.div>
     </Section>
   );

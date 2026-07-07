@@ -13,45 +13,15 @@ import {
   CreditCard,
   BarChart3,
 } from 'lucide-react';
+import { FloatingPopover } from '@/components/ui/floating-popover';
 
 export interface CardData {
   id: number;
-  icon: React.ElementType;
-  percentage: string;
-  value: string;
-  label: string;
+  question: string;
+  answer: string;
 }
 
-const DEFAULT_CARDS: CardData[] = [
-  {
-    id: 0,
-    icon: CreditCard,
-    percentage: '2.15%',
-    value: '$2,374',
-    label: 'Weekly Expense',
-  },
-  {
-    id: 1,
-    icon: ShoppingCart,
-    percentage: '1.20%',
-    value: '$1,589',
-    label: 'Weekly Orders',
-  },
-  {
-    id: 2,
-    icon: Users,
-    percentage: '2.33%',
-    value: '$976',
-    label: 'Weekly Users',
-  },
-  {
-    id: 3,
-    icon: BarChart3,
-    percentage: '3.82%',
-    value: '$46,748',
-    label: 'Weekly Sales',
-  },
-];
+
 
 const DRAG_BUFFER = 60;
 const VELOCITY_THRESHOLD = 500;
@@ -91,43 +61,31 @@ const WigglingCard = ({ card, i, x, cardWidth, gap }: any) => {
         filter,
         minWidth: cardWidth,
       }}
-      className="relative flex h-72 flex-col justify-between rounded-[32px] border border-neutral-200 bg-white p-5 sm:h-80 sm:rounded-[40px] sm:p-6 dark:border-neutral-800 dark:bg-neutral-900"
+      className="relative flex  flex-col justify-between rounded-[32px] border border-neutral-200 bg-white p-5 sm:h-auto sm:rounded-[40px] sm:p-6 dark:border-neutral-800 dark:bg-neutral-900"
     >
-      <div className="flex flex-col gap-6 sm:gap-10">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-neutral-100 sm:h-20 sm:w-20 dark:bg-neutral-800">
-          <Icon
-            className="h-10 w-10 text-neutral-900 sm:h-14 sm:w-14 dark:text-neutral-100"
-            strokeWidth={1.5}
-          />
+      <div className="flex flex-col gap-2 sm:gap-3">
+        <div className="flex h-10 w-10 text-xl items-center justify-center rounded-2xl bg-neutral-100 font-doto font-bold dark:bg-neutral-800">
+          {card.id}
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <div className="flex w-fit items-center rounded-2xl bg-neutral-200 px-3 py-0.5 text-base font-medium text-neutral-600 sm:text-lg dark:bg-neutral-800 dark:text-neutral-300">
-            <ArrowUpRight className="mr-1 h-3 w-3" />
-            {card.percentage}
-          </div>
 
-          <h2 className="text-3xl font-bold text-neutral-900 sm:text-[42px] dark:text-neutral-100">
-            {card.value}
+          <h2 className="text-md font-poppins text-neutral-900 dark:text-neutral-100">
+            {card.question}
           </h2>
-
-          <p className="text-lg font-medium text-neutral-700 sm:text-[20px] dark:text-neutral-300">
-            {card.label}
-          </p>
         </div>
       </div>
-
-      <div className="absolute right-6 bottom-7 sm:right-7 sm:bottom-9">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-200 sm:h-12 sm:w-12 dark:bg-neutral-800">
-          <ArrowUpRight className="h-5 w-5 text-neutral-900 sm:h-6 sm:w-6 dark:text-neutral-100" />
-        </div>
-      </div>
+      <FloatingPopover trigger={<p className="p-3 text-center">Show Answer</p>}>
+          <h2 className="text-md bg-primary p-3 font-poppins text-neutral-900 dark:text-neutral-100">
+            {card.answer}
+          </h2>
+      </FloatingPopover>
     </motion.div>
   );
 };
 
 export function WigglingCards({ cards }: { cards?: CardData[] }) {
-  const data = cards ?? DEFAULT_CARDS;
+  const data = cards || [];
   const [index, setIndex] = useState(1);
   const [dimensions, setDimensions] = useState({ cardWidth: 320, gap: 200 });
 
@@ -209,11 +167,10 @@ export function WigglingCards({ cards }: { cards?: CardData[] }) {
           <button
             key={i}
             onClick={() => setIndex(i)}
-            className={`h-3 w-3 rounded-full transition-colors duration-200 ease-out ${
-              i === index
+            className={`h-3 w-3 rounded-full transition-colors duration-200 ease-out ${i === index
                 ? 'bg-neutral-500 dark:bg-neutral-400'
                 : 'bg-neutral-300 dark:bg-neutral-700'
-            }`}
+              }`}
           />
         ))}
       </div>
