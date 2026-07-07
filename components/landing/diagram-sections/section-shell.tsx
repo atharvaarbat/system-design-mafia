@@ -58,7 +58,6 @@ export function SectionHeader({
       <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase px-2">
         <span className="text-primary">{'//'}</span>
         <span>{label}</span>
-        <span className="h-px flex-1 bg-foreground/5" />
         {index && <span className="text-foreground/20">{index}</span>}
       </div>
       <Heading as="h2" variant="medium" className="text-foreground relative px-2">

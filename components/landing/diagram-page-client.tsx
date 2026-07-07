@@ -468,7 +468,7 @@ export default function DiagramPageClient({
           {/* Diagram */}
           <motion.div
             ref={diagramWrapRef}
-            className="relative scroll-mt-24 overflow-hidden border border-foreground/10 bg-foreground/3"
+            className="relative scroll-mt-24 overflow-hidden  bg-foreground/3"
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{

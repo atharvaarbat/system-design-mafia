@@ -190,7 +190,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
                 <div
                   className="absolute inset-0 rounded-lg"
                   style={{
-                    backgroundColor: kindDef.color,
+                    backgroundColor: kindDef.brandLogo ? undefined : kindDef.color,
                     ...(shapeAvailable
                       ? {
                         WebkitMaskImage: `url(${shapePath})`,

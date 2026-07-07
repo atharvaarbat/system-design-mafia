@@ -88,16 +88,16 @@ export const NODE_REGISTRY = {
   'generic-service': { label: 'Service', category: 'compute', icon: Server, color: '#3b82f6' },
 
   // database
-  'postgres': { label: 'PostgreSQL', category: 'database', icon: Database, color: '#152e4200', brandLogo: '/diagram/logo/postgres.svg' },
+  'postgres': { label: 'PostgreSQL', category: 'database', icon: Database, color: '#152e42', brandLogo: '/diagram/logo/postgres.svg' },
   'mysql': { label: 'MySQL', category: 'database', icon: Database, color: '#00758f' },
   'mongodb': { label: 'MongoDB', category: 'database', icon: Database, color: '#47a248' },
-  'dynamodb': { label: 'DynamoDB', category: 'database', icon: Database, color: '#4053d600', brandLogo: '/diagram/logo/dynamodb.svg' },
+  'dynamodb': { label: 'DynamoDB', category: 'database', icon: Database, color: '#4053d6', brandLogo: '/diagram/logo/dynamodb.svg' },
   'cassandra': { label: 'Cassandra', category: 'database', icon: Database, color: '#1287b1' },
   'elasticsearch': { label: 'Elasticsearch', category: 'database', icon: Search, color: '#f5a623' },
   'generic-database': { label: 'Database', category: 'database', icon: Database, color: '#10b981' },
 
   // cache
-  'redis': { label: 'Redis', category: 'cache', icon: Zap, color: '#dc382d00', brandLogo: '/diagram/logo/redis.svg' },
+  'redis': { label: 'Redis', category: 'cache', icon: Zap, color: '#dc382d', brandLogo: '/diagram/logo/redis.svg' },
   'memcached': { label: 'Memcached', category: 'cache', icon: Zap, color: '#4f9ada' },
   'generic-cache': { label: 'Cache', category: 'cache', icon: Zap, color: '#f59e0b' },
 
@@ -109,13 +109,13 @@ export const NODE_REGISTRY = {
   'generic-queue': { label: 'Message Queue', category: 'queue', icon: MessageSquare, color: '#a855f7' },
 
   // storage
-  's3': { label: 'Object Storage', category: 'storage', icon: Archive, color: '#e8734a00', brandLogo: '/diagram/logo/aws-s3.svg' },
+  's3': { label: 'Object Storage', category: 'storage', icon: Archive, color: '#e8734a', brandLogo: '/diagram/logo/aws-s3.svg' },
   'blob-storage': { label: 'Blob Storage', category: 'storage', icon: HardDrive, color: '#0078d4' },
   'generic-storage': { label: 'Storage', category: 'storage', icon: Archive, color: '#06b6d4' },
 
   // external
   'external-api': { label: 'External API', category: 'external', icon: ExternalLink, color: '#94a3b8' },
-  'email-provider': { label: 'Email Provider', category: 'external', icon: Mail, color: '#64748b00', brandLogo: '/diagram/logo/sendgrid.svg' },
+  'email-provider': { label: 'Email Provider', category: 'external', icon: Mail, color: '#64748b', brandLogo: '/diagram/logo/sendgrid.svg' },
   'payment-provider': { label: 'Payment Provider', category: 'external', icon: ExternalLink, color: '#635bff' },
   'generic-external': { label: 'External Service', category: 'external', icon: ExternalLink, color: '#94a3b8' },
 } as const satisfies Record<string, NodeKindDefinition>

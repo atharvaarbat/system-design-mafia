@@ -486,6 +486,7 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                       variant={BackgroundVariant.Dots}
                       color={isDark ? '#666' : '#222'}
                       gap={24}
+                      
                       size={2}
                     />
                     {isEditable && (
