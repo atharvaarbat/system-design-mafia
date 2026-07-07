@@ -101,7 +101,7 @@ export default function RichText({ content, className }: RichTextProps) {
   const blocks = content.split(/\n\n+/);
 
   return (
-    <div className={cn('space-y-5 font-mono text-sm leading-relaxed dark:text-foreground/60 text-foreground', className)}>
+    <div className={cn('space-y-5 font-mono text-sm leading-relaxed dark:text-foreground/60 text-foreground font-poppins', className)}>
       {blocks.map((block, i) => {
         const trimmed = block.trim();
         if (!trimmed) return null;
@@ -110,7 +110,7 @@ export default function RichText({ content, className }: RichTextProps) {
           return (
             <h3
               key={i}
-              className="text-foreground pt-2 text-base font-bold tracking-tight"
+              className="text-foreground pt-2 text-base  tracking-tight font-mono font-bold bg-primary/10 px-2 pb-1 "
             >
               {renderInline(parseInline(trimmed.slice(4)))}
             </h3>

@@ -6,6 +6,7 @@ import { Handle, Position, useEdges, useReactFlow, type NodeProps, type Node } f
 import type { SystemDesignNode } from '@/types/diagram'
 import { CATEGORY_SHAPE_PATH, resolveNodeKind } from '@/lib/diagram/registry'
 import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
+import { useDiagramHighlight } from '@/lib/diagram/highlight-context'
 import { useSelectionActions } from '@/lib/diagram/selection-actions-context'
 import { useEditable } from '@/lib/diagram/editable-context'
 import RichText from '@/components/ui/rich-text'
@@ -39,6 +40,9 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
   const editable = useEditable()
   const edges = useEdges()
   const { hoveredEdgeIds } = useEdgeHover()
+  const { highlight } = useDiagramHighlight()
+  const highlightState = highlight ? highlight.nodes.get(data.id) : undefined
+  const isDimmed = !!highlight && !highlightState
   const kindDef = resolveNodeKind(data.kind)
   const Icon = kindDef.icon
   const label = data.name || kindDef.label
@@ -169,8 +173,14 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
         trigger={
           <div
             onContextMenu={handleContextMenu}
-            className={`group relative w-fit rounded-xl ${selected && editable ? 'bg-primary/20' : ''}`}
+            className={`group relative w-fit rounded-xl transition-[opacity,filter] duration-500 ${selected && editable ? 'bg-primary/20' : ''} ${isDimmed ? 'opacity-20 grayscale' : ''}`}
           >
+            {highlightState === 'active' && (
+              <div className="pointer-events-none absolute -inset-1.5 rounded-xl border-2 border-primary/70 bg-primary/8 shadow-[0_0_28px_color-mix(in_oklab,var(--color-primary)_35%,transparent)]" />
+            )}
+            {highlightState === 'trail' && (
+              <div className="pointer-events-none absolute -inset-1.5 rounded-xl border border-dashed border-primary/35" />
+            )}
             <Handle id="left-target" type="target" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
             <Handle id="left-source" type="source" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
             <Handle id="top-target" type="target" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />

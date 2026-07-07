@@ -13,11 +13,184 @@ This document defines the JSON schema used to describe system architecture diagr
   "description": "...",      // optional, subtitle
   "summary": "...",          // optional, rich-text markdown deep-dive rendered below the diagram as "Architecture Breakdown"
   "theme": "light",          // optional: "light" | "dark"
+
+  // Educational content fields (all optional — see §1a for authoring rules):
+  "difficulty": "advanced",  // "beginner" | "intermediate" | "advanced"
+  "requirements": { /* ... */ },   // functional / non-functional requirement lists
+  "estimates": [ /* ... */ ],      // back-of-the-envelope stat cards
+  "flows": [ /* ... */ ],          // interactive request-flow walkthroughs (highlight the diagram!)
+  "decisions": [ /* ... */ ],      // design decisions with alternatives + rationale
+  "bottlenecks": [ /* ... */ ],    // failure modes + mitigations
+  "quiz": [ /* ... */ ],           // self-test questions with reveal answers
+  "references": [ /* ... */ ],     // further-reading links
+  "relatedPatterns": [ /* ... */ ],// slugs of related diagrams in data/diagrams/index.json
+
   "nodes": [ /* ... */ ],    // required, array of SystemDesignNode
   "edges": [ /* ... */ ],    // required, array of SystemDesignEdge
   "groups": [ /* ... */ ]    // optional, array of SystemDesignGroup
 }
 ```
+
+---
+
+## 1a. Educational Content Fields (Page Sections)
+
+The detail page renders a full learning experience around the diagram. Each section below is driven by one optional top-level field — **a section only renders when its field is present**, so partial payloads degrade gracefully. For a full-quality page, generate all of them.
+
+Page section order (top to bottom):
+
+1. Diagram (with protocol legend + flow player overlay)
+2. **Requirements** ← `requirements`
+3. **Scale Estimates** ← `estimates`
+4. **Request Flows** ← `flows` (interactive — steps highlight the diagram)
+5. **Key Components** ← auto-generated from `nodes` (no field; quality depends on node `name`/`description`)
+6. **Architecture Breakdown** ← `summary`
+7. **Design Decisions** ← `decisions`
+8. **Bottlenecks & Failure Modes** ← `bottlenecks`
+9. **Test Yourself** ← `quiz`
+10. **Further Reading** ← `references` + `relatedPatterns`
+
+A "jump-to" index and an estimated reading time are computed automatically — there are no fields for them.
+
+> **⚠️ Markdown vs plain text.** Only these fields render through the rich-text subset (§9a): `summary`, node `details`, `decisions[].rationale`, `bottlenecks[].problem`, `bottlenecks[].mitigation`, `quiz[].answer`. **Every other string is plain text** — flow step `text`, requirement items, estimate `note`s, quiz `question`s, etc. Markdown syntax in plain-text fields shows up as literal `**asterisks**`.
+
+### 1a.1 `difficulty`
+
+```jsonc
+"difficulty": "advanced"   // "beginner" | "intermediate" | "advanced"
+```
+
+Rendered as a colored chip in the metadata strip. Match the value used for this diagram in `data/diagrams/index.json`.
+
+### 1a.2 `requirements`
+
+```jsonc
+"requirements": {
+  "functional": [
+    "Creators can upload multi-gigabyte videos, and interrupted uploads resume from the failed chunk",
+    "Playback quality adapts automatically to the viewer's available bandwidth (ABR)"
+  ],
+  "nonFunctional": [
+    "Low latency — sub-second video startup for popular content served from edge caches",
+    "Massive scale — millions of concurrent streams, hundreds of hours ingested per minute"
+  ]
+}
+```
+
+- 4–6 items per list. Plain text, one full sentence each.
+- Functional = user-visible behavior ("X can do Y"). Non-functional = quality attributes, each ideally with a concrete target or consequence after an em-dash.
+- Every requirement should be *visible in the diagram* — if a requirement has no corresponding component or flow, either the diagram or the requirement is wrong.
+
+### 1a.3 `estimates`
+
+```jsonc
+"estimates": [
+  { "label": "Daily active users", "value": "100M", "note": "each watching ~5 videos per day" },
+  { "label": "Read : write ratio", "value": "200 : 1", "note": "views dwarf uploads — optimize the read path" }
+]
+```
+
+- 4–6 entries, rendered as stat cards. `value` displays in a very large font — **keep it under ~12 characters** ("100M", "500 hrs/min", "~2 PB", "200 : 1").
+- `note` (plain text, one short clause) should say *why the number matters for the design*, not just restate it.
+- Order-of-magnitude honesty beats precision. Pick numbers that justify the architecture's choices (the ratio that motivates the cache, the volume that motivates the queue).
+
+### 1a.4 `flows` — interactive walkthroughs (the highest-value field)
+
+```jsonc
+"flows": [
+  {
+    "id": "upload-video",                    // required, unique
+    "title": "Upload & process a video",     // required, short
+    "description": "From pressing upload to the video being streamable.", // optional, plain text
+    "steps": [
+      {
+        "text": "The client asks the API service for a pre-signed upload URL. The API authenticates the creator and opens a multipart session.",  // required, plain text
+        "nodeIds": ["client-web", "api-gateway", "api-service"],  // optional, nodes involved in THIS step
+        "edgeIds": ["e-web-gw", "e-gw-api"]                        // optional, edges traversed in THIS step
+      }
+      // ... more steps
+    ]
+  }
+]
+```
+
+**How it renders:** each step is clickable (and a player docks onto the diagram). The active step's nodes/edges **glow** in the diagram, earlier steps in the flow stay visible as a dimmed "trail", everything else fades out, and the camera automatically flies to the active step's nodes. This is what turns the diagram from a picture into a lesson — treat flows as mandatory for any non-trivial design.
+
+**Rules:**
+
+- **Every id in `nodeIds`/`edgeIds` must exactly match an existing `nodes[].id` / `edges[].id`.** Invalid ids fail silently (nothing highlights). Copy edge ids verbatim — including ugly auto-generated ones like `"xy-edge__api-servicebottom-source-blob-storage-uploadtop-target"`.
+- 1–3 flows per design. The classic pair is **write path** + **read path** (e.g. "Upload & process a video" / "Stream a video"). A failure-handling flow is a good third.
+- 4–8 steps per flow. One logical hop or action per step. Consecutive steps should chain — share a node with the previous step so the camera pans naturally.
+- `nodeIds`: the 1–3 nodes participating in the step. `edgeIds`: only the edges actually traversed in the step (usually 1–2).
+- Step `text` is 1–3 plain-text sentences. Teach the *why*, not just the *what*: "A failed chunk is retried alone — a 10 GB upload never restarts from zero" beats "The client uploads chunks".
+- Every node referenced in a step should have a `name` — step chips display node names.
+
+### 1a.5 `decisions`
+
+```jsonc
+"decisions": [
+  {
+    "title": "Clients talk to storage directly",        // the tension being resolved
+    "choice": "Pre-signed URLs + multipart upload",      // short chip, ≤ ~50 chars
+    "alternatives": ["Proxy uploads through the API servers"],  // 1–3 rejected options, short chips
+    "rationale": "Video ingress is measured in petabytes. If those bytes flowed through the API tier, it would have to scale with *video traffic* instead of *request traffic*..."  // markdown (§9a)
+  }
+]
+```
+
+- 3–6 decisions. Pick the choices an interviewer would probe: the database, the queue, the caching strategy, the sync/async boundaries.
+- `rationale` is 2–4 sentences of markdown. Argue from **this system's constraints and numbers** (tie back to `estimates`), not from generic technology virtues. Name the cost of the losing alternatives.
+
+### 1a.6 `bottlenecks`
+
+```jsonc
+"bottlenecks": [
+  {
+    "title": "Viral video thundering herd",
+    "problem": "A video going viral sends millions of players after the same segments within minutes. Uncached, the stampede hits Cassandra and origin storage simultaneously.",   // markdown (§9a)
+    "mitigation": "The CDN soaks segment traffic, Redis soaks metadata reads, and request coalescing collapses concurrent identical misses into a single origin fetch."             // markdown (§9a)
+  }
+]
+```
+
+- 3–5 entries. Ask: *what breaks first at 10× load?* Hot partitions, thundering herds, backlog growth, cost blow-ups, single points of failure.
+- `problem` states what breaks **and under which conditions**. `mitigation` must reference mechanisms that exist in the diagram (or explicitly note an extension).
+
+### 1a.7 `quiz`
+
+```jsonc
+"quiz": [
+  {
+    "question": "Why do application servers never touch video bytes — in either direction?",  // plain text
+    "answer": "Uploads go straight to blob storage via pre-signed URLs; playback comes straight from the CDN. Video bandwidth is thousands of times metadata bandwidth..."          // markdown (§9a)
+  }
+]
+```
+
+- 4–8 questions with hidden, click-to-reveal answers.
+- Every question must be answerable from this page's content, and each `answer` should teach the point on its own (the reader may have gotten it wrong).
+- Prefer *why* and *what-happens-if* questions over definition recall.
+
+### 1a.8 `references`
+
+```jsonc
+"references": [
+  { "title": "HTTP Live Streaming (HLS) — the manifest + segment format specification", "url": "https://datatracker.ietf.org/doc/html/rfc8216", "source": "RFC 8216" },
+  { "title": "Netflix Tech Blog — real-world streaming engineering", "url": "https://netflixtechblog.com/", "source": "netflixtechblog.com" }
+]
+```
+
+- 3–6 links. `source` is the short attribution shown next to the title (domain or spec number).
+- **Never invent deep links.** Use stable, canonical URLs you are certain exist: official docs landing pages, RFCs, well-known engineering blogs' homepages. A homepage that exists beats a plausible-looking 404.
+
+### 1a.9 `relatedPatterns`
+
+```jsonc
+"relatedPatterns": ["event-driven-architecture", "design-instagram"]
+```
+
+- 1–3 slugs of **other diagrams that exist in `data/diagrams/index.json`**. Unknown slugs are silently dropped.
+- Rendered as "Patterns used in this design" links — pick genuinely related patterns, not filler.
 
 ---
 
@@ -36,6 +209,13 @@ This document defines the JSON schema used to describe system architecture diagr
   "group": "aws-cloud"      // optional, ID of the parent SystemDesignGroup
 }
 ```
+
+> **Node text feeds three places**, so treat `name`, `description`, and `details` as required in practice:
+> 1. The node itself on the canvas (`name` + `description`).
+> 2. The auto-generated **Key Components** section — cards show `name`, kind label, and `description`, grouped by category, and clicking a card locates the node in the diagram.
+> 3. The expanded node card (click a node) — renders `description` plus the full `details` markdown. Put the deep dive here: what the component owns, why this technology, how it scales.
+>
+> Flow steps (§1a.4) also display node `name`s as chips.
 
 ### 2a. `kind` Registry
 
@@ -328,7 +508,7 @@ This enables the "Copy JSON" button to export accurate absolute positions after 
 
 ### 9a. Rich Text Rendering Specification (`RichText`)
 
-Both `details` (on a node) and `summary` (top-level field) support a **strict markdown subset** that is parsed in two phases: block-level split → inline tokenization.
+The rich-text fields — `summary`, node `details`, `decisions[].rationale`, `bottlenecks[].problem`, `bottlenecks[].mitigation`, and `quiz[].answer` — support a **strict markdown subset** that is parsed in two phases: block-level split → inline tokenization. All other string fields are plain text (§1a).
 
 #### Block-Level Parsing
 
@@ -459,4 +639,12 @@ The entire block is wrapped in `font-mono text-sm leading-relaxed` with a `space
 9. **Keep descriptions short** — they render in ~10px font and have ~96px max-width.
 10. **Edge `id`s must be unique** across all edges. Use a prefix like `"e-"` or `"edge-"`.
 11. **Include a `summary` field** with a rich-text markdown explanation of the architecture — trade-offs, data flow, scaling decisions, and rationale. This is rendered as an "Architecture Breakdown" section below the diagram. See §9a for the exact rich-text rules.
-12. **When writing `summary` or `details`, always separate blocks with a blank line.** The single most common bug is a heading immediately followed by a list item with no blank line, which collapses them into one heading block. Always write `### Heading\n\n- item` not `### Heading\n- item` (see §9a).
+12. **When writing any rich-text field, always separate blocks with a blank line.** The single most common bug is a heading immediately followed by a list item with no blank line, which collapses them into one heading block. Always write `### Heading\n\n- item` not `### Heading\n- item` (see §9a).
+13. **Generate the full educational payload** (§1a): `difficulty`, `requirements`, `estimates`, `flows`, `decisions`, `bottlenecks`, `quiz`, `references`, `relatedPatterns`. Sections render only when present — a diagram-only payload produces a much weaker page.
+14. **Write `nodes` and `edges` FIRST, then `flows`.** Flow steps reference node/edge ids; every id in `nodeIds`/`edgeIds` must exactly match an existing element or the highlight silently does nothing. After generating, re-verify each flow id against the final `nodes`/`edges` arrays.
+15. **Respect the plain-text/markdown split** (§1a): markdown only in `summary`, `details`, `rationale`, `problem`, `mitigation`, `answer`. Flow step text, requirements, estimates, questions, titles, and chips are plain text.
+16. **Keep estimate `value`s under ~12 characters** — they render in a very large display font.
+17. **Give every node a `name`, `description`, and `details`** — they power the Key Components section, the expanded node cards, and flow-step chips (§2 note).
+18. **Only use real URLs in `references`** — canonical docs, RFCs, known blog homepages. Never fabricate deep links.
+19. **Only use existing slugs in `relatedPatterns`** — check `data/diagrams/index.json`; unknown slugs are dropped.
+20. **Make the fields reinforce each other**: estimates justify decisions, decisions explain diagram structure, bottlenecks stress the same components the flows traverse, and quiz answers close the loop. A reader should meet each idea at least twice.

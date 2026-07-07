@@ -6,6 +6,10 @@ change the schema — it tells the agent how to use existing primitives
 inside a single `SystemDesign` JSON payload, for systems too large to show
 as one coherent flow (e.g. Instagram, WhatsApp, YouTube).
 
+It also covers how the educational fields (`flows`, `requirements`,
+`estimates`, `decisions`, `bottlenecks`, `quiz`, `references` — schema guide
+§1a) map onto a multi-diagram canvas (§8 below).
+
 Only apply this when needed. Most requests still produce a single diagram.
 
 ---
@@ -159,7 +163,50 @@ blank lines — a missing blank line collapses the list into the heading
 
 ---
 
-## 8. Worked skeleton (Instagram, 3 diagrams)
+## 8. Educational fields across multiple diagrams
+
+All educational fields (schema guide §1a) exist **once per JSON**, not per
+frame group. Scope them like this:
+
+### `flows` — one or two per frame group (this is where multi-diagram shines)
+
+Flows are the reader's path through a large canvas: clicking a step
+highlights its nodes/edges and the **camera automatically flies to them**,
+so a flow effectively zooms the reader into the right frame group and walks
+them across it hop by hop.
+
+- Write **1–2 flows per frame group**, named after the subsystem:
+  `"Upload a photo"` for the upload frame, `"Load the home feed"` for the
+  feed frame. 3 frame groups ⇒ roughly 3–5 flows total.
+- A flow's steps must stay **within one frame group's nodes** — the same
+  no-cross-cluster rule as edges (§5). Because IDs are diagram-prefixed
+  (§4), this falls out naturally: an upload flow references only
+  `upload-*` node ids and their edges.
+- Since shared infrastructure is *duplicated* per frame (§4), reference the
+  duplicate that lives in the flow's own frame group — e.g. the feed flow
+  highlights `feed-db`, never `upload-db`.
+- Consecutive steps should share a node so the camera pans smoothly instead
+  of teleporting.
+
+### System-wide fields — cover all subsystems, don't repeat per frame
+
+- `requirements`, `estimates`: describe the **whole product**. Estimates
+  should include the per-subsystem driver numbers (uploads/day for the
+  write frame, feed reads/sec for the read frame) so each diagram's sizing
+  is justified.
+- `decisions`, `bottlenecks`: draw them from across the subsystems — aim
+  for at least one decision and one bottleneck per major frame group, and
+  name the subsystem in the `title` when it isn't obvious
+  (e.g. `"Feed: hybrid fan-out"`, `"Upload: transcoding backlog"`).
+- `quiz`: mix questions across subsystems; at least one question should
+  test the *boundary* between two frames (e.g. "why is the object store
+  duplicated in both the upload and feed diagrams?").
+- `references`, `relatedPatterns`, `difficulty`: unchanged — one set for
+  the whole payload.
+
+---
+
+## 9. Worked skeleton (Instagram, 3 diagrams)
 
 ```jsonc
 {
@@ -185,7 +232,30 @@ blank lines — a missing blank line collapses the list into the heading
     { "id": "e-upload-1", "source": "upload-client", "target": "upload-s3", "sourceHandle": "right-source", "targetHandle": "left-target" },
     { "id": "e-feed-1",   "source": "feed-cache",     "target": "feed-db",  "sourceHandle": "right-source", "targetHandle": "left-target" },
     { "id": "e-notif-1",  "source": "notif-queue",    "target": "notif-worker", "sourceHandle": "right-source", "targetHandle": "left-target" }
+  ],
+  "flows": [
+    {
+      "id": "upload-photo",
+      "title": "Upload a photo",
+      "description": "The write path — scoped entirely to frame 1.",
+      "steps": [
+        { "text": "The client uploads the photo directly to object storage via a pre-signed URL.", "nodeIds": ["upload-client", "upload-s3"], "edgeIds": ["e-upload-1"] }
+        // ... more steps, all referencing upload-* ids only
+      ]
+    },
+    {
+      "id": "load-feed",
+      "title": "Load the home feed",
+      "description": "The read path — scoped entirely to frame 2.",
+      "steps": [
+        { "text": "The feed service checks the precomputed timeline in Redis, falling back to the posts DB for celebrity content.", "nodeIds": ["feed-cache", "feed-db"], "edgeIds": ["e-feed-1"] }
+        // ... more steps, all referencing feed-* ids only
+      ]
+    }
   ]
+  // ...plus the system-wide educational fields per §8:
+  // "difficulty", "requirements", "estimates", "decisions",
+  // "bottlenecks", "quiz", "references", "relatedPatterns"
 }
 ```
 
@@ -194,7 +264,7 @@ nodes following the schema's normal §5 positioning and §6 handle rules.)
 
 ---
 
-## 9. Checklist before emitting JSON
+## 10. Checklist before emitting JSON
 
 - [ ] Confirmed splitting was actually necessary (§1)
 - [ ] Each diagram is one frame group with **explicit** bounds and a solid border
@@ -203,3 +273,7 @@ nodes following the schema's normal §5 positioning and §6 handle rules.)
 - [ ] No edges cross between frame groups (shared infra duplicated instead)
 - [ ] `summary` has one H3 block per diagram, blank-line-separated per §9a of the schema guide
 - [ ] Frame group labels are numbered and descriptive, not generic
+- [ ] 1–2 `flows` per frame group; every step's `nodeIds`/`edgeIds` verified against the final `nodes`/`edges` arrays and scoped to a single frame group (§8)
+- [ ] Consecutive flow steps share a node so the camera pans, not teleports
+- [ ] `decisions` and `bottlenecks` cover every major frame group, with the subsystem named in the title where needed
+- [ ] Full educational payload present (`difficulty`, `requirements`, `estimates`, `quiz`, `references`, `relatedPatterns` — schema guide §1a)

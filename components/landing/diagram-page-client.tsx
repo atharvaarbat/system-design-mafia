@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import Container from '@/components/landing/container';
 import Heading from '@/components/landing/heading';
 import SubHeading from '@/components/landing/subheading';
@@ -9,28 +9,22 @@ import Navbar from '@/components/landing/navbar';
 import RichText from '@/components/ui/rich-text';
 import DiagramVisual from '@/components/landing/diagram-visuals';
 import Footer from '@/components/landing/footer';
+import RequirementsSection from '@/components/landing/diagram-sections/requirements-section';
+import EstimatesSection from '@/components/landing/diagram-sections/estimates-section';
+import FlowsSection from '@/components/landing/diagram-sections/flows-section';
+import ComponentsSection from '@/components/landing/diagram-sections/components-section';
+import DecisionsSection from '@/components/landing/diagram-sections/decisions-section';
+import BottlenecksSection from '@/components/landing/diagram-sections/bottlenecks-section';
+import QuizSection from '@/components/landing/diagram-sections/quiz-section';
+import ReferencesSection from '@/components/landing/diagram-sections/references-section';
+import FlowPlayer from '@/components/landing/diagram-sections/flow-player';
+import { Section, SectionHeader, fadeUp, staggerContainer } from '@/components/landing/diagram-sections/section-shell';
 import diagrams from '@/data/diagrams/index.json';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Crosshair, X } from 'lucide-react';
 import Link from 'next/link';
-import { motion, type Variants } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { SystemDesign, Protocol } from '@/types/diagram';
-
-const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] },
-  },
-};
-
-const staggerContainer: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.12 },
-  },
-};
+import type { DiagramHighlight, HighlightState } from '@/lib/diagram/highlight-context';
 
 const PROTOCOL_COLORS: Record<Protocol, { color: string; label: string }> = {
   https: { color: '#22c55e', label: 'HTTPS' },
@@ -45,6 +39,12 @@ const PROTOCOL_COLORS: Record<Protocol, { color: string; label: string }> = {
   event: { color: '#14b8a6', label: 'Event' },
 };
 
+const DIFFICULTY_STYLE: Record<string, string> = {
+  beginner: 'border-emerald-500/25 text-emerald-400',
+  intermediate: 'border-amber-500/25 text-amber-400',
+  advanced: 'border-rose-500/25 text-rose-400',
+};
+
 export default function DiagramPageClient({
   slug,
   design,
@@ -54,37 +54,160 @@ export default function DiagramPageClient({
   design: SystemDesign;
   editable?: boolean;
 }) {
+  const diagramWrapRef = useRef<HTMLDivElement>(null);
+
+  // A trace (flow walkthrough) and a component focus are mutually exclusive highlight sources.
+  const [trace, setTrace] = useState<{ flowIdx: number; stepIdx: number } | null>(null);
+  const [focusNodeIds, setFocusNodeIds] = useState<string[] | null>(null);
+
   const stats = useMemo(() => {
     const nodeCount = design.nodes.length;
     const edgeCount = design.edges.length;
     const groupCount = design.groups?.length ?? 0;
 
     const protocolCounts: Record<string, number> = {};
-    const kindCounts: Record<string, number> = {};
     for (const edge of design.edges) {
       const p = edge.protocol ?? 'internal';
       protocolCounts[p] = (protocolCounts[p] ?? 0) + 1;
-    }
-    for (const node of design.nodes) {
-      kindCounts[node.kind] = (kindCounts[node.kind] ?? 0) + 1;
     }
 
     const protocols = Object.entries(protocolCounts)
       .map(([p, c]) => ({ protocol: p as Protocol, count: c }))
       .sort((a, b) => b.count - a.count);
 
-    const kinds = Object.entries(kindCounts)
-      .map(([k, c]) => ({ kind: k, count: c }))
-      .sort((a, b) => b.count - a.count);
-
-    return { nodeCount, edgeCount, groupCount, protocols, kinds };
+    return { nodeCount, edgeCount, groupCount, protocols };
   }, [design]);
+
+  const nodeNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const node of design.nodes) {
+      if (node.name) map.set(node.id, node.name);
+    }
+    return map;
+  }, [design]);
+
+  const readingMinutes = useMemo(() => {
+    const parts: string[] = [design.summary ?? '', design.description ?? ''];
+    design.requirements?.functional?.forEach((r) => parts.push(r));
+    design.requirements?.nonFunctional?.forEach((r) => parts.push(r));
+    design.estimates?.forEach((e) => parts.push(e.label, e.value, e.note ?? ''));
+    design.flows?.forEach((f) => {
+      parts.push(f.title, f.description ?? '');
+      f.steps.forEach((s) => parts.push(s.text));
+    });
+    design.decisions?.forEach((d) =>
+      parts.push(d.title, d.choice, ...(d.alternatives ?? []), d.rationale),
+    );
+    design.bottlenecks?.forEach((b) => parts.push(b.title, b.problem, b.mitigation));
+    design.quiz?.forEach((q) => parts.push(q.question, q.answer));
+    const words = parts.join(' ').split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.round(words / 200));
+  }, [design]);
+
+  const related = useMemo(
+    () =>
+      (design.relatedPatterns ?? [])
+        .map((s) => diagrams.diagrams.find((d) => d.slug === s))
+        .filter((d): d is (typeof diagrams.diagrams)[number] => !!d)
+        .map((d) => ({ slug: d.slug, title: d.title })),
+    [design],
+  );
+
+  const sectionIndex = useMemo(() => {
+    const items: { id: string; label: string }[] = [];
+    if (design.requirements?.functional?.length || design.requirements?.nonFunctional?.length)
+      items.push({ id: 'requirements', label: 'requirements' });
+    if (design.estimates?.length) items.push({ id: 'estimates', label: 'estimates' });
+    if (design.flows?.length) items.push({ id: 'flows', label: 'request-flows' });
+    items.push({ id: 'components', label: 'components' });
+    if (design.summary) items.push({ id: 'deep-dive', label: 'deep-dive' });
+    if (design.decisions?.length) items.push({ id: 'decisions', label: 'decisions' });
+    if (design.bottlenecks?.length) items.push({ id: 'bottlenecks', label: 'bottlenecks' });
+    if (design.quiz?.length) items.push({ id: 'quiz', label: 'quiz' });
+    if (design.references?.length || related.length) items.push({ id: 'references', label: 'references' });
+    return items;
+  }, [design, related]);
+
+  const highlight = useMemo<DiagramHighlight | null>(() => {
+    if (trace && design.flows) {
+      const flow = design.flows[trace.flowIdx];
+      const step = flow?.steps[trace.stepIdx];
+      if (!flow || !step) return null;
+      const nodes = new Map<string, HighlightState>();
+      const edges = new Map<string, HighlightState>();
+      for (let i = 0; i < trace.stepIdx; i++) {
+        flow.steps[i].nodeIds?.forEach((id) => nodes.set(id, 'trail'));
+        flow.steps[i].edgeIds?.forEach((id) => edges.set(id, 'trail'));
+      }
+      step.nodeIds?.forEach((id) => nodes.set(id, 'active'));
+      step.edgeIds?.forEach((id) => edges.set(id, 'active'));
+      return { nodes, edges };
+    }
+    if (focusNodeIds && focusNodeIds.length > 0) {
+      const nodes = new Map<string, HighlightState>(
+        focusNodeIds.map((id) => [id, 'active'] as const),
+      );
+      const idSet = new Set(focusNodeIds);
+      const edges = new Map<string, HighlightState>();
+      for (const edge of design.edges) {
+        if (idSet.has(edge.source) || idSet.has(edge.target)) edges.set(edge.id, 'trail');
+      }
+      return { nodes, edges };
+    }
+    return null;
+  }, [trace, focusNodeIds, design]);
+
+  const scrollToDiagram = useCallback(() => {
+    diagramWrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const handleTrace = useCallback(
+    (flowIdx: number, stepIdx: number) => {
+      setFocusNodeIds(null);
+      setTrace({ flowIdx, stepIdx });
+      scrollToDiagram();
+    },
+    [scrollToDiagram],
+  );
+
+  const handleLocate = useCallback(
+    (nodeIds: string[]) => {
+      setTrace(null);
+      setFocusNodeIds(nodeIds);
+      scrollToDiagram();
+    },
+    [scrollToDiagram],
+  );
+
+  const clearHighlight = useCallback(() => {
+    setTrace(null);
+    setFocusNodeIds(null);
+  }, []);
+
+  const focusLabel = useMemo(() => {
+    if (!focusNodeIds || focusNodeIds.length === 0) return '';
+    const first = nodeNameById.get(focusNodeIds[0]) ?? focusNodeIds[0];
+    return focusNodeIds.length > 1 ? `${first} ×${focusNodeIds.length}` : first;
+  }, [focusNodeIds, nodeNameById]);
+
+  const activeFlow = trace && design.flows ? design.flows[trace.flowIdx] : null;
 
   const suggested = useMemo(() => {
     const others = diagrams.diagrams.filter((d) => d.slug !== slug);
-    const shuffled = [...others].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 3);
+    // Deterministic rotation seeded by slug so the server render and hydration agree.
+    let seed = 0;
+    for (let i = 0; i < slug.length; i++) seed = (seed * 31 + slug.charCodeAt(i)) >>> 0;
+    const start = others.length > 0 ? seed % others.length : 0;
+    return [...others.slice(start), ...others.slice(0, start)].slice(0, 3);
   }, [slug]);
+
+  const handleIndexClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+      e.preventDefault();
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [],
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -189,8 +312,6 @@ export default function DiagramPageClient({
           </motion.div>
         </div>
 
-        
-
         {/* Floating terminal dots */}
         {[
           { top: '15%', left: '5%', delay: 0 },
@@ -263,39 +384,7 @@ export default function DiagramPageClient({
                 </SubHeading>
               </motion.div>
             )}
-
-            {/* Animated stat chips */}
-            {/* <motion.div
-              variants={fadeUp}
-              className="flex flex-wrap items-center gap-3"
-            >
-              {[
-                {
-                  label: `${stats.nodeCount} nodes`,
-                  color: 'border-blue-500/20 text-blue-400',
-                },
-                {
-                  label: `${stats.edgeCount} edges`,
-                  color: 'border-violet-500/20 text-violet-400',
-                },
-                {
-                  label: `${stats.groupCount} groups`,
-                  color: 'border-amber-500/20 text-amber-400',
-                },
-                {
-                  label: `${stats.protocols.length} protocols`,
-                  color: 'border-cyan-500/20 text-cyan-400',
-                },
-              ].map((chip) => (
-                <div
-                  key={chip.label}
-                  className={`inline-flex items-center border bg-foreground/2 px-3 py-1 text-xs font-bold tracking-wider uppercase ${chip.color}`}
-                >
-                  {chip.label}
-                </div>
-              ))}
-            </motion.div> */}
-          </motion.div> 
+          </motion.div>
 
           {/* Terminal-style metadata strip */}
           <motion.div
@@ -329,6 +418,14 @@ export default function DiagramPageClient({
               protocols
             </span>
             </div>
+            {design.difficulty && (
+              <span
+                className={`border px-2 py-0.5 text-[10px] font-bold tracking-widest uppercase ${DIFFICULTY_STYLE[design.difficulty] ?? 'border-foreground/10 text-foreground/40'}`}
+              >
+                {design.difficulty}
+              </span>
+            )}
+            <span className="text-foreground/40">~{readingMinutes} min read</span>
             <motion.span
               className="ml-1 inline-block h-4 w-[2px] bg-foreground/40"
               animate={{ opacity: [1, 0, 1] }}
@@ -342,9 +439,36 @@ export default function DiagramPageClient({
             </span>
           </motion.div>
 
+          {/* Section index */}
+          {sectionIndex.length > 0 && (
+            <motion.nav
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.6 }}
+              aria-label="Page sections"
+              className="-mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 px-1 text-[11px] tracking-wider"
+            >
+              <span className="text-foreground/30">jump-to:</span>
+              {sectionIndex.map((s, i) => (
+                <a
+                  key={s.id}
+                  href={`#${s.id}`}
+                  onClick={(e) => handleIndexClick(e, s.id)}
+                  className="text-foreground/45 transition-colors hover:text-primary"
+                >
+                  <span className="text-primary/60">
+                    [{String(i + 1).padStart(2, '0')}]
+                  </span>{' '}
+                  {s.label}
+                </a>
+              ))}
+            </motion.nav>
+          )}
+
           {/* Diagram */}
           <motion.div
-            className="relative overflow-hidden border border-foreground/10 bg-foreground/3"
+            ref={diagramWrapRef}
+            className="relative scroll-mt-24 overflow-hidden border border-foreground/10 bg-foreground/3"
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{
@@ -359,194 +483,137 @@ export default function DiagramPageClient({
             <div className="pointer-events-none absolute bottom-0 left-0 z-20 hidden h-5 w-5 border-b-2 border-l-2 border-primary/30 lg:block" />
             <div className="pointer-events-none absolute bottom-0 right-0 z-20 hidden h-5 w-5 border-b-2 border-r-2 border-primary/30 lg:block" />
 
-            <Diagram design={design} editable={editable} />
+            <Diagram
+              design={design}
+              editable={editable}
+              highlight={highlight}
+              overlay={
+                <>
+                  {/* Flow player — docked while tracing */}
+                  <AnimatePresence>
+                    {trace && activeFlow && (
+                      <FlowPlayer
+                        key="flow-player"
+                        flow={activeFlow}
+                        flowIndex={trace.flowIdx}
+                        stepIndex={trace.stepIdx}
+                        nodeNameById={nodeNameById}
+                        onStepChange={(step) => setTrace({ flowIdx: trace.flowIdx, stepIdx: step })}
+                        onClose={clearHighlight}
+                      />
+                    )}
+                  </AnimatePresence>
 
-            {/* Protocol legend — pinned to bottom of diagram */}
-            {/* <div className="absolute bottom-0 right-0 left-0 hidden border-t border-white/5 bg-black/60 px-4 py-2 backdrop-blur-sm lg:flex lg:items-center lg:gap-4">
-              <span className="text-[10px] font-bold tracking-widest text-white/30 uppercase">
-                Protocol
-              </span>
-              {stats.protocols.map(({ protocol, count }) => {
-                const info = PROTOCOL_COLORS[protocol] ?? {
-                  color: '#64748b',
-                  label: protocol,
-                };
-                return (
-                  <div
-                    key={protocol}
-                    className="flex items-center gap-1.5 text-[11px]"
-                  >
-                    <span
-                      className="inline-block h-2 w-2 rounded-full"
-                      style={{ backgroundColor: info.color }}
-                    />
-                    <span className="text-white/50">{info.label}</span>
-                    <span className="text-white/20">({count})</span>
-                  </div>
-                );
-              })}
-            </div> */}
-          </motion.div>
-
-          {/* Key Components Section */}
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: '-80px' }}
-            className="pb-8"
-          >
-            <motion.div variants={fadeUp} className="mb-8">
-              <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase">
-                <span className="text-primary">//</span>
-                <span>Component Breakdown</span>
-                <span className="h-px flex-1 bg-foreground/5" />
-              </div>
-              <Heading as="h2" variant="medium" className="text-foreground">
-                Key Components
-              </Heading>
-            </motion.div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  title: 'Client',
-                  items: stats.kinds
-                    .filter((k) =>
-                      ['browser', 'mobile-app', 'desktop-app'].includes(k.kind),
-                    )
-                    .map((k) => `${k.kind} (${k.count})`),
-                  color: 'border-slate-500/20',
-                  accent: 'text-slate-400',
-                },
-                {
-                  title: 'Network',
-                  items: stats.kinds
-                    .filter((k) =>
-                      [
-                        'dns',
-                        'cdn',
-                        'load-balancer',
-                        'api-gateway',
-                        'firewall',
-                      ].includes(k.kind),
-                    )
-                    .map((k) => `${k.kind} (${k.count})`),
-                  color: 'border-lime-500/20',
-                  accent: 'text-lime-400',
-                },
-                {
-                  title: 'Compute',
-                  items: stats.kinds
-                    .filter((k) =>
-                      [
-                        'rest-api',
-                        'graphql-api',
-                        'worker-service',
-                        'lambda-function',
-                        'container',
-                      ].includes(k.kind),
-                    )
-                    .map((k) => `${k.kind} (${k.count})`),
-                  color: 'border-blue-500/20',
-                  accent: 'text-blue-400',
-                },
-                {
-                  title: 'Data',
-                  items: stats.kinds
-                    .filter((k) =>
-                      [
-                        'postgres',
-                        'mysql',
-                        'dynamodb',
-                        'redis',
-                        'elasticsearch',
-                        'kafka',
-                        's3',
-                      ].includes(k.kind),
-                    )
-                    .map((k) => `${k.kind} (${k.count})`),
-                  color: 'border-amber-500/20',
-                  accent: 'text-amber-400',
-                },
-              ].map((section) => (
-                <motion.div
-                  key={section.title}
-                  variants={fadeUp}
-                  className={`group border bg-foreground/1.5 p-5 transition-all hover:bg-foreground/3 ${section.color}`}
-                >
-                  <div
-                    className={`mb-3 text-xs font-bold tracking-widest uppercase ${section.accent}`}
-                  >
-                    {section.title}
-                  </div>
-                  {section.items.length > 0 ? (
-                    <ul className="space-y-1.5">
-                      {section.items.map((item) => (
-                        <li
-                          key={item}
-                          className="text-xs text-foreground/70 transition-colors group-hover:text-foreground/70"
+                  {/* Component focus chip */}
+                  <AnimatePresence>
+                    {!trace && focusNodeIds && (
+                      <motion.div
+                        key="focus-chip"
+                        initial={{ opacity: 0, y: -12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -12 }}
+                        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                        className="absolute top-4 left-4 z-30 flex items-center gap-2.5 border border-primary/25 bg-background/90 px-3.5 py-2 backdrop-blur-md"
+                      >
+                        <Crosshair className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-xs text-foreground/75">{focusLabel}</span>
+                        <button
+                          type="button"
+                          onClick={clearHighlight}
+                          aria-label="Clear focus"
+                          className="cursor-pointer p-0.5 text-foreground/40 transition-colors hover:text-foreground"
                         >
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <span className="text-xs italic text-foreground/20">
-                      none in this architecture
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Protocol legend */}
+                  <div className="pointer-events-none absolute top-3 right-3 z-20 hidden max-w-[55%] flex-wrap items-center gap-x-4 gap-y-1 border border-foreground/8 bg-background/70 px-4 py-2 backdrop-blur-sm lg:flex">
+                    <span className="text-[10px] font-bold tracking-widest text-foreground/30 uppercase">
+                      Protocol
                     </span>
-                  )}
-                </motion.div>
-              ))}
-            </div>
+                    {stats.protocols.map(({ protocol, count }) => {
+                      const info = PROTOCOL_COLORS[protocol] ?? {
+                        color: '#64748b',
+                        label: protocol,
+                      };
+                      return (
+                        <span key={protocol} className="flex items-center gap-1.5 text-[11px]">
+                          <span
+                            className="inline-block h-2 w-2 rounded-full"
+                            style={{ backgroundColor: info.color }}
+                          />
+                          <span className="text-foreground/55">{info.label}</span>
+                          <span className="text-foreground/25">({count})</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </>
+              }
+            />
           </motion.div>
+
+          {/* Requirements */}
+          {design.requirements && (
+            <RequirementsSection requirements={design.requirements} />
+          )}
+
+          {/* Scale estimates */}
+          {design.estimates && design.estimates.length > 0 && (
+            <EstimatesSection estimates={design.estimates} />
+          )}
+
+          {/* Request flows */}
+          {design.flows && design.flows.length > 0 && (
+            <FlowsSection
+              flows={design.flows}
+              nodeNameById={nodeNameById}
+              activeFlowIndex={trace?.flowIdx ?? null}
+              activeStepIndex={trace?.stepIdx ?? 0}
+              onTrace={handleTrace}
+            />
+          )}
+
+          {/* Key components */}
+          <ComponentsSection nodes={design.nodes} onLocate={handleLocate} />
 
           {/* Architecture Summary */}
           {design.summary && (
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: '-80px' }}
-              variants={staggerContainer}
-              className="pb-8"
-            >
-              <motion.div variants={fadeUp} className="mb-8">
-                <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase">
-                  <span className="text-primary">//</span>
-                  <span>Deep Dive</span>
-                  <span className="h-px flex-1 bg-foreground/5" />
-                </div>
-                <Heading as="h2" variant="medium" className="text-foreground">
-                  Architecture Breakdown
-                </Heading>
-              </motion.div>
+            <Section id="deep-dive">
+              <SectionHeader label="Deep Dive" title="Architecture Breakdown" />
               <motion.div
                 variants={fadeUp}
                 className="border border-foreground/5 bg-foreground/1 p-8"
               >
                 <RichText content={design.summary} />
               </motion.div>
-            </motion.div>
+            </Section>
           )}
 
+          {/* Design decisions */}
+          {design.decisions && design.decisions.length > 0 && (
+            <DecisionsSection decisions={design.decisions} />
+          )}
+
+          {/* Bottlenecks */}
+          {design.bottlenecks && design.bottlenecks.length > 0 && (
+            <BottlenecksSection bottlenecks={design.bottlenecks} />
+          )}
+
+          {/* Quiz */}
+          {design.quiz && design.quiz.length > 0 && (
+            <QuizSection quiz={design.quiz} />
+          )}
+
+          {/* References + related patterns */}
+          <ReferencesSection references={design.references ?? []} related={related} />
+
           {/* Message from the Creator */}
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: '-80px' }}
-            variants={staggerContainer}
-            className="pb-8"
-          >
-            <motion.div variants={fadeUp} className="mb-8">
-              <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase">
-                <span className="text-primary">//</span>
-                <span>A Word</span>
-                <span className="h-px flex-1 bg-foreground/5" />
-              </div>
-              <Heading as="h2" variant="medium" className="text-foreground">
-                From the Creator
-              </Heading>
-            </motion.div>
+          <Section>
+            <SectionHeader label="A Word" title="From the Creator" />
             <motion.div
               variants={fadeUp}
               className="border border-foreground/5 bg-foreground/1 p-8 text-foreground/80 text-sm leading-relaxed space-y-4"
@@ -555,23 +622,23 @@ export default function DiagramPageClient({
                 Every great system starts as a sketch on a whiteboard. The ability to zoom out
                 and see the whole picture — how services connect, where data flows, what breaks
                 and why — is what separates engineers who build features from engineers who build
-                systems. This diagram is more than boxes and arrows. It's a map of decisions,
+                systems. This diagram is more than boxes and arrows. It&apos;s a map of decisions,
                 trade-offs, and intentional design.
               </p>
               <p>
-                Studying architectures isn't just about passing interviews. It's about training
+                Studying architectures isn&apos;t just about passing interviews. It&apos;s about training
                 your intuition. The more systems you take apart, the better you get at sensing
                 where a monolith will crack, where a queue belongs, or when a cache is hiding a
                 deeper problem. You start seeing patterns instead of chaos.
               </p>
               <p>
-                So keep reading, keep tracing those edges, keep asking "why this way and not
-                that way." The engineers who truly understand large systems are the ones who
+                So keep reading, keep tracing those edges, keep asking &quot;why this way and not
+                that way.&quot; The engineers who truly understand large systems are the ones who
                 never stop being curious about how things fit together. That curiosity is the
                 only ingredient that really matters.
               </p>
               <p className="text-foreground/50 italic pt-2 flex gap-2">
-                — Atharva Arbat 
+                — Atharva Arbat
                 <span>
                 <Link href="https://x.com/arbat_atharva" className='text-blue-500 underline'>
                   @arbat_atharva
@@ -579,25 +646,11 @@ export default function DiagramPageClient({
                 </span>
               </p>
             </motion.div>
-          </motion.div>
-          {/* More Patterns */}
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: '-80px' }}
-            variants={staggerContainer}
-          >
-            <motion.div variants={fadeUp} className="mb-8">
-              <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase">
-                <span className="text-primary">//</span>
-                <span>Explore</span>
-                <span className="h-px flex-1 bg-foreground/5" />
-              </div>
-              <Heading as="h2" variant="medium" className="text-foreground">
-                More Patterns
-              </Heading>
-            </motion.div>
+          </Section>
 
+          {/* More Patterns */}
+          <Section className="">
+            <SectionHeader label="Explore" title="More Patterns" />
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {suggested.map((diagram) => (
                 <article key={diagram.slug}>
@@ -635,7 +688,7 @@ export default function DiagramPageClient({
                 </article>
               ))}
             </div>
-          </motion.div>
+          </Section>
         </Container>
       </section>
       <Footer />

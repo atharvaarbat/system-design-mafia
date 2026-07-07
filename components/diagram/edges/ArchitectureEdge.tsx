@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer, useReactFlow, type EdgeProps, type Edge, getBezierPath } from '@xyflow/react'
 import { useTheme } from 'next-themes'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { useDiagramHighlight } from '@/lib/diagram/highlight-context'
 
 interface EdgeData {
   label?: string
@@ -83,7 +84,14 @@ function ArchitectureEdgeComponent({
   const themeCtx = useTheme?.()
   const isDark = themeCtx?.resolvedTheme === 'dark'
   const fallbackColor = isDark ? '#71717a' : '#64748b'
-  const strokeColor = selected ? '#60a5fa' : (data?.color || fallbackColor)
+
+  const { highlight } = useDiagramHighlight()
+  const highlightState = highlight ? highlight.edges.get(id) : undefined
+  const isDimmed = !!highlight && !highlightState
+
+  const strokeColor = highlightState
+    ? 'var(--color-primary)'
+    : selected ? '#60a5fa' : (data?.color || fallbackColor)
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -96,11 +104,13 @@ function ArchitectureEdgeComponent({
   })
 
   const strokeDasharray =
-    data?.lineStyle === 'dashed' ? '6,4'
+    highlightState === 'active' ? '6,4'
+    : data?.lineStyle === 'dashed' ? '6,4'
     : data?.lineStyle === 'dotted' ? '2,3'
     : undefined
 
-  const strokeWidth = selected ? 3 : (data?.width || 2.5)
+  const strokeWidth = highlightState === 'active' ? 3 : selected ? 3 : (data?.width || 2.5)
+  const groupOpacity = isDimmed ? 0.08 : highlightState === 'trail' ? 0.65 : 1
 
   const updateEdge = useCallback((updates: Partial<EdgeData & { animated?: boolean }>) => {
     setEdges((eds) =>
@@ -124,7 +134,7 @@ function ArchitectureEdgeComponent({
 
   return (
     <>
-      <g onContextMenu={handleContextMenu}>
+      <g onContextMenu={handleContextMenu} style={{ opacity: groupOpacity, transition: 'opacity 0.5s' }}>
       <defs>
         <marker
           id={`arrow-${id}`}
@@ -147,6 +157,8 @@ function ArchitectureEdgeComponent({
           strokeWidth,
           strokeDasharray,
           cursor: 'pointer',
+          // dashdraw keyframes ship with the imported @xyflow/react stylesheet
+          animation: highlightState === 'active' ? 'dashdraw 0.5s linear infinite' : undefined,
         }}
         markerEnd={`url(#arrow-${id})`}
         />
@@ -155,6 +167,8 @@ function ArchitectureEdgeComponent({
           <div
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              opacity: groupOpacity,
+              transition: 'opacity 0.5s',
             }}
             className="pointer-events-auto absolute z-50"
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(data?.label || '') }}
@@ -170,7 +184,7 @@ function ArchitectureEdgeComponent({
                 className="rounded border border-input bg-background px-2 py-0.5 text-xs font-medium text-foreground shadow-sm outline-hidden ring-1 ring-ring/50"
               />
             ) : (
-              <div className="rounded bg-background px-2 py-0.5 text-xs font-medium text-zinc-600 shadow-sm dark:text-zinc-300">
+              <div className={`rounded bg-background px-2 py-0.5 text-xs font-medium shadow-sm ${highlightState === 'active' ? 'text-foreground ring-1 ring-primary/50' : 'text-zinc-600 dark:text-zinc-300'}`}>
                 {data?.label}
               </div>
             )}

@@ -30,6 +30,7 @@ import GroupNodeComponent from './nodes/GroupNode'
 import ArchitectureEdgeComponent from './edges/ArchitectureEdge'
 import { systemDesignToFlow } from '@/lib/diagram/transform'
 import { EdgeHoverContext } from '@/lib/diagram/edge-hover-context'
+import { DiagramHighlightContext, type DiagramHighlight } from '@/lib/diagram/highlight-context'
 import { SelectionActionsContext } from '@/lib/diagram/selection-actions-context'
 import { EditableContext } from '@/lib/diagram/editable-context'
 import { PortalTargetContext } from '@/lib/diagram/portal-target-context'
@@ -50,9 +51,37 @@ const edgeTypes = {
 interface Props {
   design: SystemDesign
   editable?: boolean
+  /** When set, listed nodes/edges glow and everything else dims; the camera follows the active set. */
+  highlight?: DiagramHighlight | null
+  /** Absolutely-positioned chrome (flow player, legend, …) rendered INSIDE the
+   *  fullscreen container so it stays visible when the diagram goes fullscreen. */
+  overlay?: React.ReactNode
 }
 
-export default function Diagram({ design, editable: editableProp = true }: Props) {
+/** Flies the camera to the active highlight set. Rendered inside ReactFlowProvider. */
+function HighlightCamera({ highlight }: { highlight: DiagramHighlight | null }) {
+  const { fitView } = useReactFlow()
+  const hadHighlight = useRef(false)
+
+  useEffect(() => {
+    if (highlight) {
+      hadHighlight.current = true
+      const activeIds = [...highlight.nodes.entries()]
+        .filter(([, state]) => state === 'active')
+        .map(([id]) => ({ id }))
+      if (activeIds.length > 0) {
+        fitView({ nodes: activeIds, duration: 650, padding: 0.4, maxZoom: 1.1 })
+      }
+    } else if (hadHighlight.current) {
+      hadHighlight.current = false
+      fitView({ duration: 650, padding: 0.15 })
+    }
+  }, [highlight, fitView])
+
+  return null
+}
+
+export default function Diagram({ design, editable: editableProp = true, highlight = null, overlay = null }: Props) {
   const [isEditable, setIsEditable] = useState(editableProp)
   const isEditableRef = useRef(isEditable)
   useEffect(() => { isEditableRef.current = isEditable }, [isEditable])
@@ -102,6 +131,8 @@ export default function Diagram({ design, editable: editableProp = true }: Props
   )
 
   const [hoveredEdgeIds, setHoveredEdgeIds] = useState<Set<string>>(new Set())
+
+  const highlightCtx = useMemo(() => ({ highlight }), [highlight])
 
   const onEdgeMouseEnter: EdgeMouseHandler = useCallback(
     (_event, edge) => {
@@ -419,6 +450,8 @@ export default function Diagram({ design, editable: editableProp = true }: Props
             <EditableContext.Provider value={isEditable}>
               <SelectionActionsContext.Provider value={selectionActions}>
                 <EdgeHoverContext.Provider value={{ hoveredEdgeIds }}>
+                  <DiagramHighlightContext.Provider value={highlightCtx}>
+                  <HighlightCamera highlight={highlight} />
                   <ReactFlow
                     nodes={nodes}
                     edges={edges}
@@ -463,6 +496,7 @@ export default function Diagram({ design, editable: editableProp = true }: Props
                       </Controls>
                     )}
                   </ReactFlow>
+                  </DiagramHighlightContext.Provider>
                   {selectionMenu && createPortal(
                     <div
                       data-selection-context-menu
@@ -485,6 +519,7 @@ export default function Diagram({ design, editable: editableProp = true }: Props
                 </EdgeHoverContext.Provider>
               </SelectionActionsContext.Provider>
             </EditableContext.Provider>
+            {overlay}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50">
               <DiagramDock />
             </div>
