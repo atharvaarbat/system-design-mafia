@@ -37,7 +37,7 @@ export default function Footer() {
       {/* Giant wordmark rises out of the footer as it enters */}
       <div aria-hidden className="overflow-hidden border-b border-foreground/5">
         <p
-          className="footer-wordmark mt-6 -mb-[1vw] text-center font-doto text-[8.1vw] leading-none font-black whitespace-nowrap text-transparent uppercase select-none"
+          className="footer-wordmark mt-6 mb-6 md:mb-14  xl:-mb-[0.3vw] text-center font-doto text-[8.1vw] leading-none font-black whitespace-nowrap text-transparent uppercase select-none"
           style={{
             WebkitTextStroke: '1px color-mix(in oklab, var(--foreground) 14%, transparent)',
           }}

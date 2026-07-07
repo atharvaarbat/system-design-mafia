@@ -654,9 +654,12 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                     deleteKeyCode={['Backspace', 'Delete']}
                     translateExtent={translateExtent}
                     proOptions={{ hideAttribution: true }}
+                    
+                    
                   >
                     <Background
                       variant={BackgroundVariant.Dots}
+                      
                       color={isDark ? '#666' : '#222'}
                       gap={24}
                       size={2}

@@ -116,9 +116,7 @@ export default function DiagramCards() {
 
       <Container className="relative z-10">
         <div className="mb-20 pt-[8vw]">
-          <p className="patterns-kicker mb-6 text-xs font-bold tracking-[0.25em] text-primary uppercase">
-            <span className="mr-3 opacity-70">{'//'}</span>Pattern Index — {diagrams.diagrams.length} entries
-          </p>
+          
           <h2 className="patterns-heading max-w-3xl font-heading text-4xl font-bold tracking-tighter text-foreground uppercase md:text-6xl">
             The pattern library
           </h2>
