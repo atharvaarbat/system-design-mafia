@@ -64,7 +64,7 @@ export function SectionHeader({
         {title}
        
         <div className="absolute inset-x-0 -top-7 h-17 w-[100%] mask-r-from-40% mask-l-from-100%">
-          <Scales size={8} className="rounded-lg" />
+          <Scales size={8} className="" />
         </div>
       </Heading>
     </motion.div>

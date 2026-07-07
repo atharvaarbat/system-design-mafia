@@ -34,10 +34,12 @@ import { DiagramHighlightContext, type DiagramHighlight } from '@/lib/diagram/hi
 import { SelectionActionsContext } from '@/lib/diagram/selection-actions-context'
 import { EditableContext } from '@/lib/diagram/editable-context'
 import { PortalTargetContext } from '@/lib/diagram/portal-target-context'
+import { clampMenuPosition } from '@/lib/diagram/menu-position'
+import { NODE_REGISTRY, CATEGORIES, type NodeKind, type NodeKindDefinition } from '@/lib/diagram/registry'
 import type { SystemDesign } from '@/types/diagram'
 import { flowToSystemDesign } from '@/lib/diagram/flow-to-system-design'
 import { Dock } from '../unlumen-ui/dock'
-import { Copy, Minimize2, MoveDiagonal, RefreshCcw, Pencil } from 'lucide-react'
+import { Link, Minimize2, MoveDiagonal, Pencil, Scan } from 'lucide-react'
 
 const nodeTypes = {
   architectureNode: ArchitectureNodeComponent,
@@ -56,6 +58,26 @@ interface Props {
   /** Absolutely-positioned chrome (flow player, legend, …) rendered INSIDE the
    *  fullscreen container so it stays visible when the diagram goes fullscreen. */
   overlay?: React.ReactNode
+}
+
+/** True when the event target is a text-entry element — keyboard shortcuts must not fire there. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  return !!el?.closest?.('input, textarea, select, [contenteditable="true"]')
+}
+
+/** Walks parentId chains to an absolute flow position. The seen-set guards against cyclic parents. */
+function getAbsPos(nodeId: string, nodeMap: Map<string, Node>): { x: number; y: number } {
+  let x = 0, y = 0
+  const seen = new Set<string>()
+  let cur = nodeMap.get(nodeId)
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id)
+    x += cur.position.x
+    y += cur.position.y
+    cur = cur.parentId ? nodeMap.get(cur.parentId) : undefined
+  }
+  return { x, y }
 }
 
 /** Flies the camera to the active highlight set. Rendered inside ReactFlowProvider. */
@@ -81,13 +103,177 @@ function HighlightCamera({ highlight }: { highlight: DiagramHighlight | null }) 
   return null
 }
 
+interface DiagramDockProps {
+  isEditable: boolean
+  onToggleEditable: () => void
+  containerRef: React.RefObject<HTMLDivElement | null>
+}
+
+function DiagramDock({ isEditable, onToggleEditable, containerRef }: DiagramDockProps) {
+  const { fitView } = useReactFlow()
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    handler()
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
+
+  const handleFitView = useCallback(() => {
+    fitView({ duration: 300 })
+  }, [fitView])
+
+  const handleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen()
+    } else {
+      document.exitFullscreen()
+    }
+  }, [containerRef])
+
+  const [urlCopied, setUrlCopied] = useState(false)
+  const handleCopyUrl = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setUrlCopied(true)
+      setTimeout(() => setUrlCopied(false), 2000)
+    } catch {
+      // clipboard unavailable (e.g. insecure origin) — silently skip
+    }
+  }, [])
+
+  const items = [
+    { icon: <Scan />, label: 'Fit view', onClick: handleFitView },
+    { icon: isFullscreen ? <Minimize2 /> : <MoveDiagonal />, label: isFullscreen ? 'Exit full screen' : 'Full screen', onClick: handleFullscreen },
+    { icon: <Link />, label: urlCopied ? 'Link copied!' : 'Copy link', onClick: handleCopyUrl },
+    { icon: <Pencil />, label: isEditable ? 'Editing' : 'Read only', onClick: onToggleEditable, active: isEditable },
+  ]
+
+  return (
+    <div className='z-999'>
+      <Dock
+        items={items}
+        magnification={1.4}
+        distance={50}
+        springOptions={{ stiffness: 400, damping: 25 }}
+        borderRadius={30}
+        iconSize={28}
+        className='rounded-3xl bg-background/10 backdrop-blur-md'
+      />
+    </div>
+  )
+}
+
+interface AddNodeMenuProps {
+  x: number
+  y: number
+  portalTarget: HTMLElement | null
+  onClose: () => void
+  onAdd: (kind: NodeKind, position: { x: number; y: number }) => void
+}
+
+/** Searchable node palette shown on empty-canvas right-click. Rendered inside ReactFlowProvider. */
+function AddNodeMenu({ x, y, portalTarget, onClose, onAdd }: AddNodeMenuProps) {
+  const { screenToFlowPosition } = useReactFlow()
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-add-node-menu]')) onClose()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [onClose])
+
+  const q = query.trim().toLowerCase()
+  const allKinds = Object.entries(NODE_REGISTRY) as [NodeKind, NodeKindDefinition][]
+  const grouped = CATEGORIES
+    .map((category) => ({
+      category,
+      kinds: allKinds.filter(
+        ([kind, def]) =>
+          def.category === category &&
+          (!q || def.label.toLowerCase().includes(q) || kind.includes(q)),
+      ),
+    }))
+    .filter((g) => g.kinds.length > 0)
+
+  const pos = clampMenuPosition(x, y, 232, 340)
+
+  return createPortal(
+    <div
+      data-add-node-menu
+      style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 9999 }}
+      className="w-56 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <input
+        autoFocus
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Add node…"
+        className="mb-1 w-full rounded-md border border-input bg-background px-2 py-1 text-sm outline-hidden"
+      />
+      <div className="max-h-72 overflow-y-auto">
+        {grouped.length === 0 && (
+          <p className="px-1.5 py-2 text-xs text-muted-foreground">No matches</p>
+        )}
+        {grouped.map(({ category, kinds }) => (
+          <div key={category}>
+            <div className="px-1.5 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {category}
+            </div>
+            {kinds.map(([kind, def]) => {
+              const KindIcon = def.icon
+              return (
+                <div
+                  key={kind}
+                  className="flex cursor-default items-center gap-2 rounded-md px-1.5 py-1 text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => onAdd(kind, screenToFlowPosition({ x, y }))}
+                >
+                  <span
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                    style={{ backgroundColor: def.color }}
+                  >
+                    {def.brandLogo
+                      ? <img src={def.brandLogo} alt="" className="h-3.5 w-3.5 object-contain" />
+                      : <KindIcon className="h-3 w-3 text-white" strokeWidth={2} />}
+                  </span>
+                  {def.label}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </div>,
+    portalTarget ?? document.body,
+  )
+}
+
 export default function Diagram({ design, editable: editableProp = true, highlight = null, overlay = null }: Props) {
   const [isEditable, setIsEditable] = useState(editableProp)
   const isEditableRef = useRef(isEditable)
   useEffect(() => { isEditableRef.current = isEditable }, [isEditable])
 
+  // Adjust-state-during-render pattern: a changed `editable` prop overrides the local toggle.
+  const [prevEditableProp, setPrevEditableProp] = useState(editableProp)
+  if (prevEditableProp !== editableProp) {
+    setPrevEditableProp(editableProp)
+    setIsEditable(editableProp)
+  }
+
   const diagram = design
-  const { resolvedTheme, setTheme } = useTheme()
+  const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
@@ -98,9 +284,26 @@ export default function Diagram({ design, editable: editableProp = true, highlig
   const [nodes, setNodes] = useState<Node[]>(initialNodes)
   const [edges, setEdges] = useState<Edge[]>(initialEdges)
 
+  // Kept in a ref so gesture handlers and shortcuts can read fresh state without re-subscribing.
+  const nodesRef = useRef(nodes)
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
+
+  // Adjust-state-during-render pattern: a new design replaces local edits.
+  const [prevInitialNodes, setPrevInitialNodes] = useState(initialNodes)
+  if (prevInitialNodes !== initialNodes) {
+    setPrevInitialNodes(initialNodes)
+    setNodes(initialNodes)
+    setEdges(initialEdges)
+  }
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      if (!isEditableRef.current) return
+      if (!isEditableRef.current) {
+        // Still track measurements in read-only mode so translateExtent stays accurate.
+        const dimensionChanges = changes.filter((c) => c.type === 'dimensions')
+        if (dimensionChanges.length > 0) setNodes((n) => applyNodeChanges(dimensionChanges, n))
+        return
+      }
       setNodes((n) => applyNodeChanges(changes, n))
     },
     [],
@@ -116,7 +319,8 @@ export default function Diagram({ design, editable: editableProp = true, highlig
     (params: Connection) => {
       if (!isEditableRef.current) return
       if (params.source === params.target) return
-      setEdges((e) => addEdge(params, e))
+      // Explicit type — edges added without one would be dropped by flowToSystemDesign.
+      setEdges((e) => addEdge({ ...params, type: 'architectureEdge' }, e))
     },
     [],
   )
@@ -133,6 +337,7 @@ export default function Diagram({ design, editable: editableProp = true, highlig
   const [hoveredEdgeIds, setHoveredEdgeIds] = useState<Set<string>>(new Set())
 
   const highlightCtx = useMemo(() => ({ highlight }), [highlight])
+  const edgeHoverCtx = useMemo(() => ({ hoveredEdgeIds }), [hoveredEdgeIds])
 
   const onEdgeMouseEnter: EdgeMouseHandler = useCallback(
     (_event, edge) => {
@@ -155,11 +360,15 @@ export default function Diagram({ design, editable: editableProp = true, highlig
   const [copied, setCopied] = useState(false)
 
   const handleCopyJson = useCallback(() => {
-    const design = flowToSystemDesign(nodes, edges, diagram)
-    navigator.clipboard.writeText(JSON.stringify(design, null, 2))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }, [nodes, edges])
+    const out = flowToSystemDesign(nodes, edges, diagram)
+    navigator.clipboard
+      ?.writeText(JSON.stringify(out, null, 2))
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {})
+  }, [nodes, edges, diagram])
 
   const defaultEdgeOptions = useMemo(
     () => ({ type: 'architectureEdge' as const }),
@@ -174,19 +383,8 @@ export default function Diagram({ design, editable: editableProp = true, highlig
 
     const nodeMap = new Map(nodes.map((n) => [n.id, n]))
 
-    function getAbsPos(nodeId: string): { x: number; y: number } {
-      let x = 0, y = 0
-      let cur = nodeMap.get(nodeId)
-      while (cur) {
-        x += cur.position.x
-        y += cur.position.y
-        cur = cur.parentId ? nodeMap.get(cur.parentId) : undefined
-      }
-      return { x, y }
-    }
-
     for (const node of nodes) {
-      const abs = getAbsPos(node.id)
+      const abs = getAbsPos(node.id, nodeMap)
       const w = node.width ?? node.measured?.width ?? 200
       const h = node.height ?? node.measured?.height ?? 84
       minX = Math.min(minX, abs.x)
@@ -203,138 +401,129 @@ export default function Diagram({ design, editable: editableProp = true, highlig
   // Groups the given architecture-node ids into a new groupNode, preserving
   // absolute screen position. Nodes must share a common parent (or have none).
   const groupNodes = useCallback((nodeIds: string[]) => {
-    setNodes((nds) => {
-      const nodeMap = new Map(nds.map((n) => [n.id, n]))
-      const selNodes = nodeIds
-        .map((id) => nodeMap.get(id))
-        .filter((n): n is Node => !!n && n.type === 'architectureNode')
-      if (selNodes.length < 2) return nds
+    const nds = nodesRef.current
+    const nodeMap = new Map(nds.map((n) => [n.id, n]))
+    const selNodes = nodeIds
+      .map((id) => nodeMap.get(id))
+      .filter((n): n is Node => !!n && n.type === 'architectureNode')
+    if (selNodes.length < 2) return
 
-      const parentIds = new Set(selNodes.map((n) => n.parentId))
-      if (parentIds.size > 1) return nds
-      const commonParentId = selNodes[0].parentId
+    const parentIds = new Set(selNodes.map((n) => n.parentId))
+    if (parentIds.size > 1) return
+    const commonParentId = selNodes[0].parentId
 
-      function getAbsPos(nodeId: string): { x: number; y: number } {
-        let x = 0, y = 0
-        let cur = nodeMap.get(nodeId)
-        while (cur) {
-          x += cur.position.x
-          y += cur.position.y
-          cur = cur.parentId ? nodeMap.get(cur.parentId) : undefined
-        }
-        return { x, y }
+    const GROUP_PAD = 40, NODE_W = 200, NODE_H = 84
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const node of selNodes) {
+      const abs = getAbsPos(node.id, nodeMap)
+      const sw = node.style?.width
+      const sh = node.style?.height
+      const w = typeof sw === 'number' ? sw : node.measured?.width ?? NODE_W
+      const h = typeof sh === 'number' ? sh : node.measured?.height ?? NODE_H
+      minX = Math.min(minX, abs.x)
+      minY = Math.min(minY, abs.y)
+      maxX = Math.max(maxX, abs.x + w)
+      maxY = Math.max(maxY, abs.y + h)
+    }
+
+    const absGroupX = minX - GROUP_PAD
+    const absGroupY = minY - GROUP_PAD
+    const groupW = maxX - minX + GROUP_PAD * 2
+    const groupH = maxY - minY + GROUP_PAD * 2
+    const parentAbs = commonParentId ? getAbsPos(commonParentId, nodeMap) : { x: 0, y: 0 }
+    const groupId = `group-${crypto.randomUUID?.() ?? Date.now()}`
+    const selectedIds = new Set(selNodes.map((n) => n.id))
+
+    const groupNode: Node = {
+      id: groupId,
+      type: 'groupNode',
+      position: { x: absGroupX - parentAbs.x, y: absGroupY - parentAbs.y },
+      data: { label: 'Untitled Group', accent: '#94a3b8', borderStyle: 'solid' },
+      parentId: commonParentId || undefined,
+      extent: commonParentId ? 'parent' : undefined,
+      width: groupW,
+      height: groupH,
+      draggable: false,
+      selectable: true,
+      style: { zIndex: -1 },
+    }
+
+    const mapped = nds.map((n) => {
+      if (!selectedIds.has(n.id)) return n
+      const abs = getAbsPos(n.id, nodeMap)
+      return {
+        ...n,
+        parentId: groupId,
+        extent: 'parent' as const,
+        position: { x: abs.x - absGroupX, y: abs.y - absGroupY },
+        selected: false,
       }
-
-      const GROUP_PAD = 40, NODE_W = 200, NODE_H = 84
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      for (const node of selNodes) {
-        const abs = getAbsPos(node.id)
-        const sw = node.style?.width
-        const sh = node.style?.height
-        const w = typeof sw === 'number' ? sw : node.measured?.width ?? NODE_W
-        const h = typeof sh === 'number' ? sh : node.measured?.height ?? NODE_H
-        minX = Math.min(minX, abs.x)
-        minY = Math.min(minY, abs.y)
-        maxX = Math.max(maxX, abs.x + w)
-        maxY = Math.max(maxY, abs.y + h)
-      }
-
-      const absGroupX = minX - GROUP_PAD
-      const absGroupY = minY - GROUP_PAD
-      const groupW = maxX - minX + GROUP_PAD * 2
-      const groupH = maxY - minY + GROUP_PAD * 2
-      const parentAbs = commonParentId ? getAbsPos(commonParentId) : { x: 0, y: 0 }
-      const groupId = `group-${crypto.randomUUID?.() ?? Date.now()}`
-      const selectedIds = new Set(selNodes.map((n) => n.id))
-
-      const groupNode: Node = {
-        id: groupId,
-        type: 'groupNode',
-        position: { x: absGroupX - parentAbs.x, y: absGroupY - parentAbs.y },
-        data: { label: 'Untitled Group', accent: '#94a3b8', borderStyle: 'solid' },
-        parentId: commonParentId || undefined,
-        extent: commonParentId ? 'parent' : undefined,
-        width: groupW,
-        height: groupH,
-        draggable: false,
-        selectable: true,
-        style: { zIndex: -1, pointerEvents: 'none' },
-      }
-
-      return [
-        groupNode,
-        ...nds.map((n) => {
-          if (!selectedIds.has(n.id)) return n
-          const abs = getAbsPos(n.id)
-          return {
-            ...n,
-            parentId: groupId,
-            extent: 'parent' as const,
-            position: { x: abs.x - absGroupX, y: abs.y - absGroupY },
-            selected: false,
-          }
-        }),
-      ]
     })
+
+    // React Flow requires parents to appear before their children in the array.
+    if (!commonParentId) {
+      setNodes([groupNode, ...mapped])
+      return
+    }
+    const parentIdx = mapped.findIndex((n) => n.id === commonParentId)
+    setNodes([...mapped.slice(0, parentIdx + 1), groupNode, ...mapped.slice(parentIdx + 1)])
   }, [])
 
-  // Ungroups the given architecture-node ids – removes them from their group
-  // by converting their position to absolute coordinates and clearing parentId.
+  // Ungroups the given architecture-node ids — reparents them to their group's
+  // parent (matching the group context menu) and drops group shells left empty.
   const ungroupNodes = useCallback((nodeIds: string[]) => {
-    setNodes((nds) => {
-      const nodeMap = new Map(nds.map((n) => [n.id, n]))
-      function getAbsPos(nodeId: string): { x: number; y: number } {
-        let x = 0, y = 0
-        let cur = nodeMap.get(nodeId)
-        while (cur) {
-          x += cur.position.x
-          y += cur.position.y
-          cur = cur.parentId ? nodeMap.get(cur.parentId) : undefined
-        }
-        return { x, y }
+    const nds = nodesRef.current
+    const nodeMap = new Map(nds.map((n) => [n.id, n]))
+    const ids = new Set(nodeIds)
+    const affected = nds.filter((n) => ids.has(n.id) && n.parentId)
+    if (affected.length === 0) return
+
+    const emptiedCandidates = new Set(affected.map((n) => n.parentId as string))
+    let result = nds.map((n) => {
+      if (!ids.has(n.id) || !n.parentId) return n
+      const newParentId = nodeMap.get(n.parentId)?.parentId
+      const abs = getAbsPos(n.id, nodeMap)
+      const parentAbs = newParentId ? getAbsPos(newParentId, nodeMap) : { x: 0, y: 0 }
+      return {
+        ...n,
+        parentId: newParentId,
+        extent: newParentId ? ('parent' as const) : undefined,
+        position: { x: abs.x - parentAbs.x, y: abs.y - parentAbs.y },
       }
-      const ids = new Set(nodeIds)
-      return nds.map((n) => {
-        if (!ids.has(n.id) || !n.parentId) return n
-        const abs = getAbsPos(n.id)
-        return {
-          ...n,
-          parentId: undefined,
-          extent: undefined,
-          position: { x: abs.x, y: abs.y },
-        }
-      })
     })
+    for (const gid of emptiedCandidates) {
+      if (!result.some((n) => n.parentId === gid)) result = result.filter((n) => n.id !== gid)
+    }
+    setNodes(result)
   }, [])
 
   // Moves the given architecture-node ids into targetGroupId, converting their
   // position to be relative to the target group.
   const moveToGroup = useCallback((nodeIds: string[], targetGroupId: string) => {
-    setNodes((nds) => {
-      const nodeMap = new Map(nds.map((n) => [n.id, n]))
-      function getAbsPos(nodeId: string): { x: number; y: number } {
-        let x = 0, y = 0
-        let cur = nodeMap.get(nodeId)
-        while (cur) {
-          x += cur.position.x
-          y += cur.position.y
-          cur = cur.parentId ? nodeMap.get(cur.parentId) : undefined
-        }
-        return { x, y }
+    const nds = nodesRef.current
+    const nodeMap = new Map(nds.map((n) => [n.id, n]))
+    if (!nodeMap.has(targetGroupId)) return
+    const ids = new Set(nodeIds)
+    const moving = nds.filter((n) => ids.has(n.id) && n.parentId !== targetGroupId)
+    if (moving.length === 0) return
+
+    const targetAbs = getAbsPos(targetGroupId, nodeMap)
+    const oldParents = new Set(moving.map((n) => n.parentId).filter((p): p is string => !!p))
+    let result = nds.map((n) => {
+      if (!ids.has(n.id)) return n
+      const abs = getAbsPos(n.id, nodeMap)
+      return {
+        ...n,
+        parentId: targetGroupId,
+        extent: 'parent' as const,
+        position: { x: abs.x - targetAbs.x, y: abs.y - targetAbs.y },
       }
-      const targetAbs = getAbsPos(targetGroupId)
-      const ids = new Set(nodeIds)
-      return nds.map((n) => {
-        if (!ids.has(n.id)) return n
-        const abs = getAbsPos(n.id)
-        return {
-          ...n,
-          parentId: targetGroupId,
-          extent: 'parent' as const,
-          position: { x: abs.x - targetAbs.x, y: abs.y - targetAbs.y },
-        }
-      })
     })
+    for (const gid of oldParents) {
+      if (gid === targetGroupId) continue
+      if (!result.some((n) => n.parentId === gid)) result = result.filter((n) => n.id !== gid)
+    }
+    setNodes(result)
   }, [])
 
   const selectionActions = useMemo(
@@ -350,29 +539,61 @@ export default function Diagram({ design, editable: editableProp = true, highlig
     const archIds = selNodes.filter((n) => n.type === 'architectureNode').map((n) => n.id)
     if (archIds.length < 2) return
     event.preventDefault()
-    setSelectionMenu({ x: event.clientX, y: event.clientY, nodeIds: archIds })
+    const pos = clampMenuPosition(event.clientX, event.clientY, 160, 60)
+    setSelectionMenu({ x: pos.x, y: pos.y, nodeIds: archIds })
   }, [])
 
   useEffect(() => {
     if (!selectionMenu) return
-    const handler = (e: MouseEvent) => {
+    const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target.closest('[data-selection-context-menu]')) closeSelectionMenu()
     }
-    document.addEventListener('mousedown', handler, true)
-    return () => document.removeEventListener('mousedown', handler, true)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSelectionMenu()
+    }
+    document.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
   }, [selectionMenu, closeSelectionMenu])
 
-  // Kept in a ref so the Ctrl/Cmd+G shortcut doesn't need to re-subscribe on every node change.
-  const nodesRef = useRef(nodes)
-  useEffect(() => {
-    nodesRef.current = nodes
-  }, [nodes])
+  // ------------------------------------------------------------- add node
+  const [paneMenu, setPaneMenu] = useState<{ x: number; y: number } | null>(null)
+  const closePaneMenu = useCallback(() => setPaneMenu(null), [])
 
+  const onPaneContextMenu = useCallback((event: React.MouseEvent | MouseEvent) => {
+    if (!isEditableRef.current) return
+    event.preventDefault()
+    setPaneMenu({ x: event.clientX, y: event.clientY })
+  }, [])
+
+  const addNode = useCallback((kind: NodeKind, position: { x: number; y: number }) => {
+    const suffix = (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)).slice(0, 8)
+    const id = `${kind}-${suffix}`
+    const snapped = { x: Math.round(position.x / 8) * 8, y: Math.round(position.y / 8) * 8 }
+    setNodes((nds) => [
+      ...nds,
+      {
+        id,
+        type: 'architectureNode',
+        position: snapped,
+        data: { id, kind, x: snapped.x, y: snapped.y },
+        draggable: true,
+        selectable: true,
+      },
+    ])
+    setPaneMenu(null)
+  }, [])
+
+  // Ctrl/Cmd+G groups the current selection.
   useEffect(() => {
     if (!isEditable) return
     const handler = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'g') return
+      if (isTypingTarget(e.target)) return
       const archIds = nodesRef.current
         .filter((n) => n.selected && n.type === 'architectureNode')
         .map((n) => n.id)
@@ -383,73 +604,22 @@ export default function Diagram({ design, editable: editableProp = true, highlig
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [groupNodes, isEditable])
+
   const containerRef = useRef<HTMLDivElement>(null)
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
   const portalRef = useCallback((el: HTMLDivElement | null) => {
     if (el) setPortalContainer(el)
   }, [])
-  function DiagramDock() {
-    const { fitView } = useReactFlow()
-    const [isFullscreen, setIsFullscreen] = useState(false)
 
-    useEffect(() => {
-      const handler = () => setIsFullscreen(!!document.fullscreenElement)
-      document.addEventListener('fullscreenchange', handler)
-      return () => document.removeEventListener('fullscreenchange', handler)
-    }, [])
+  const toggleEditable = useCallback(() => setIsEditable((prev) => !prev), [])
 
-    const handleReset = useCallback(() => {
-      fitView({ duration: 300 })
-    }, [fitView])
-
-    const handleFullscreen = useCallback(() => {
-      if (!document.fullscreenElement) {
-        containerRef.current?.requestFullscreen()
-      } else {
-        document.exitFullscreen()
-      }
-    }, [])
-
-    const [urlCopied, setUrlCopied] = useState(false)
-    const handleCopyUrl = useCallback(() => {
-      navigator.clipboard.writeText(window.location.href)
-      setUrlCopied(true)
-      setTimeout(() => setUrlCopied(false), 2000)
-    }, [])
-
-    const handleToggleEditable = useCallback(() => {
-      setIsEditable((prev) => !prev)
-    }, [])
-
-    const items = [
-      { icon: <RefreshCcw />, label: "Reset", onClick: handleReset },
-      { icon: isFullscreen ? <Minimize2 /> : <MoveDiagonal />, label: isFullscreen ? "Exit full screen" : "Full screen", onClick: handleFullscreen },
-      { icon: <Copy />, label: urlCopied ? "Copied!" : "Copy", onClick: handleCopyUrl },
-      { icon: <Pencil />, label: isEditable ? "Editing" : "Read only", onClick: handleToggleEditable, active: isEditable },
-    ]
-
-    return (
-      <div className='z-999'>
-        <Dock
-          items={items}
-          magnification={1.4}
-          distance={50}
-          springOptions={{ stiffness: 400, damping: 25 }}
-          borderRadius={30}
-          iconSize={28}
-          className='rounded-3xl bg-background/10 backdrop-blur-md'
-        />
-
-      </div>
-    )
-  }
   return (
     <ReactFlowProvider>
         <div ref={containerRef} style={{ width: '100%', height: '100vh' }} className="mx-auto bg-background relative overflow-hidden">
           <PortalTargetContext.Provider value={portalContainer}>
             <EditableContext.Provider value={isEditable}>
               <SelectionActionsContext.Provider value={selectionActions}>
-                <EdgeHoverContext.Provider value={{ hoveredEdgeIds }}>
+                <EdgeHoverContext.Provider value={edgeHoverCtx}>
                   <DiagramHighlightContext.Provider value={highlightCtx}>
                   <HighlightCamera highlight={highlight} />
                   <ReactFlow
@@ -459,6 +629,7 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
                     onReconnect={onReconnect}
+                    onPaneContextMenu={onPaneContextMenu}
                     edgesReconnectable={isEditable}
                     nodesDraggable={isEditable}
                     nodesConnectable={isEditable}
@@ -479,6 +650,8 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                     snapGrid={[8, 8]}
                     panOnScroll
                     panOnDrag={true}
+                    zoomOnDoubleClick={false}
+                    deleteKeyCode={['Backspace', 'Delete']}
                     translateExtent={translateExtent}
                     proOptions={{ hideAttribution: true }}
                   >
@@ -486,7 +659,6 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                       variant={BackgroundVariant.Dots}
                       color={isDark ? '#666' : '#222'}
                       gap={24}
-                      
                       size={2}
                     />
                     {isEditable && (
@@ -517,18 +689,31 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                     </div>,
                     portalContainer ?? document.body
                   )}
+                  {paneMenu && (
+                    <AddNodeMenu
+                      x={paneMenu.x}
+                      y={paneMenu.y}
+                      portalTarget={portalContainer}
+                      onClose={closePaneMenu}
+                      onAdd={addNode}
+                    />
+                  )}
                 </EdgeHoverContext.Provider>
               </SelectionActionsContext.Provider>
             </EditableContext.Provider>
             {overlay}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50">
-              <DiagramDock />
+              <DiagramDock
+                isEditable={isEditable}
+                onToggleEditable={toggleEditable}
+                containerRef={containerRef}
+              />
             </div>
 
             {/* Bottom Right Logos */}
             <div className="absolute bottom-4 right-4 flex items-center gap-2 z-50 invert dark:invert-0 opacity-45">
-              <img src="/logo.svg" className="h-4" />
-              <img src="/mafia.svg" className="h-4" />
+              <img src="/logo.svg" alt="" className="h-4" />
+              <img src="/mafia.svg" alt="" className="h-4" />
             </div>
             <div ref={portalRef} />
           </PortalTargetContext.Provider>

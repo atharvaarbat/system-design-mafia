@@ -43,7 +43,7 @@ export default function FlowsSection({
             >
               {/* Flow header */}
               <div className="flex flex-wrap items-center gap-3 border-b border-foreground/5 px-6 py-4">
-                <span className="border border-primary/25 bg-primary/5 px-2 py-0.5 text-[10px] font-bold tracking-widest text-primary uppercase">
+                <span className="px-2 py-0.5 text-[10px] font-bold tracking-widest text-primary uppercase">
                   Flow {String(flowIdx + 1).padStart(2, '0')}
                 </span>
                 <h3 className="text-sm font-bold tracking-wide text-foreground uppercase">
@@ -89,7 +89,7 @@ export default function FlowsSection({
                           <span className={`block text-sm leading-relaxed ${isCurrentStep ? 'text-foreground' : 'text-foreground/65'}`}>
                             {step.text}
                           </span>
-                          {nodeNames.length > 0 && (
+                          {/* {nodeNames.length > 0 && (
                             <span className="mt-1.5 flex flex-wrap gap-1.5">
                               {nodeNames.map((name, i) => (
                                 <span
@@ -100,7 +100,7 @@ export default function FlowsSection({
                                 </span>
                               ))}
                             </span>
-                          )}
+                          )} */}
                         </span>
                       </button>
                     </li>

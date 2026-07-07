@@ -33,7 +33,7 @@ export default function ReferencesSection({
                 className="group flex items-center gap-4 px-6 py-4 transition-colors hover:bg-foreground/2"
               >
                 <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-foreground/25 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
-                <span className="flex-1 text-sm text-foreground/70 transition-colors group-hover:text-foreground">
+                <span className="flex-1 text-sm text-foreground/70 transition-colors group-hover:text-primary">
                   {ref.title}
                 </span>
                 {ref.source && (

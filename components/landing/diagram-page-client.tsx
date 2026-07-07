@@ -387,7 +387,7 @@ export default function DiagramPageClient({
           </motion.div>
 
           {/* Terminal-style metadata strip */}
-          <motion.div
+          {/* <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{
@@ -437,7 +437,7 @@ export default function DiagramPageClient({
                 verified
               </span>
             </span>
-          </motion.div>
+          </motion.div> */}
 
           {/* Section index */}
           {sectionIndex.length > 0 && (
@@ -448,13 +448,13 @@ export default function DiagramPageClient({
               aria-label="Page sections"
               className="-mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 px-1 text-[11px] tracking-wider"
             >
-              <span className="text-foreground/30">jump-to:</span>
+              <span className="text-foreground/30">Jump to:</span>
               {sectionIndex.map((s, i) => (
                 <a
                   key={s.id}
                   href={`#${s.id}`}
                   onClick={(e) => handleIndexClick(e, s.id)}
-                  className="text-foreground/45 transition-colors hover:text-primary"
+                  className="text-foreground/45 transition-colors hover:text-primary capitalize"
                 >
                   <span className="text-primary/60">
                     [{String(i + 1).padStart(2, '0')}]
@@ -529,28 +529,7 @@ export default function DiagramPageClient({
                     )}
                   </AnimatePresence>
 
-                  {/* Protocol legend */}
-                  <div className="pointer-events-none absolute top-3 right-3 z-20 hidden max-w-[55%] flex-wrap items-center gap-x-4 gap-y-1 border border-foreground/8 bg-background/70 px-4 py-2 backdrop-blur-sm lg:flex">
-                    <span className="text-[10px] font-bold tracking-widest text-foreground/30 uppercase">
-                      Protocol
-                    </span>
-                    {stats.protocols.map(({ protocol, count }) => {
-                      const info = PROTOCOL_COLORS[protocol] ?? {
-                        color: '#64748b',
-                        label: protocol,
-                      };
-                      return (
-                        <span key={protocol} className="flex items-center gap-1.5 text-[11px]">
-                          <span
-                            className="inline-block h-2 w-2 rounded-full"
-                            style={{ backgroundColor: info.color }}
-                          />
-                          <span className="text-foreground/55">{info.label}</span>
-                          <span className="text-foreground/25">({count})</span>
-                        </span>
-                      );
-                    })}
-                  </div>
+
                 </>
               }
             />
@@ -640,9 +619,9 @@ export default function DiagramPageClient({
               <p className="text-foreground/50 italic pt-2 flex gap-2">
                 — Atharva Arbat
                 <span>
-                <Link href="https://x.com/arbat_atharva" className='text-blue-500 underline'>
-                  @arbat_atharva
-                </Link>
+                  <Link href="https://x.com/arbat_atharva" className='text-blue-500 underline'>
+                    @arbat_atharva
+                  </Link>
                 </span>
               </p>
             </motion.div>

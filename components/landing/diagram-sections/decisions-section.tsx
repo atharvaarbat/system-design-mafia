@@ -45,7 +45,7 @@ export default function DecisionsSection({
                 <span className="w-14 shrink-0 text-[10px] font-bold tracking-widest text-foreground/30 uppercase">
                   Chose
                 </span>
-                <span className="inline-flex items-center gap-1.5 border border-primary/30 bg-primary/5 px-2 py-1 text-xs font-bold text-primary">
+                <span className="inline-flex items-center gap-1.5  px-2 py-1 text-xs font-bold text-primary">
                   <Check className="h-3 w-3" />
                   {decision.choice}
                 </span>
@@ -58,7 +58,7 @@ export default function DecisionsSection({
                   {decision.alternatives.map((alt) => (
                     <span
                       key={alt}
-                      className="inline-flex items-center gap-1.5 border border-foreground/10 px-2 py-1 text-xs text-foreground/40"
+                      className="inline-flex items-center gap-1.5  px-2 py-1 text-xs text-red-500"
                     >
                       <X className="h-3 w-3 text-foreground/25" />
                       {alt}
@@ -71,7 +71,7 @@ export default function DecisionsSection({
             <div className="border-t border-foreground/5 pt-4">
               <RichText
                 content={decision.rationale}
-                className="text-xs dark:text-foreground/55 text-foreground/70"
+                className="text-sm dark:text-foreground/55 text-foreground/70"
               />
             </div>
           </motion.div>

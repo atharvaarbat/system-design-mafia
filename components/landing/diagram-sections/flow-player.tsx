@@ -55,15 +55,15 @@ export default function FlowPlayer({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="absolute top-4 left-4 z-30 w-[360px] max-w-[calc(100%-2rem)] border border-primary/25 bg-background/90 font-mono shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-md"
+      className="absolute top-4 left-4 z-30 w-[360px] max-w-[calc(100%-2rem)] bg-background/90 font-mono shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-md"
     >
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-foreground/8 px-4 py-2.5">
         <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-        <span className="text-[10px] font-bold tracking-widest text-primary uppercase">
+        <span className="text-[10px] text-foreground/40  tracking-widest ">
           Tracing flow {String(flowIndex + 1).padStart(2, '0')}
         </span>
-        <span className="truncate text-[10px] tracking-wider text-foreground/40 uppercase">
+        <span className="truncate text-[10px] tracking-wider text-primary uppercase">
           {flow.title}
         </span>
         <button
@@ -99,24 +99,12 @@ export default function FlowPlayer({
             exit={{ opacity: 0, x: -8 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
           >
-            <p className="text-sm leading-relaxed text-foreground/85">
+            <p className="text-sm leading-relaxed text-foreground/85 font-poppins">
               <span className="mr-2 font-doto font-black text-primary">
                 {String(stepIndex + 1).padStart(2, '0')}
               </span>
               {step.text}
             </p>
-            {nodeNames.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {nodeNames.map((name, i) => (
-                  <span
-                    key={`${name}-${i}`}
-                    className="border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] tracking-wider text-primary/90"
-                  >
-                    {name}
-                  </span>
-                ))}
-              </div>
-            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -139,7 +127,7 @@ export default function FlowPlayer({
           type="button"
           onClick={() => onStepChange(stepIndex + 1)}
           disabled={stepIndex >= total - 1}
-          className="inline-flex cursor-pointer items-center gap-1 border border-foreground/10 px-2.5 py-1 text-[10px] font-bold tracking-widest text-foreground/60 uppercase transition-all hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-foreground/10 disabled:hover:text-foreground/60"
+          className="inline-flex cursor-pointer items-center gap-1 bg-primary  px-2.5 py-1 text-[10px] font-bold tracking-widest text-background uppercase transition-all hover:bg-primary/80 hover:text-background disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-foreground/10 disabled:hover:text-foreground/60"
         >
           Next
           <ChevronRight className="h-3 w-3" />

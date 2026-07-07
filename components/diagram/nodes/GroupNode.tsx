@@ -4,6 +4,8 @@ import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { NodeResizer, useReactFlow, type NodeProps, type Node } from '@xyflow/react'
 import { useEditable } from '@/lib/diagram/editable-context'
+import { usePortalTarget } from '@/lib/diagram/portal-target-context'
+import { clampMenuPosition } from '@/lib/diagram/menu-position'
 
 interface GroupNodeData {
   label: string
@@ -25,6 +27,8 @@ interface DragState {
 function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
   const { setNodes, getNode, deleteElements, screenToFlowPosition } = useReactFlow()
   const editable = useEditable()
+  // Menus portal into the diagram container so they stay visible in fullscreen mode.
+  const portalTarget = usePortalTarget()
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const dragState = useRef<DragState | null>(null)
@@ -35,15 +39,17 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
   }, [data.label])
 
   const saveLabel = useCallback(() => {
-    const trimmed = editValue.trim()
-    setNodes((nds) =>
-      nds.map((n) => {
-        if (n.id !== id) return n
-        return { ...n, data: { ...n.data, label: trimmed || 'Untitled Group' } }
-      }),
-    )
+    const nextLabel = editValue.trim() || 'Untitled Group'
+    if (nextLabel !== data.label) {
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== id) return n
+          return { ...n, data: { ...n.data, label: nextLabel } }
+        }),
+      )
+    }
     setEditing(false)
-  }, [id, setNodes, editValue])
+  }, [id, setNodes, editValue, data.label])
 
   const cancelEditing = useCallback(() => {
     setEditing(false)
@@ -81,10 +87,23 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
     const current = screenToFlowPosition({ x: e.clientX, y: e.clientY })
     const dx = current.x - drag.startFlowX
     const dy = current.y - drag.startFlowY
+    let x = drag.originX + dx
+    let y = drag.originY + dy
+    // Manual drag bypasses React Flow's extent clamping — keep nested groups inside their parent.
+    const node = getNode(id)
+    if (node?.parentId && node.extent === 'parent') {
+      const parent = getNode(node.parentId)
+      const parentW = parent?.width ?? parent?.measured?.width
+      const parentH = parent?.height ?? parent?.measured?.height
+      const w = node.width ?? node.measured?.width ?? 0
+      const h = node.height ?? node.measured?.height ?? 0
+      if (parentW != null) x = Math.min(Math.max(x, 0), Math.max(0, parentW - w))
+      if (parentH != null) y = Math.min(Math.max(y, 0), Math.max(0, parentH - h))
+    }
     setNodes((nds) =>
-      nds.map((n) => (n.id === id ? { ...n, position: { x: drag.originX + dx, y: drag.originY + dy } } : n)),
+      nds.map((n) => (n.id === id ? { ...n, position: { x, y } } : n)),
     )
-  }, [id, screenToFlowPosition, setNodes])
+  }, [id, screenToFlowPosition, setNodes, getNode])
 
   const handleLabelPointerUp = useCallback((e: React.PointerEvent) => {
     if (dragState.current?.pointerId === e.pointerId) {
@@ -97,19 +116,26 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
 
   useEffect(() => {
     if (!menuPos) return
-    const handler = (e: MouseEvent) => {
+    const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target.closest('[data-group-context-menu]')) closeMenu()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMenu()
+    }
+    document.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
   }, [menuPos, closeMenu])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     if (!editable) return
     e.stopPropagation()
-    setMenuPos({ x: e.clientX, y: e.clientY })
+    setMenuPos(clampMenuPosition(e.clientX, e.clientY, 176, 90))
   }, [editable])
 
   const handleUngroup = useCallback(() => {
@@ -203,7 +229,7 @@ function GroupNodeComponent({ id, data, selected }: NodeProps<GroupFlowNode>) {
             Delete
           </div>
         </div>,
-        document.body
+        portalTarget ?? document.body
       )}
     </>
   )

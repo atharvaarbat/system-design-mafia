@@ -34,7 +34,7 @@ export default function Navbar() {
           <div className="h-5 flex items-center invert dark:invert-0 justify-center relative transition-transform duration-300 group-hover:scale-105">
             <img src="/logo.svg" alt="System Design Hub" width="20" height="20" className="w-full h-full" />
           </div>
-          <img src="/mafia.svg" alt=""  className="h-5 invert dark:invert-0" />
+          <img src="/mafia.svg" alt=""  className="h-5 w-auto invert dark:invert-0" />
         </Link>
 
 

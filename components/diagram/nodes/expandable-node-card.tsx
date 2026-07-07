@@ -24,7 +24,7 @@ const spring: Transition = {
 }
 
 function computeCardOrigin(nodeRect: DOMRect) {
-  const cardW = 480
+  const cardW = Math.min(480, window.innerWidth - 32)
   const cardMaxH = Math.min(window.innerHeight - 32, 600)
 
   let left = Math.round(nodeRect.left)
@@ -54,13 +54,23 @@ export default function ExpandableNodeCard({
   const editable = useEditable()
   const portalTarget = usePortalTarget()
 
-  const handleOpen = useCallback(() => {
-    if (editable) return
+  const open = useCallback(() => {
     if (triggerRef.current) {
       setOrigin(computeCardOrigin(triggerRef.current.getBoundingClientRect()))
     }
     setIsOpen(true)
-  }, [editable])
+  }, [])
+
+  // Read-only: single click opens. Editing: click selects/drags, double-click opens.
+  const handleClick = useCallback(() => {
+    if (editable) return
+    open()
+  }, [editable, open])
+
+  const handleDoubleClick = useCallback(() => {
+    if (!editable) return
+    open()
+  }, [editable, open])
 
   const handleClose = useCallback(() => {
     setIsOpen(false)
@@ -68,7 +78,7 @@ export default function ExpandableNodeCard({
 
   return (
     <>
-      <div ref={triggerRef} onClick={handleOpen} className="cursor-pointer">
+      <div ref={triggerRef} onClick={handleClick} onDoubleClick={handleDoubleClick} className="cursor-pointer">
         {trigger}
       </div>
 
@@ -82,7 +92,7 @@ export default function ExpandableNodeCard({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
               onClick={handleClose}
-              className="fixed inset-0 z-50 "
+              className="fixed inset-0 z-50 bg-black/15"
             >
               <motion.div
                 key="node-card"

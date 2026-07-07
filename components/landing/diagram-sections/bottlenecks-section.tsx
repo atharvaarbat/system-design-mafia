@@ -32,7 +32,7 @@ export default function BottlenecksSection({
             className="border border-foreground/5 bg-foreground/1.5"
           >
             <div className="flex items-center gap-3 border-b border-foreground/5 px-6 py-4">
-              <span className="border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-[10px] font-bold tracking-widest text-amber-400 uppercase">
+              <span className=" px-2 py-0.5 text-[10px] font-bold tracking-widest text-amber-400 uppercase">
                 Risk {String(i + 1).padStart(2, '0')}
               </span>
               <h3 className="text-sm font-bold tracking-wide text-foreground uppercase">
@@ -40,24 +40,24 @@ export default function BottlenecksSection({
               </h3>
             </div>
             <div className="space-y-5 p-6">
-              <div className="border-l-2 border-amber-500/40 pl-4">
+              <div className="">
                 <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-amber-400 uppercase">
-                  <TriangleAlert className="h-3 w-3" />
+                  {/* <TriangleAlert className="h-3 w-3" /> */}
                   Failure mode
                 </div>
                 <RichText
                   content={item.problem}
-                  className="text-xs dark:text-foreground/55 text-foreground/70"
+                  className="text-sm dark:text-foreground/55 text-foreground/70"
                 />
               </div>
-              <div className="border-l-2 border-primary/40 pl-4">
+              <div className="">
                 <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-primary uppercase">
-                  <ShieldCheck className="h-3 w-3" />
+                  {/* <ShieldCheck className="h-3 w-3" /> */}
                   Mitigation
                 </div>
                 <RichText
                   content={item.mitigation}
-                  className="text-xs dark:text-foreground/55 text-foreground/70"
+                  className="text-sm dark:text-foreground/55 text-foreground/70"
                 />
               </div>
             </div>

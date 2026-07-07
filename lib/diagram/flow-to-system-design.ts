@@ -56,7 +56,8 @@ export function flowToSystemDesign(nodes: Node[], edges: Edge[], original?: Syst
 
   const systemEdges: SystemDesignEdge[] = []
   for (const edge of edges) {
-    if (edge.type !== 'architectureEdge') continue
+    // Untyped edges render as architectureEdge via defaultEdgeOptions — export them too.
+    if (edge.type && edge.type !== 'architectureEdge') continue
     const ed = edge.data as Record<string, unknown> | undefined
     const se: SystemDesignEdge = {
       id: edge.id,

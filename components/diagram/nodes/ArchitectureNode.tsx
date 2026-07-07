@@ -9,35 +9,51 @@ import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
 import { useDiagramHighlight } from '@/lib/diagram/highlight-context'
 import { useSelectionActions } from '@/lib/diagram/selection-actions-context'
 import { useEditable } from '@/lib/diagram/editable-context'
+import { usePortalTarget } from '@/lib/diagram/portal-target-context'
+import { clampMenuPosition } from '@/lib/diagram/menu-position'
 import RichText from '@/components/ui/rich-text'
 import ExpandableNodeCard from './expandable-node-card'
 
 type ArchitectureFlowNode = Node<SystemDesignNode & Record<string, unknown>>
 
+/** Probe results shared across all nodes — each shape path is fetched once, not once per node. */
+const shapeAvailabilityCache = new Map<string, boolean>()
+
 /** A masked element is hidden entirely (not just unmasked) when its mask-image 404s,
  *  so we verify the shape loads before applying the mask instead of relying on CSS fallback. */
 function useShapeAvailable(path: string): boolean {
-  const [available, setAvailable] = useState(false)
+  const [state, setState] = useState({ path, available: shapeAvailabilityCache.get(path) ?? false })
+  if (state.path !== path) {
+    setState({ path, available: shapeAvailabilityCache.get(path) ?? false })
+  }
 
   useEffect(() => {
+    if (shapeAvailabilityCache.has(path)) return
     let cancelled = false
-    setAvailable(false)
     const img = new Image()
-    img.onload = () => !cancelled && setAvailable(true)
-    img.onerror = () => !cancelled && setAvailable(false)
+    img.onload = () => {
+      shapeAvailabilityCache.set(path, true)
+      if (!cancelled) setState({ path, available: true })
+    }
+    img.onerror = () => {
+      shapeAvailabilityCache.set(path, false)
+      if (!cancelled) setState({ path, available: false })
+    }
     img.src = path
     return () => {
       cancelled = true
     }
   }, [path])
 
-  return available
+  return state.available
 }
 
 function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlowNode>) {
   const { deleteElements, getNodes } = useReactFlow()
   const { groupSelectedNodes, ungroupSelectedNodes, moveNodesToGroup } = useSelectionActions()
   const editable = useEditable()
+  // Menus portal into the diagram container so they stay visible in fullscreen mode.
+  const portalTarget = usePortalTarget()
   const edges = useEdges()
   const { hoveredEdgeIds } = useEdgeHover()
   const { highlight } = useDiagramHighlight()
@@ -70,12 +86,19 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
 
   useEffect(() => {
     if (!menuState) return
-    const handler = (e: MouseEvent) => {
+    const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target.closest('[data-node-context-menu]') && !target.closest('[data-group-submenu]')) closeMenu()
     }
-    document.addEventListener('mousedown', handler, true)
-    return () => document.removeEventListener('mousedown', handler, true)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMenu()
+    }
+    document.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
   }, [menuState, closeMenu])
 
   // Reads the current selection on demand (not a subscription) so opening
@@ -103,7 +126,8 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
     }
 
     const hasGroups = allNodes.some((n) => n.type === 'groupNode')
-    setMenuState({ x: e.clientX, y: e.clientY, groupableIds, nodeIds, hasParent, hasGroups })
+    const pos = clampMenuPosition(e.clientX, e.clientY, 176, 160)
+    setMenuState({ x: pos.x, y: pos.y, groupableIds, nodeIds, hasParent, hasGroups })
   }, [editable, getNodes, data.id])
 
   const handleGroup = useCallback(() => {
@@ -128,7 +152,8 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
       .filter((n) => n.type === 'groupNode' && n.id !== currentParentId)
       .map((n) => ({ id: n.id, label: (n.data as { label?: string })?.label || n.id }))
     if (groups.length === 0) return
-    setGroupSubmenu({ x: menuState.x + 144, y: menuState.y, groups })
+    const pos = clampMenuPosition(menuState.x + 144, menuState.y, 176, Math.min(groups.length * 28 + 8, 280))
+    setGroupSubmenu({ x: pos.x, y: pos.y, groups })
   }, [menuState, getNodes, groupSubmenu])
 
   const handleMoveToGroup = useCallback((targetGroupId: string) => {
@@ -161,11 +186,6 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
         : data.status === 'error' ? '#ef4444'
           : data.status === 'inactive' ? '#d1d5db'
             : undefined
-
-  const connectedEdgeCount = useMemo(
-    () => edges.filter((e) => e.source === data.id || e.target === data.id).length,
-    [edges, data.id],
-  )
 
   return (
     <>
@@ -309,7 +329,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             Delete
           </div>
         </div>,
-        document.body
+        portalTarget ?? document.body
       )}
       {groupSubmenu && createPortal(
         <div
@@ -328,7 +348,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             </div>
           ))}
         </div>,
-        document.body
+        portalTarget ?? document.body
       )}
     </>
   )

@@ -2,10 +2,14 @@
 
 import { memo, useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer, useReactFlow, type EdgeProps, type Edge, getBezierPath } from '@xyflow/react'
+import { BaseEdge, EdgeLabelRenderer, useReactFlow, type EdgeProps, type Edge, getBezierPath } from '@xyflow/react'
 import { useTheme } from 'next-themes'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useDiagramHighlight } from '@/lib/diagram/highlight-context'
+import { useEditable } from '@/lib/diagram/editable-context'
+import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
+import { usePortalTarget } from '@/lib/diagram/portal-target-context'
+import { clampMenuPosition } from '@/lib/diagram/menu-position'
 
 interface EdgeData {
   label?: string
@@ -30,6 +34,11 @@ function ArchitectureEdgeComponent({
   selected,
 }: EdgeProps<ArchitectureFlowEdge>) {
   const { deleteElements, setEdges } = useReactFlow()
+  const editable = useEditable()
+  // Menus portal into the diagram container so they stay visible in fullscreen mode.
+  const portalTarget = usePortalTarget()
+  const { hoveredEdgeIds } = useEdgeHover()
+  const isHovered = hoveredEdgeIds.has(id)
   const [menuPos, setMenuPos] = useState<{x: number; y: number} | null>(null)
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
@@ -41,15 +50,17 @@ function ArchitectureEdgeComponent({
   }, [])
 
   const saveLabel = useCallback(() => {
-    const trimmed = editValue.trim()
-    setEdges((eds) =>
-      eds.map((e) => {
-        if (e.id !== id) return e
-        return { ...e, data: { ...e.data, label: trimmed || undefined } }
-      }),
-    )
+    const nextLabel = editValue.trim() || undefined
+    if (nextLabel !== (data?.label || undefined)) {
+      setEdges((eds) =>
+        eds.map((e) => {
+          if (e.id !== id) return e
+          return { ...e, data: { ...e.data, label: nextLabel } }
+        }),
+      )
+    }
     setEditing(false)
-  }, [id, setEdges, editValue])
+  }, [id, setEdges, editValue, data?.label])
 
   const cancelEditing = useCallback(() => {
     setEditing(false)
@@ -67,19 +78,27 @@ function ArchitectureEdgeComponent({
 
   useEffect(() => {
     if (!menuPos) return
-    const handler = (e: MouseEvent) => {
+    const onMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target.closest('[data-edge-context-menu]')) closeMenu()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMenu()
+    }
+    document.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
   }, [menuPos, closeMenu])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!editable) return
     e.preventDefault()
     e.stopPropagation()
-    setMenuPos({ x: e.clientX, y: e.clientY })
-  }, [])
+    setMenuPos(clampMenuPosition(e.clientX, e.clientY, 192, 260))
+  }, [editable])
 
   const themeCtx = useTheme?.()
   const isDark = themeCtx?.resolvedTheme === 'dark'
@@ -162,7 +181,7 @@ function ArchitectureEdgeComponent({
         }}
         markerEnd={`url(#arrow-${id})`}
         />
-      {(data?.label || editing) && (
+      {(data?.label || editing || (data?.protocol && isHovered)) && (
         <EdgeLabelRenderer>
           <div
             style={{
@@ -171,7 +190,7 @@ function ArchitectureEdgeComponent({
               transition: 'opacity 0.5s',
             }}
             className="pointer-events-auto absolute z-50"
-            onDoubleClick={(e) => { e.stopPropagation(); startEditing(data?.label || '') }}
+            onDoubleClick={(e) => { if (!editable) return; e.stopPropagation(); startEditing(data?.label || '') }}
           >
             {editing ? (
               <input
@@ -184,8 +203,11 @@ function ArchitectureEdgeComponent({
                 className="rounded border border-input bg-background px-2 py-0.5 text-xs font-medium text-foreground shadow-sm outline-hidden ring-1 ring-ring/50"
               />
             ) : (
-              <div className={`rounded bg-background px-2 py-0.5 text-xs font-medium shadow-sm ${highlightState === 'active' ? 'text-foreground ring-1 ring-primary/50' : 'text-zinc-600 dark:text-zinc-300'}`}>
-                {data?.label}
+              <div className={`flex items-center gap-1.5 rounded bg-background px-2 py-0.5 text-xs font-medium shadow-sm ${highlightState === 'active' ? 'text-foreground ring-1 ring-primary/50' : 'text-zinc-600 dark:text-zinc-300'}`}>
+                {data?.label && <span>{data.label}</span>}
+                {data?.protocol && isHovered && (
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground">{data.protocol}</span>
+                )}
               </div>
             )}
           </div>
@@ -278,7 +300,7 @@ function ArchitectureEdgeComponent({
             Delete
           </div>
         </div>,
-        document.body
+        portalTarget ?? document.body
       )}
     </>
   )

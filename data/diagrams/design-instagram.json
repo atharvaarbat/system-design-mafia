@@ -1,21 +1,21 @@
 {
   "version": "1.0",
   "title": "Instagram System Architecture",
-  "summary": "### 1. Media Upload & Processing Pipeline\n\nHandles the ingestion and storage of user-uploaded photos and videos. The client requests a pre-signed URL from the Post Service, uploads the media directly to Object Storage (S3), and then notifies the backend. The Post Service saves the metadata in a relational database and publishes a 'new post' event to Kafka to trigger asynchronous processes like feed updates.\n\n### 2. Feed Generation & Read Path\n\nFocuses on serving a user's personalized news feed. The Feed Service retrieves posts from the user's followers. A hybrid approach is used: for normal users with few followers, posts are pre-computed and pushed to a Redis cache (fan-out-on-write). For celebrities with millions of followers, posts are fetched on-demand (fan-out-on-read) and merged with the cached feed for the user.\n\n### 3. Engagement & Search Service\n\nManages user interactions (likes, comments) and search functionality. The Engagement Service asynchronously processes likes and comments via a message queue (Kafka) to update databases and caches. The Search Service uses Elasticsearch to index user profiles and posts, providing fast full-text search capabilities, with results cached in Redis for performance.",
+  "summary": "### 1. Media Upload & Processing Pipeline\n\nHandles the ingestion and storage of user-uploaded photos and videos. The client requests a pre-signed URL from the Post Service and uploads the media directly to Object Storage (S3). The Post Service saves the metadata (caption, user_id, etc.) in a sharded relational database (PostgreSQL) and publishes a 'new post' event to Kafka to trigger asynchronous processes like feed generation and video transcoding. Video transcoding is handled by a dedicated async worker service that processes the raw video into multiple renditions.\n\n### 2. Feed Generation & Read Path\n\nFocuses on serving a user's personalized news feed with low latency (<200ms). A hybrid fan-out approach is used: for normal users with a moderate number of followers, posts are pre-computed and pushed to a **Feed Timeline** table (Cassandra) and cached in Redis (fan-out-on-write). For celebrity users with millions of followers, posts are fetched on-demand (fan-in-on-read) and merged with the cached feed for the user. The Feed Service retrieves post IDs from the timeline and then fetches the full post metadata, with results served from the Redis cache.\n\n### 3. Engagement & Notification Service\n\nManages user interactions (likes, comments) and notifications. The Engagement Service asynchronously processes likes and comments via a message queue (Kafka) to update databases and caches. The Notification Service consumes events from Kafka and sends push notifications to users via APNs/FCM. The system uses a **sharded relational database** for core data (posts, users, comments) and a **wide-column store (Cassandra)** for feed timelines, optimized for fast sequential reads. Elasticsearch is used for full-text search and indexing of posts and user profiles, with results cached in Redis for performance.",
   "nodes": [
     {
       "id": "upload-client",
       "kind": "mobile-app",
-      "x": 240,
-      "y": 320,
+      "x": 160,
+      "y": 280,
       "name": "Client (Mobile/Web)",
       "group": "frame-upload"
     },
     {
       "id": "upload-api-gw",
       "kind": "api-gateway",
-      "x": 480,
-      "y": 304,
+      "x": 424,
+      "y": 264,
       "name": "API Gateway",
       "description": "Auth, rate limiting",
       "group": "frame-upload"
@@ -23,8 +23,8 @@
     {
       "id": "upload-post-svc",
       "kind": "rest-api",
-      "x": 728,
-      "y": 296,
+      "x": 672,
+      "y": 264,
       "name": "Post Service",
       "description": "Generates pre-signed URLs, metadata",
       "group": "frame-upload"
@@ -32,8 +32,8 @@
     {
       "id": "upload-s3",
       "kind": "s3",
-      "x": 496,
-      "y": 120,
+      "x": 448,
+      "y": 104,
       "name": "Object Storage (S3)",
       "description": "Stores photos & videos",
       "group": "frame-upload"
@@ -41,34 +41,43 @@
     {
       "id": "upload-metadata-db",
       "kind": "postgres",
-      "x": 1040,
+      "x": 832,
       "y": 360,
       "name": "Metadata DB (PostgreSQL)",
-      "description": "Posts, Users, Followers",
+      "description": "Sharded: Users, Posts, Comments",
       "group": "frame-upload"
     },
     {
       "id": "upload-kafka",
       "kind": "kafka",
-      "x": 1040,
-      "y": 192,
+      "x": 960,
+      "y": 160,
       "name": "Message Queue (Kafka)",
       "description": "\"New Post\" events",
       "group": "frame-upload"
     },
     {
+      "id": "upload-transcoder",
+      "kind": "worker-service",
+      "x": 1256,
+      "y": 88,
+      "name": "Video Transcoder",
+      "description": "Async video processing",
+      "group": "frame-upload"
+    },
+    {
       "id": "feed-client",
       "kind": "mobile-app",
-      "x": 272,
-      "y": 672,
+      "x": 160,
+      "y": 744,
       "name": "Client (Mobile/Web)",
       "group": "frame-feed"
     },
     {
       "id": "feed-api-gw",
       "kind": "api-gateway",
-      "x": 504,
-      "y": 656,
+      "x": 416,
+      "y": 744,
       "name": "API Gateway",
       "description": "Auth, rate limiting",
       "group": "frame-feed"
@@ -76,35 +85,44 @@
     {
       "id": "feed-svc",
       "kind": "rest-api",
-      "x": 736,
-      "y": 656,
+      "x": 672,
+      "y": 744,
       "name": "Feed Service",
       "description": "Generates and serves feed",
       "group": "frame-feed"
     },
     {
+      "id": "feed-timeline-db",
+      "kind": "cassandra",
+      "x": 1368,
+      "y": 880,
+      "name": "Feed Timeline (Cassandra)",
+      "description": "Pre-computed timelines",
+      "group": "frame-feed"
+    },
+    {
       "id": "feed-redis",
       "kind": "redis",
-      "x": 856,
-      "y": 808,
+      "x": 952,
+      "y": 744,
       "name": "Feed Cache (Redis)",
-      "description": "Pre-computed timelines",
+      "description": "Top 100 feed posts",
       "group": "frame-feed"
     },
     {
       "id": "feed-posts-db",
       "kind": "postgres",
-      "x": 992,
-      "y": 656,
+      "x": 840,
+      "y": 888,
       "name": "Posts DB (PostgreSQL)",
-      "description": "For celebrity posts",
+      "description": "For celebrity posts (fan-in)",
       "group": "frame-feed"
     },
     {
       "id": "feed-kafka-consumer",
       "kind": "worker-service",
-      "x": 512,
-      "y": 816,
+      "x": 1200,
+      "y": 744,
       "name": "Feed Worker",
       "description": "Consumes 'New Post' events",
       "group": "frame-feed"
@@ -112,16 +130,16 @@
     {
       "id": "eng-client",
       "kind": "mobile-app",
-      "x": 1528,
-      "y": 376,
+      "x": 1496,
+      "y": 168,
       "name": "Client (Mobile/Web)",
       "group": "frame-engagement"
     },
     {
       "id": "eng-api-gw",
       "kind": "api-gateway",
-      "x": 1748,
-      "y": 364,
+      "x": 1696,
+      "y": 152,
       "name": "API Gateway",
       "description": "Auth, rate limiting",
       "group": "frame-engagement"
@@ -129,8 +147,8 @@
     {
       "id": "eng-svc",
       "kind": "rest-api",
-      "x": 1984,
-      "y": 320,
+      "x": 1944,
+      "y": 120,
       "name": "Engagement Service",
       "description": "Likes, comments, shares",
       "group": "frame-engagement"
@@ -139,7 +157,7 @@
       "id": "eng-kafka",
       "kind": "kafka",
       "x": 2192,
-      "y": 208,
+      "y": 88,
       "name": "Message Queue (Kafka)",
       "description": "Engagement events",
       "group": "frame-engagement"
@@ -147,8 +165,8 @@
     {
       "id": "eng-worker",
       "kind": "worker-service",
-      "x": 2440,
-      "y": 256,
+      "x": 2456,
+      "y": 208,
       "name": "Engagement Worker",
       "description": "Async processing",
       "group": "frame-engagement"
@@ -156,8 +174,8 @@
     {
       "id": "eng-redis",
       "kind": "redis",
-      "x": 2232,
-      "y": 352,
+      "x": 2192,
+      "y": 208,
       "name": "Engagement Cache (Redis)",
       "description": "Counts, top comments",
       "group": "frame-engagement"
@@ -165,8 +183,8 @@
     {
       "id": "search-svc",
       "kind": "rest-api",
-      "x": 1896,
-      "y": 520,
+      "x": 1848,
+      "y": 360,
       "name": "Search Service",
       "description": "Handles search queries",
       "group": "frame-engagement"
@@ -174,8 +192,8 @@
     {
       "id": "search-es",
       "kind": "elasticsearch",
-      "x": 2168,
-      "y": 464,
+      "x": 2192,
+      "y": 328,
       "name": "Search Index (Elasticsearch)",
       "description": "Full-text search",
       "group": "frame-engagement"
@@ -183,10 +201,19 @@
     {
       "id": "search-redis",
       "kind": "redis",
-      "x": 2168,
-      "y": 576,
+      "x": 2192,
+      "y": 456,
       "name": "Search Cache (Redis)",
       "description": "Recent search results",
+      "group": "frame-engagement"
+    },
+    {
+      "id": "notif-svc",
+      "kind": "worker-service",
+      "x": 2456,
+      "y": 88,
+      "name": "Notification Service",
+      "description": "Sends push notifications",
       "group": "frame-engagement"
     }
   ],
@@ -210,6 +237,55 @@
       "protocol": "grpc"
     },
     {
+      "id": "e-upload-3",
+      "source": "upload-client",
+      "target": "upload-s3",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "label": "Direct Upload",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "e-upload-4",
+      "source": "upload-post-svc",
+      "target": "upload-metadata-db",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "label": "Write",
+      "protocol": "database",
+      "style": "solid"
+    },
+    {
+      "id": "e-upload-5",
+      "source": "upload-post-svc",
+      "target": "upload-s3",
+      "sourceHandle": "top-source",
+      "targetHandle": "right-target",
+      "label": "Pre-signed URL",
+      "protocol": "internal"
+    },
+    {
+      "id": "e-upload-6",
+      "source": "upload-post-svc",
+      "target": "upload-kafka",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Publish",
+      "protocol": "message",
+      "style": "solid"
+    },
+    {
+      "id": "e-upload-7",
+      "source": "upload-kafka",
+      "target": "upload-transcoder",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Consume",
+      "protocol": "message",
+      "style": "dashed"
+    },
+    {
       "id": "e-feed-1",
       "source": "feed-client",
       "target": "feed-api-gw",
@@ -230,11 +306,11 @@
     {
       "id": "e-feed-5",
       "source": "feed-kafka-consumer",
-      "target": "feed-svc",
-      "sourceHandle": "right-source",
+      "target": "feed-timeline-db",
+      "sourceHandle": "bottom-source",
       "targetHandle": "left-target",
-      "label": "Update Feed",
-      "protocol": "internal",
+      "label": "Write (Fan-out)",
+      "protocol": "database",
       "style": "dashed"
     },
     {
@@ -256,7 +332,17 @@
       "protocol": "grpc"
     },
     {
-      "id": "e-eng-4",
+      "id": "e-eng-3",
+      "source": "eng-svc",
+      "target": "eng-redis",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "label": "Increment/Get",
+      "protocol": "database",
+      "style": "solid"
+    },
+    {
+      "id": "e-eng-5",
       "source": "eng-kafka",
       "target": "eng-worker",
       "sourceHandle": "right-source",
@@ -266,13 +352,13 @@
       "style": "dashed"
     },
     {
-      "id": "e-eng-5",
-      "source": "eng-svc",
-      "target": "eng-redis",
-      "sourceHandle": "right-source",
+      "id": "e-eng-6",
+      "source": "eng-api-gw",
+      "target": "search-svc",
+      "sourceHandle": "bottom-source",
       "targetHandle": "left-target",
-      "label": "Increment/Get",
-      "protocol": "database",
+      "label": "gRPC",
+      "protocol": "grpc",
       "style": "solid"
     },
     {
@@ -286,92 +372,74 @@
       "style": "solid"
     },
     {
-      "id": "xy-edge__upload-clienttop-source-upload-s3left-target",
-      "source": "upload-client",
-      "target": "upload-s3",
-      "sourceHandle": "top-source",
-      "targetHandle": "left-target",
-      "label": "Direct Upload",
-      "protocol": "https",
-      "style": "dashed"
-    },
-    {
-      "id": "xy-edge__upload-post-svcbottom-source-upload-metadata-dbleft-target",
-      "source": "upload-post-svc",
-      "target": "upload-metadata-db",
-      "sourceHandle": "bottom-source",
-      "targetHandle": "left-target",
-      "label": "Write",
-      "protocol": "database",
-      "style": "solid"
-    },
-    {
-      "id": "xy-edge__upload-post-svctop-source-upload-s3right-target",
-      "source": "upload-post-svc",
-      "target": "upload-s3",
-      "sourceHandle": "top-source",
-      "targetHandle": "right-target",
-      "label": "Pre-signed URL",
-      "protocol": "internal"
-    },
-    {
-      "id": "xy-edge__upload-post-svcright-source-upload-kafkaleft-target",
-      "source": "upload-post-svc",
-      "target": "upload-kafka",
-      "sourceHandle": "right-source",
-      "targetHandle": "left-target",
-      "label": "Publish",
-      "protocol": "message",
-      "style": "solid"
-    },
-    {
-      "id": "xy-edge__feed-svcbottom-source-feed-redisleft-target",
-      "source": "feed-svc",
-      "target": "feed-redis",
-      "sourceHandle": "bottom-source",
-      "targetHandle": "left-target",
-      "label": "Read",
-      "protocol": "database"
-    },
-    {
-      "id": "xy-edge__feed-svcright-source-feed-posts-dbleft-target",
-      "source": "feed-svc",
-      "target": "feed-posts-db",
-      "sourceHandle": "right-source",
-      "targetHandle": "left-target",
-      "label": "Read",
-      "protocol": "database",
-      "style": "dashed"
-    },
-    {
-      "id": "xy-edge__eng-svctop-source-eng-kafkaleft-target",
-      "source": "eng-svc",
-      "target": "eng-kafka",
-      "sourceHandle": "top-source",
-      "targetHandle": "left-target",
-      "label": "Publish",
-      "protocol": "message",
-      "style": "solid"
-    },
-    {
-      "id": "xy-edge__eng-api-gwbottom-source-search-svcleft-target",
-      "source": "eng-api-gw",
-      "target": "search-svc",
-      "sourceHandle": "bottom-source",
-      "targetHandle": "left-target",
-      "label": "gRPC",
-      "protocol": "grpc",
-      "style": "solid"
-    },
-    {
-      "id": "xy-edge__search-svcright-source-search-redisleft-target",
+      "id": "e-eng-8",
       "source": "search-svc",
       "target": "search-redis",
-      "sourceHandle": "right-source",
+      "sourceHandle": "bottom-source",
       "targetHandle": "left-target",
       "label": "Cache",
       "protocol": "database",
       "style": "dashed"
+    },
+    {
+      "id": "e-eng-9",
+      "source": "eng-kafka",
+      "target": "notif-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Consume",
+      "protocol": "message",
+      "style": "solid"
+    },
+    {
+      "id": "xy-edge__feed-svcbottom-source-feed-posts-dbleft-target",
+      "source": "feed-svc",
+      "target": "feed-posts-db",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "label": "Read (Fan-in)",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__feed-svcright-source-feed-redisleft-target",
+      "source": "feed-svc",
+      "target": "feed-redis",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Read/Write",
+      "protocol": "database"
+    },
+    {
+      "id": "xy-edge__feed-kafka-consumerleft-source-feed-redisright-target",
+      "source": "feed-kafka-consumer",
+      "target": "feed-redis",
+      "sourceHandle": "left-source",
+      "targetHandle": "right-target",
+      "label": "Cache",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__upload-kafkaright-source-feed-kafka-consumertop-target",
+      "source": "upload-kafka",
+      "target": "feed-kafka-consumer",
+      "sourceHandle": "right-source",
+      "targetHandle": "top-target",
+      "label": "Consume",
+      "protocol": "message",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "xy-edge__eng-svcright-source-eng-kafkaleft-target",
+      "source": "eng-svc",
+      "target": "eng-kafka",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "Publish",
+      "protocol": "message",
+      "style": "solid"
     }
   ],
   "groups": [
@@ -380,8 +448,8 @@
       "label": "1. Media Upload & Processing Pipeline",
       "color": "#f59e0b",
       "style": "solid",
-      "width": 1300,
-      "height": 500,
+      "width": 1320,
+      "height": 448,
       "x": 80,
       "y": 40
     },
@@ -390,20 +458,271 @@
       "label": "2. Feed Generation & Read Path",
       "color": "#6366f1",
       "style": "solid",
-      "width": 1300,
-      "height": 392,
+      "width": 1500,
+      "height": 400,
       "x": 80,
-      "y": 580
+      "y": 624
     },
     {
       "id": "frame-engagement",
-      "label": "3. Engagement & Search Service",
+      "label": "3. Engagement & Notification Service",
       "color": "#10b981",
       "style": "solid",
-      "width": 1300,
-      "height": 550,
-      "x": 1448,
-      "y": 164
+      "width": 1160,
+      "height": 521,
+      "x": 1456,
+      "y": 48
     }
+  ],
+  "difficulty": "advanced",
+  "requirements": {
+    "functional": [
+      "Users can upload photos and videos, which are stored durably with 11 9s of reliability.",
+      "Users can follow/unfollow other users and view a personalized news feed of posts from followed accounts.",
+      "Users can like, comment, and share posts, and receive notifications for these interactions.",
+      "Users can search for other users and posts based on captions or hashtags.",
+      "The system must support ephemeral stories that disappear after 24 hours."
+    ],
+    "nonFunctional": [
+      "High availability — the service must be available 99.99% of the time, with no single point of failure.",
+      "Low latency — News Feed generation must complete within 200ms globally.",
+      "Massive scalability — the system must handle hundreds of millions of daily active users and billions of read/write operations.",
+      "Eventual consistency — it is acceptable for a slight delay in showing new posts or likes, in favor of availability and performance."
+    ]
+  },
+  "estimates": [
+    {
+      "label": "Daily Active Users",
+      "value": "500M",
+      "note": "Generates ~5 billion feed reads per day."
+    },
+    {
+      "label": "New Posts / Day",
+      "value": "500M",
+      "note": "~6,000 writes/sec, with 70% photos and 30% videos."
+    },
+    {
+      "label": "Read : Write Ratio",
+      "value": "~200 : 1",
+      "note": "Feed reads and searches dwarf uploads — optimize the read path heavily."
+    },
+    {
+      "label": "Likes / Day",
+      "value": "10B",
+      "note": "~115,000 writes/sec, requiring massive write throughput for engagement."
+    },
+    {
+      "label": "Storage / Day",
+      "value": "750 TB",
+      "note": "Drives the need for a multi-tiered blob storage strategy with CDN caching."
+    }
+  ],
+  "flows": [
+    {
+      "id": "upload-photo",
+      "title": "Upload a photo",
+      "description": "The write path for a new photo — from client to object storage, with metadata and async jobs.",
+      "steps": [
+        {
+          "text": "The client requests a pre-signed URL from the Post Service via the API Gateway.",
+          "nodeIds": [
+            "upload-client",
+            "upload-api-gw",
+            "upload-post-svc"
+          ],
+          "edgeIds": [
+            "e-upload-1",
+            "e-upload-2"
+          ]
+        },
+        {
+          "text": "The client uploads the photo directly to Object Storage (S3) using the pre-signed URL, bypassing the API servers to save bandwidth.",
+          "nodeIds": [
+            "upload-client",
+            "upload-s3"
+          ],
+          "edgeIds": [
+            "e-upload-3"
+          ]
+        },
+        {
+          "text": "The client notifies the Post Service, which saves the photo metadata (caption, user_id, S3 path) in the sharded PostgreSQL database.",
+          "nodeIds": [
+            "upload-client",
+            "upload-post-svc",
+            "upload-metadata-db"
+          ],
+          "edgeIds": [
+            "e-upload-4"
+          ]
+        },
+        {
+          "text": "The Post Service publishes a 'new post' event to Kafka for asynchronous processing, such as feed generation and video transcoding.",
+          "nodeIds": [
+            "upload-post-svc",
+            "upload-kafka"
+          ],
+          "edgeIds": [
+            "e-upload-6"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "load-feed",
+      "title": "Load the home feed",
+      "description": "The read path — how a user's personalized feed is generated and served with low latency.",
+      "steps": [
+        {
+          "text": "The client requests the home feed from the Feed Service via the API Gateway.",
+          "nodeIds": [
+            "feed-client",
+            "feed-api-gw",
+            "feed-svc"
+          ],
+          "edgeIds": [
+            "e-feed-1",
+            "e-feed-2"
+          ]
+        },
+        {
+          "text": "The Feed Service first checks the Redis cache for the user's top pre-computed feed posts.",
+          "nodeIds": [
+            "feed-svc",
+            "feed-redis"
+          ],
+          "edgeIds": [
+            "e-feed-3"
+          ]
+        },
+        {
+          "text": "For posts from celebrity users (fan-in), the service directly queries the Posts DB to merge them into the feed.",
+          "nodeIds": [
+            "feed-svc",
+            "feed-posts-db"
+          ],
+          "edgeIds": [
+            "e-feed-4"
+          ]
+        },
+        {
+          "text": "The combined feed is returned to the client, with the entire operation completing in under 200ms.",
+          "nodeIds": [
+            "feed-client",
+            "feed-svc"
+          ],
+          "edgeIds": []
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Clients upload media directly",
+      "choice": "Pre-signed URLs + direct S3 upload",
+      "alternatives": [
+        "Proxy uploads through API servers"
+      ],
+      "rationale": "Video and image uploads can be gigabytes in size. If these bytes flowed through the API tier, it would have to scale with *media traffic* instead of *request traffic*, making it expensive and slow. Pre-signed URLs offload the bandwidth and latency cost to the object storage and CDN, while the API tier only handles small metadata requests."
+    },
+    {
+      "title": "Feed generation strategy",
+      "choice": "Hybrid fan-out (write for normal, read for celebrities)",
+      "alternatives": [
+        "Fan-out on write for all users",
+        "Fan-in on read for all users"
+      ],
+      "rationale": "Fan-out on write for all users would cause massive write amplification for celebrities with millions of followers. Fan-in on read for all users would make feed reads too slow due to many joins. The hybrid approach balances this: most users get fast pre-computed feeds, while the small number of celebrity accounts use on-demand reads to avoid the 'write explosion' problem."
+    },
+    {
+      "title": "PhotoID generation",
+      "choice": "Epoch time + auto-increment in a dedicated key generation service",
+      "alternatives": [
+        "Database auto-increment in each shard"
+      ],
+      "rationale": "To uniquely identify photos and avoid collisions across shards, we need a globally unique ID. Using epoch time as the most significant bits allows us to sort photos by time naturally, and an auto-increment sequence ensures uniqueness. This also enables efficient retrieval of recent posts from a specific user, as the index will be sequential."
+    },
+    {
+      "title": "Data sharding strategy",
+      "choice": "Partition based on PhotoID (or UserID for consistency)",
+      "alternatives": [
+        "Partition based on UserID"
+      ],
+      "rationale": "Sharding by UserID keeps all photos of a user on one shard, but it creates 'hot spots' for popular users. Sharding by PhotoID, generated with a consistent hash, ensures a more even data distribution and avoids any single shard from being overwhelmed by a celebrity's uploads. It also simplifies adding new shards for future growth."
+    },
+    {
+      "title": "Async video processing",
+      "choice": "Dedicated worker service consuming from a Kafka queue",
+      "alternatives": [
+        "Process videos synchronously during upload"
+      ],
+      "rationale": "Video transcoding is CPU-intensive and time-consuming. Processing it synchronously would block the API server and lead to poor user experience. By decoupling it into an async worker service, the upload process becomes fast and non-blocking. This also allows the system to scale the video processing fleet independently based on the queue length."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Feed: Celebrity post 'write explosion'",
+      "problem": "When a celebrity with 100 million followers posts a photo, fan-out-on-write would require 100 million writes to the followers' timelines. This could overwhelm the database and Kafka queues, leading to high latency and potential data loss.",
+      "mitigation": "The system uses a hybrid fan-out approach. For celebrity users, the system uses fan-in-on-read, where the post is not pre-written to followers' timelines. Instead, the post is fetched from the posts DB and merged with the cached feed at read time. This avoids the massive write spike for popular accounts."
+    },
+    {
+      "title": "Engagement: Thundering herd on viral posts",
+      "problem": "A viral post can receive millions of likes and comments within minutes. This creates a thundering herd problem where the engagement service, the notification service, and the underlying databases are hit with a massive surge in writes and reads.",
+      "mitigation": "The system uses a message queue (Kafka) to decouple the ingestion of likes/comments from their processing. The Engagement Service writes the action to the queue, which acts as a buffer. The Engagement Worker processes the queue items asynchronously, batching writes to the database to reduce load. Redis is used to cache counts, so reads do not hit the database."
+    },
+    {
+      "title": "Media: High cost of storage and egress",
+      "problem": "With 500M new posts per day, storing and serving petabytes of media becomes extremely expensive, especially if content is served directly from blob storage.",
+      "mitigation": "A multi-tiered storage strategy is used: hot tier (SSD) for recent/frequent access, and cold tier (Glacier/S3-IA) for older content. A global CDN caches media closer to users, reducing egress costs and latency by 90-95% for cache hits."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why are pre-signed URLs used for media uploads, instead of uploading through the application servers?",
+      "answer": "Pre-signed URLs allow the client to upload directly to the blob storage (e.g., S3). This saves the application servers from processing heavy media traffic (which is much larger than API requests). It makes the system more scalable, cost-effective, and reduces the load on the API services, allowing them to focus on smaller metadata operations."
+    },
+    {
+      "question": "What problem does the hybrid fan-out approach solve in Instagram's feed generation?",
+      "answer": "It balances the trade-off between fast reads and heavy writes. For normal users, fan-out-on-write pre-computes the feed for lightning-fast reads. For celebrities with millions of followers, fan-in-on-read is used to avoid the massive write amplification (100M writes per post) that would overwhelm the system. This hybrid strategy ensures both low latency for most users and stability for the system."
+    },
+    {
+      "question": "Why is a sharded relational database (like PostgreSQL) a good choice for storing user and post metadata in Instagram, rather than a document database?",
+      "answer": "The data for users, posts, and comments is highly relational (e.g., users follow users, posts are owned by users, comments are on posts). A relational database with ACID transactions ensures data consistency for these core relationships. While it requires careful sharding to scale, it provides the strong consistency needed for critical features like follows and post creation, which are harder to achieve in a distributed document store."
+    },
+    {
+      "question": "What is the purpose of using a wide-column store like Cassandra for the feed timeline?",
+      "answer": "Cassandra is optimized for high-volume writes and fast sequential reads. The feed timeline table is partitioned by user_id and clustered by creation time, making it efficient to write a new post ID to the timeline of every follower and to later read the top N posts quickly (by scanning the partition). Its distributed nature also ensures high availability and write throughput for the heavy fan-out operations."
+    },
+    {
+      "question": "Why is Redis used in conjunction with the Feed Timeline (Cassandra) and not as the primary store for the feed?",
+      "answer": "Cassandra provides persistence and handles the massive write throughput from fan-out. However, reading from Cassandra for every feed request can still be somewhat expensive. Redis, an in-memory cache, is used to store the top 100 feed posts for a user. This provides millisecond read latencies and reduces the load on Cassandra, making feed reads extremely fast and scalable for billions of daily requests."
+    }
+  ],
+  "references": [
+    {
+      "title": "Instagram Engineering Blog — Scaling Instagram Infrastructure",
+      "url": "https://engineering.instagram.com/tagged/engineering",
+      "source": "engineering.instagram.com"
+    },
+    {
+      "title": "Facebook Engineering — Cassandra at Instagram",
+      "url": "https://engineering.fb.com/2016/09/13/core-data/instagram-moves-to-cassandra/",
+      "source": "engineering.fb.com"
+    },
+    {
+      "title": "Netflix Tech Blog — Real-time Streaming and Video Processing",
+      "url": "https://netflixtechblog.com/",
+      "source": "netflixtechblog.com"
+    },
+    {
+      "title": "The DynamoDB Paper — Amazon's Highly Available Key-Value Store",
+      "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf",
+      "source": "allthingsdistributed.com"
+    }
+  ],
+  "relatedPatterns": [
+    "event-driven-architecture",
+    "caching-strategy",
+    "database-sharding"
   ]
 }
