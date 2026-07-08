@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import DiagramVisual from './diagram-visuals';
 
-interface DiagramMeta {
+export interface DiagramMeta {
   slug: string;
   title: string;
   description: string;
