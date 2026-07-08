@@ -12,6 +12,7 @@ export interface DiagramMeta {
   difficulty: 'beginner' | 'intermediate' | 'advanced';
   nodeCount: number;
   edgeCount: number;
+  image?: string;
 }
 
 export interface DiagramIndex {

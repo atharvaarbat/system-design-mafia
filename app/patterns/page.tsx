@@ -7,7 +7,6 @@ import Link from 'next/link';
 import Container from '@/components/landing/container';
 import Heading from '@/components/landing/heading';
 import SubHeading from '@/components/landing/subheading';
-import DiagramVisual from '@/components/landing/diagram-visuals';
 import diagrams from '@/data/diagrams/index.json';
 import Footer from '@/components/landing/footer';
 import Navbar from '@/components/landing/navbar';
@@ -152,8 +151,8 @@ export default function PatternsPage() {
                 }}
               >
                 <SubHeading
-                  variant="big"
-                  className="max-w-2xl text-pretty"
+                  variant="medium"
+                  className="max-w-2xl text-pretty font-poppins"
                 >
                   Proven architectural patterns for building scalable, maintainable
                   distributed systems. Filter by name, description, or tag.
@@ -235,17 +234,12 @@ export default function PatternsPage() {
                       whileHover="hover"
                       className="group relative flex flex-col border border-foreground/10 bg-foreground/[0.02] transition-colors duration-500 ease-out hover:border-primary/30 hover:bg-primary/[0.03]"
                     >
-                      {/* Visual */}
-                      <figure className="relative aspect-[4/3] overflow-hidden diagram-card-visual">
-                        <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
-                        <DiagramVisual slug={diagram.slug} />
-                      </figure>
 
                       {/* Content */}
                       <div className="flex flex-1 flex-col gap-3 p-5">
                         {/* Title + Difficulty */}
                         <div className="flex items-start justify-between gap-3">
-                          <h3 className="text-foreground text-sm font-bold tracking-wide uppercase leading-snug">
+                          <h3 className="text-foreground text-sm font-medium tracking-wide capitalize font-poppins leading-snug line-clamp-1">
                             {diagram.title}
                           </h3>
                           <span
@@ -257,12 +251,12 @@ export default function PatternsPage() {
                           </span>
                         </div>
 
-                        <p className="text-muted-foreground text-xs leading-relaxed">
+                        <p className="text-muted-foreground font-poppins text-xs leading-relaxed line-clamp-2">
                           {diagram.description}
                         </p>
 
                         {/* Tags */}
-                        <div className="mt-auto flex flex-wrap gap-1.5">
+                        <div className="mt-auto max-h-12 overflow-hidden flex flex-wrap gap-1.5">
                           {diagram.tags.map((tag) => (
                             <span
                               key={tag}

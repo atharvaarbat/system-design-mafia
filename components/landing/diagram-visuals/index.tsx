@@ -7,6 +7,7 @@ import HexagonalDiagram from './hexagonal';
 import LayeredDiagram from './layered';
 import NetflixDiagram from './netflix';
 import InstagramDiagram from './instagram';
+import diagrams from '@/data/diagrams/index.json';
 
 const visualMap: Record<string, () => React.ReactNode> = {
   'e-commerce-microservices': MicroservicesDiagram,
@@ -20,11 +21,23 @@ const visualMap: Record<string, () => React.ReactNode> = {
 };
 
 export default function DiagramVisual({ slug }: { slug: string }) {
+  const meta = diagrams.diagrams.find((d) => d.slug === slug);
+
+  if (meta?.image) {
+    return (
+      <img
+        src={meta.image}
+        alt={meta.title}
+        className="h-full w-full object-cover"
+      />
+    );
+  }
+
   const Component = visualMap[slug];
   if (!Component) return null;
   return (
     <motion.div
-      className='backdrop-contrast-[1.3] contrast-[1.3]'
+      className='h-full w-full backdrop-contrast-[1.3] contrast-[1.3] flex items-center justify-center'
       whileHover="hover"
     >
       <Component />

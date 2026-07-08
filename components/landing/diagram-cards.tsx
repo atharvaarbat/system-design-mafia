@@ -115,8 +115,8 @@ export default function DiagramCards() {
       </div>
 
       <Container className="relative z-10">
-        <div className="mb-20 pt-[8vw]">
-          
+        <div className="mb-20 pt-[8vw] md:flex">
+          <div className="flex-1">
           <h2 className="patterns-heading max-w-3xl font-heading text-4xl font-bold tracking-tighter text-foreground uppercase md:text-6xl">
             The pattern library
           </h2>
@@ -124,11 +124,19 @@ export default function DiagramCards() {
             Proven architectures for scalable, maintainable distributed systems
             — every one interactive, annotated, and free.
           </p>
+          </div>
+          <Link
+            href="/patterns"
+            className="mt-8 h-fit inline-flex items-center gap-2 border border-primary/30 px-4 py-2 text-xs font-bold uppercase tracking-widest text-foreground transition-all duration-300 hover:border-primary/60 hover:bg-primary/5"
+          >
+            View all patterns
+            <span>→</span>
+          </Link>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {diagrams.diagrams.map((diagram, i) => (
-            <div key={diagram.slug} className="pattern-shift">
+          {diagrams.diagrams.filter((d) => d.featured).map((diagram, i) => (
+            <div key={diagram.slug} className="">
               <article className="pattern-card h-full">
                 <Link
                   href={`/d/${diagram.slug}`}
@@ -146,14 +154,14 @@ export default function DiagramCards() {
 
                     <div className="flex flex-1 flex-col gap-2 p-5">
                       <div className="flex items-start justify-between gap-3">
-                        <h3 className="text-sm font-bold tracking-wide text-foreground uppercase">
+                        <h3 className="text-sm font-bold tracking-wide text-foreground uppercase line-clamp-1">
                           {diagram.title}
                         </h3>
                         <span className="mt-0.5 shrink-0 text-[9px] font-bold tracking-[0.2em] text-primary/70 uppercase">
                           [{diagram.difficulty}]
                         </span>
                       </div>
-                      <p className="text-xs leading-relaxed text-muted-foreground">
+                      <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
                         {diagram.description}
                       </p>
                       <p className="mt-auto pt-3 text-[10px] tracking-[0.2em] text-foreground/30 uppercase">

@@ -4,109 +4,133 @@
       "slug": "design-web-crawler",
       "title": "Design a Web Crawler",
       "description": "A distributed crawler that discovers, fetches, and extracts text from 10 billion web pages within 5 days while respecting robots.txt.",
-      "tags": ["crawler", "distributed-systems", "queueing", "fault-tolerance", "politeness"],
+      "tags": ["crawler", "distributed-systems", "queueing", "rate-limiting", "scalability", "fault-tolerance"],
       "difficulty": "advanced",
       "nodeCount": 15,
-      "edgeCount": 22
+      "edgeCount": 22,
+      "image": "",
+      "featured": false
     },
     {
       "slug": "design-whatsapp-or-messenger",
       "title": "Design WhatsApp / Facebook Messenger",
       "description": "A real-time messaging platform with 1:1 and group chat, offline delivery via push notifications, and end-to-end encryption.",
-      "tags": ["messaging", "real-time", "websocket", "chat", "encryption"],
+      "tags": ["messaging", "real-time", "websocket", "chat", "encryption", "push-notifications", "p2p"],
       "difficulty": "advanced",
       "nodeCount": 18,
-      "edgeCount": 24
+      "edgeCount": 24,
+      "image": "/diagram/thumbnail/design-whatsapp-or-messenger.png",
+      "featured": true
     },
     {
       "slug": "design-youtube-or-netflix",
       "title": "Design YouTube or Netflix",
       "description": "A video streaming platform supporting fast video upload and smooth, adaptive streaming.",
-      "tags": ["video", "streaming", "cdn", "transcoding"],
+      "tags": ["video", "streaming", "cdn", "transcoding", "adaptive-bitrate", "caching"],
       "difficulty": "advanced",
       "nodeCount": 13,
-      "edgeCount": 15
+      "edgeCount": 15,
+      "image": "",
+      "featured": true
     },
     {
       "slug": "design-instagram",
       "title": "Design Instagram",
       "description": "A social media platform for short-form video content.",
-      "tags": ["video", "streaming", "cdn", "transcoding"],
+      "tags": ["social-media", "feed", "image-processing", "cdn", "caching", "real-time"],
       "difficulty": "advanced",
       "nodeCount": 13,
-      "edgeCount": 15
+      "edgeCount": 15,
+      "image": "",
+      "featured": false
     },
     {
       "slug": "design-twitter",
       "title": "Design Twitter for Millions of Users",
       "description": "A microblogging platform with tweet ingestion, hybrid fan-out timelines, typeahead search, and real-time notifications.",
-      "tags": ["social-media", "fan-out", "typeahead", "search", "real-time", "kafka"],
+      "tags": ["social-media", "fan-out", "typeahead", "search", "real-time", "event-streaming"],
       "difficulty": "advanced",
       "nodeCount": 38,
-      "edgeCount": 39
+      "edgeCount": 39,
+      "image": "/diagram/thumbnail/design-twitter.png",
+      "featured": true
     },
     {
       "slug": "design-dropbox-or-google-drive",
       "title": "Design Dropbox or Google Drive",
       "description": "A scalable, highly available cloud file storage and synchronization service.",
-      "tags": ["cloud", "distributed", "storage", "sync"],
+      "tags": ["cloud-storage", "distributed", "file-sync", "versioning", "conflict-resolution"],
       "difficulty": "advanced",
       "nodeCount": 13,
-      "edgeCount": 15
+      "edgeCount": 15,
+      "image": "",
+      "featured": true
     },
     {
       "slug": "e-commerce-microservices",
       "title": "E-Commerce Microservices",
       "description": "Cloud-native e-commerce platform on AWS",
-      "tags": ["microservices", "aws", "ecommerce", "cloud-native"],
+      "tags": ["microservices", "cloud-native", "ecommerce", "payments", "inventory"],
       "difficulty": "intermediate",
       "nodeCount": 21,
-      "edgeCount": 24
+      "edgeCount": 24,
+      "image": "",
+      "featured": false
     },
     {
       "slug": "URL-shortening-service-like-tinyURL",
       "title": "URL Shortening Service like TinyURL",
       "description": "Scalable system design for creating short URLs, redirecting users, and collecting analytics.",
-      "tags": ["url", "shortening", "microservices", "cloud-native"],
+      "tags": ["url-shortening", "hashing", "databases", "caching", "redirect"],
       "difficulty": "intermediate",
       "nodeCount": 21,
-      "edgeCount": 24
+      "edgeCount": 24,
+      "image": "",
+      "featured": false
     },
     {
       "slug": "event-driven-architecture",
       "title": "Event-Driven Architecture",
       "description": "Asynchronous event processing with message broker",
-      "tags": ["event-driven", "kafka", "async", "microservices"],
+      "tags": ["event-driven", "event-streaming", "async", "microservices", "message-broker"],
       "difficulty": "advanced",
       "nodeCount": 8,
-      "edgeCount": 8
+      "edgeCount": 8,
+      "image": "",
+      "featured": false
     },
     {
       "slug": "hexagonal-architecture",
       "title": "Hexagonal Architecture",
       "description": "Ports and adapters pattern for clean domain logic",
-      "tags": ["hexagonal", "ports-adapters", "ddd", "clean-architecture"],
+      "tags": ["hexagonal", "ports-adapters", "design-pattern", "clean-architecture"],
       "difficulty": "intermediate",
       "nodeCount": 7,
-      "edgeCount": 7
+      "edgeCount": 7,
+      "image": "",
+      "featured": false
     },
     {
       "slug": "cqrs-pattern",
       "title": "CQRS Pattern",
       "description": "Command Query Responsibility Segregation",
-      "tags": ["cqrs", "command", "query", "event-sourcing"],
+      "tags": ["cqrs", "design-pattern", "event-sourcing", "event-driven"],
       "difficulty": "advanced",
       "nodeCount": 7,
-      "edgeCount": 7
+      "edgeCount": 7,
+      "image": "",
+      "featured": false
     },
     {
       "slug": "layered-architecture",
       "title": "Layered Architecture",
       "description": "Traditional n-tier architecture pattern",
-      "tags": ["layered", "n-tier", "monolith", "traditional"],
+      "tags": ["layered", "n-tier", "design-pattern", "monolithic"],
       "difficulty": "beginner",
       "nodeCount": 5,
-      "edgeCount": 4
+      "edgeCount": 4,
+      "image": "",
+      "featured": false
     }
   ]
 }

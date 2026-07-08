@@ -36,7 +36,9 @@ function isTypingTarget(target: EventTarget | null) {
 
 function ThemeHotkey() {
   const { resolvedTheme, setTheme } = useTheme()
-
+  const switchTheme = () => {
+    setTheme(resolvedTheme === "dark" ? "light" : "dark")
+  }
   React.useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.repeat) {
@@ -54,8 +56,10 @@ function ThemeHotkey() {
       if (isTypingTarget(event.target)) {
         return
       }
+      // if (!document.startViewTransition) switchTheme()
+      // else document.startViewTransition(switchTheme)
 
-      setTheme(resolvedTheme === "dark" ? "light" : "dark")
+      switchTheme()
     }
 
     window.addEventListener("keydown", onKeyDown)
