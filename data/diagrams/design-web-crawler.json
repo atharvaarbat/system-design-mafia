@@ -19,19 +19,43 @@
     ]
   },
   "estimates": [
-    { "label": "Pages to crawl", "value": "10B", "note": "the entire crawl must complete inside the 5-day window" },
-    { "label": "Time budget", "value": "5 days", "note": "≈ 432,000 seconds to discover and fetch every page" },
-    { "label": "Avg. page size", "value": "~2MB", "note": "includes embedded resources counted toward transfer bandwidth" },
-    { "label": "Required throughput", "value": "~23K/s", "note": "10B pages ÷ 432,000s — the floor every downstream tier must sustain" },
-    { "label": "Fetcher fleet size", "value": "~8 hosts", "note": "network-optimized instances at ~30% practical utilization of a 200 Gbps NIC" },
-    { "label": "Per-domain limit", "value": "1 req/s", "note": "a politeness ceiling enforced independently of total fleet throughput" }
+    {
+      "label": "Pages to crawl",
+      "value": "10B",
+      "note": "the entire crawl must complete inside the 5-day window"
+    },
+    {
+      "label": "Time budget",
+      "value": "5 days",
+      "note": "≈ 432,000 seconds to discover and fetch every page"
+    },
+    {
+      "label": "Avg. page size",
+      "value": "~2MB",
+      "note": "includes embedded resources counted toward transfer bandwidth"
+    },
+    {
+      "label": "Required throughput",
+      "value": "~23K/s",
+      "note": "10B pages ÷ 432,000s — the floor every downstream tier must sustain"
+    },
+    {
+      "label": "Fetcher fleet size",
+      "value": "~8 hosts",
+      "note": "network-optimized instances at ~30% practical utilization of a 200 Gbps NIC"
+    },
+    {
+      "label": "Per-domain limit",
+      "value": "1 req/s",
+      "note": "a politeness ceiling enforced independently of total fleet throughput"
+    }
   ],
   "nodes": [
     {
       "id": "seed-loader",
       "kind": "generic-client",
-      "x": 120,
-      "y": 480,
+      "x": 352,
+      "y": 472,
       "name": "Seed URL Source",
       "description": "Operator-submitted starting URLs",
       "details": "### Responsibilities\n\n- Supplies the initial list of seed URLs that bootstraps a crawl (e.g. a curated list of top domains)\n- Can also inject high-priority URLs mid-crawl for freshness-sensitive re-crawls\n- Not itself part of the crawl loop — after the first batch, all new URLs are discovered by the Parser and re-queued automatically"
@@ -39,7 +63,7 @@
     {
       "id": "frontier-queue",
       "kind": "sqs",
-      "x": 460,
+      "x": 536,
       "y": 480,
       "name": "Frontier Queue",
       "description": "URLs pending crawl (SQS)",
@@ -48,8 +72,8 @@
     {
       "id": "dead-letter-queue",
       "kind": "sqs",
-      "x": 460,
-      "y": 800,
+      "x": 536,
+      "y": 168,
       "name": "Dead Letter Queue",
       "description": "URLs that failed 5+ times",
       "details": "### Responsibilities\n\n- Receives messages the Frontier Queue redrives after `ApproximateReceiveCount` exceeds 5\n- Isolates persistently broken URLs (dead domains, malformed pages) so they stop consuming fetcher capacity\n- Reviewed by the Monitoring service — sustained DLQ growth signals a systemic problem (e.g. a misbehaving domain or a parser bug), not just one-off bad URLs"
@@ -66,8 +90,8 @@
     {
       "id": "rate-limiter",
       "kind": "redis",
-      "x": 800,
-      "y": 160,
+      "x": 1456,
+      "y": 1080,
       "name": "Politeness Rate Limiter",
       "description": "Per-domain lock & sliding window",
       "details": "### Responsibilities\n\n- Holds a per-domain lock with TTL equal to that domain's `Crawl-delay` (default 1 request/second)\n- Implements a distributed sliding-window counter so *all* fetcher hosts — not just one — respect the same per-domain ceiling\n- Caches each domain's parsed robots.txt rules (refreshed periodically from the Metadata DB) so the hot path never blocks on a database read\n\n### Why Redis\n\nPoliteness is a global constraint — two fetcher hosts crawling the same domain concurrently must share state, or they'll jointly exceed the 1 req/s ceiling even if each individually respects it."
@@ -102,7 +126,7 @@
     {
       "id": "raw-html-storage",
       "kind": "s3",
-      "x": 1400,
+      "x": 1416,
       "y": 800,
       "name": "Raw HTML Storage",
       "description": "S3 — unparsed page bytes",
@@ -121,7 +145,7 @@
     {
       "id": "parser-service",
       "kind": "worker-service",
-      "x": 1700,
+      "x": 1704,
       "y": 480,
       "name": "Text & URL Extraction",
       "description": "Auto-scaled parser workers",
@@ -130,8 +154,8 @@
     {
       "id": "metadata-db",
       "kind": "dynamodb",
-      "x": 1700,
-      "y": 800,
+      "x": 1704,
+      "y": 752,
       "name": "Crawl Metadata DB",
       "description": "URL & domain state",
       "details": "### Schema\n\n**URL table** (partition key: `urlHash`)\n\n- `status` — pending / crawled / failed\n- `htmlLocation`, `textLocation` — pointers into blob storage\n- `contentHash` (indexed) — for content-level dedup\n- `depth` — hops from the nearest seed URL, used for crawler-trap cutoff\n- `lastCrawledAt`\n\n**Domain table** (partition key: `domain`)\n\n- `robotsRules`, `crawlDelay`\n- `lastCrawledAt` — feeds the URL Scheduler's re-crawl heuristic",
@@ -140,8 +164,8 @@
     {
       "id": "url-scheduler",
       "kind": "lambda-function",
-      "x": 1700,
-      "y": 160,
+      "x": 1704,
+      "y": 1216,
       "name": "URL Scheduler",
       "description": "Drives periodic re-crawls",
       "details": "### Responsibilities\n\n- Periodically scans the Metadata DB for pages that are stale (past their `lastCrawledAt` plus a freshness window) or high-popularity\n- Re-enqueues those URLs onto the Frontier Queue so the corpus stays current between full crawls (e.g. monthly retraining cycles)\n- Runs independently of the main crawl loop — it only ever *adds* work, never blocks the fetch/parse pipeline"
@@ -149,8 +173,8 @@
     {
       "id": "url-dedup",
       "kind": "redis",
-      "x": 2000,
-      "y": 480,
+      "x": 2128,
+      "y": 240,
       "name": "URL Dedup Filter",
       "description": "Bloom filter pre-check",
       "details": "### Responsibilities\n\n- Runs every newly extracted URL through a RedisBloom filter before it's allowed back onto the Frontier Queue\n- Rejects the vast majority of already-seen URLs in O(1) with no Metadata DB round trip\n- A positive match still falls through to a Metadata DB check — the bloom filter's false positives just mean a few duplicate lookups, never a missed page\n\n### Content-level dedup\n\nSeparately, the Parser's content hash catches pages that are byte-identical under different URLs (mirrors, tracking-parameter variants) — the Bloom filter only prevents re-*crawling* the same URL, not re-*storing* the same content."
@@ -158,8 +182,8 @@
     {
       "id": "text-storage",
       "kind": "s3",
-      "x": 2000,
-      "y": 800,
+      "x": 2016,
+      "y": 792,
       "name": "Extracted Text Storage",
       "description": "S3 — clean text output",
       "details": "### Responsibilities\n\n- Stores the plain text extracted from each page — the actual deliverable of the crawl, ready for downstream training or processing\n- Kept separate from raw HTML storage so downstream consumers never need to re-parse HTML themselves\n- Organized so the 5-day crawl's output is available as a complete, addressable corpus the moment the frontier drains",
@@ -167,35 +191,221 @@
     }
   ],
   "edges": [
-    { "id": "e-seed-frontier", "source": "seed-loader", "target": "frontier-queue", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "http" },
-    { "id": "e-frontier-fetcher", "source": "frontier-queue", "target": "fetcher-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "message" },
-    { "id": "e-frontier-dlq", "source": "frontier-queue", "target": "dead-letter-queue", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "message", "style": "dashed", "label": "after 5 retries" },
-    { "id": "e-fetcher-ratelimiter", "source": "fetcher-service", "target": "rate-limiter", "sourceHandle": "top-source", "targetHandle": "bottom-target", "protocol": "tcp", "label": "check lock" },
-    { "id": "e-ratelimiter-metadb", "source": "rate-limiter", "target": "metadata-db", "sourceHandle": "right-source", "targetHandle": "top-target", "protocol": "database", "style": "dashed", "label": "robots rules" },
-    { "id": "e-fetcher-dns", "source": "fetcher-service", "target": "dns-resolver", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "udp" },
-    { "id": "e-fetcher-external", "source": "fetcher-service", "target": "external-web", "sourceHandle": "bottom-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-fetcher-rawstorage", "source": "fetcher-service", "target": "raw-html-storage", "sourceHandle": "right-source", "targetHandle": "top-target", "protocol": "https", "style": "dashed", "label": "store HTML" },
-    { "id": "e-fetcher-metadb", "source": "fetcher-service", "target": "metadata-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed", "label": "update status" },
-    { "id": "e-fetcher-processingq", "source": "fetcher-service", "target": "processing-queue", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "message" },
-    { "id": "e-processingq-parser", "source": "processing-queue", "target": "parser-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "message" },
-    { "id": "e-parser-rawstorage", "source": "parser-service", "target": "raw-html-storage", "sourceHandle": "left-source", "targetHandle": "right-target", "protocol": "https", "style": "dashed", "label": "read HTML" },
-    { "id": "e-parser-textstorage", "source": "parser-service", "target": "text-storage", "sourceHandle": "right-source", "targetHandle": "top-target", "protocol": "https" },
-    { "id": "e-parser-metadb", "source": "parser-service", "target": "metadata-db", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "database", "style": "dashed", "label": "content hash" },
-    { "id": "e-parser-dedup", "source": "parser-service", "target": "url-dedup", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "label": "new links" },
-    { "id": "e-dedup-metadb", "source": "url-dedup", "target": "metadata-db", "sourceHandle": "bottom-source", "targetHandle": "right-target", "protocol": "database", "style": "dashed", "label": "confirm unseen" },
-    { "id": "e-dedup-frontier", "source": "url-dedup", "target": "frontier-queue", "sourceHandle": "top-source", "targetHandle": "top-target", "protocol": "message", "style": "dashed", "animated": true, "label": "unique URLs" },
-    { "id": "e-scheduler-metadb", "source": "url-scheduler", "target": "metadata-db", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "database", "style": "dashed", "label": "find stale URLs" },
-    { "id": "e-scheduler-frontier", "source": "url-scheduler", "target": "frontier-queue", "sourceHandle": "left-source", "targetHandle": "top-target", "protocol": "message", "style": "dashed", "label": "re-crawl" },
-    { "id": "e-monitor-frontier", "source": "monitoring-service", "target": "frontier-queue", "sourceHandle": "left-source", "targetHandle": "top-target", "protocol": "internal", "style": "dotted", "label": "queue depth" },
-    { "id": "e-monitor-processingq", "source": "monitoring-service", "target": "processing-queue", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "internal", "style": "dotted" },
-    { "id": "e-monitor-dlq", "source": "monitoring-service", "target": "dead-letter-queue", "sourceHandle": "left-source", "targetHandle": "top-target", "protocol": "internal", "style": "dotted", "label": "alerts" }
+    {
+      "id": "e-seed-frontier",
+      "source": "seed-loader",
+      "target": "frontier-queue",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "http"
+    },
+    {
+      "id": "e-frontier-fetcher",
+      "source": "frontier-queue",
+      "target": "fetcher-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "message"
+    },
+    {
+      "id": "e-fetcher-dns",
+      "source": "fetcher-service",
+      "target": "dns-resolver",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "udp"
+    },
+    {
+      "id": "e-fetcher-external",
+      "source": "fetcher-service",
+      "target": "external-web",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-fetcher-metadb",
+      "source": "fetcher-service",
+      "target": "metadata-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "update status",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-fetcher-processingq",
+      "source": "fetcher-service",
+      "target": "processing-queue",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "message"
+    },
+    {
+      "id": "e-processingq-parser",
+      "source": "processing-queue",
+      "target": "parser-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "message"
+    },
+    {
+      "id": "e-parser-rawstorage",
+      "source": "parser-service",
+      "target": "raw-html-storage",
+      "sourceHandle": "left-source",
+      "targetHandle": "right-target",
+      "label": "read HTML",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "e-parser-textstorage",
+      "source": "parser-service",
+      "target": "text-storage",
+      "sourceHandle": "right-source",
+      "targetHandle": "top-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-parser-dedup",
+      "source": "parser-service",
+      "target": "url-dedup",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "new links",
+      "protocol": "internal"
+    },
+    {
+      "id": "e-dedup-metadb",
+      "source": "url-dedup",
+      "target": "metadata-db",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "right-target",
+      "label": "confirm unseen",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "e-monitor-processingq",
+      "source": "monitoring-service",
+      "target": "processing-queue",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "xy-edge__url-schedulertop-source-metadata-dbbottom-target",
+      "source": "url-scheduler",
+      "target": "metadata-db",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "find stale URLs",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__monitoring-serviceleft-source-frontier-queuetop-target",
+      "source": "monitoring-service",
+      "target": "frontier-queue",
+      "sourceHandle": "left-source",
+      "targetHandle": "top-target",
+      "label": "queue depth",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "xy-edge__fetcher-servicebottom-source-rate-limiterleft-target",
+      "source": "fetcher-service",
+      "target": "rate-limiter",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "label": "check lock",
+      "protocol": "tcp"
+    },
+    {
+      "id": "xy-edge__rate-limiterright-source-metadata-dbbottom-target",
+      "source": "rate-limiter",
+      "target": "metadata-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "bottom-target",
+      "label": "robots rules",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__parser-servicebottom-source-metadata-dbtop-target",
+      "source": "parser-service",
+      "target": "metadata-db",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "content hash",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__fetcher-serviceright-source-raw-html-storageleft-target",
+      "source": "fetcher-service",
+      "target": "raw-html-storage",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "store HTML",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__url-schedulerleft-source-frontier-queuebottom-target",
+      "source": "url-scheduler",
+      "target": "frontier-queue",
+      "sourceHandle": "left-source",
+      "targetHandle": "bottom-target",
+      "label": "re-crawl",
+      "protocol": "message",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__frontier-queuetop-source-dead-letter-queuebottom-target",
+      "source": "frontier-queue",
+      "target": "dead-letter-queue",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "after 5 retries",
+      "protocol": "message",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__monitoring-serviceleft-source-dead-letter-queueright-target",
+      "source": "monitoring-service",
+      "target": "dead-letter-queue",
+      "sourceHandle": "left-source",
+      "targetHandle": "right-target",
+      "label": "alerts",
+      "protocol": "internal",
+      "style": "dotted"
+    },
+    {
+      "id": "xy-edge__url-dedupleft-source-frontier-queuetop-target",
+      "source": "url-dedup",
+      "target": "frontier-queue",
+      "sourceHandle": "left-source",
+      "targetHandle": "top-target",
+      "label": "unique URLs",
+      "protocol": "message",
+      "style": "dashed",
+      "animated": true
+    }
   ],
   "groups": [
     {
       "id": "data-tier",
       "label": "Data Tier",
       "color": "#10b981",
-      "style": "dashed"
+      "style": "dashed",
+      "width": 880,
+      "height": 236,
+      "x": 1360,
+      "y": 688
     }
   ],
   "flows": [
@@ -310,37 +520,54 @@
     {
       "title": "Frontier queue technology",
       "choice": "SQS with per-message exponential backoff",
-      "alternatives": ["Kafka topic per priority level", "Custom Redis-backed priority queue"],
+      "alternatives": [
+        "Kafka topic per priority level",
+        "Custom Redis-backed priority queue"
+      ],
       "rationale": "The dominant failure mode in a 5-day, 10B-page crawl isn't total system failure — it's individual fetches timing out against slow or dead servers. SQS gives visibility timeouts, `ApproximateReceiveCount`-driven backoff, and dead-letter routing *for free*. Kafka would require building retry and DLQ semantics by hand on top of consumer offsets, which is exactly the kind of infrastructure work this deadline can't absorb."
     },
     {
       "title": "Fault-tolerant pipeline shape",
       "choice": "Pipelined stages — fetch, store, enqueue reference, then parse — instead of one monolithic worker",
-      "alternatives": ["A single worker that fetches, parses, and extracts links in one step"],
+      "alternatives": [
+        "A single worker that fetches, parses, and extracts links in one step"
+      ],
       "rationale": "A monolithic worker means any bug in text extraction forces the *fetch* to be redone too, wasting the exact bandwidth that is this system's scarcest resource (~23K pages/s required). By splitting fetch from parse across two queues, a parser crash only re-runs cheap local computation against HTML that's already safely in blob storage."
     },
     {
       "title": "Politeness enforcement",
       "choice": "Per-domain Redis lock and sliding-window counter, TTL matched to each domain's Crawl-delay",
-      "alternatives": ["A static delay baked into each worker thread", "No cross-worker coordination — rely on queue randomness to spread requests"],
+      "alternatives": [
+        "A static delay baked into each worker thread",
+        "No cross-worker coordination — rely on queue randomness to spread requests"
+      ],
       "rationale": "With ~8 fetcher hosts running many threads each, multiple workers can independently dequeue URLs from the same popular domain. A per-thread delay only bounds *that thread's* request rate; it does nothing to stop the fleet collectively exceeding 1 req/s against one domain. Politeness is a property of the whole system, so it needs shared state."
     },
     {
       "title": "URL dedup fast path",
       "choice": "RedisBloom filter as a pre-check in front of the Metadata DB",
-      "alternatives": ["Query the Metadata DB for every candidate URL", "An in-memory hash set per worker"],
+      "alternatives": [
+        "Query the Metadata DB for every candidate URL",
+        "An in-memory hash set per worker"
+      ],
       "rationale": "At 10B+ discovered link candidates, hitting DynamoDB for every single one to ask 'have we seen this?' would dominate the DB's read capacity. A Bloom filter answers 'definitely new' in O(1) from memory and rejects the vast majority of candidates — mostly re-discovered links to already-crawled pages — without a network round trip. The DB is only consulted on the rare positive match, where its false-positive tolerance costs nothing but an extra read."
     },
     {
       "title": "Crawler trap prevention",
       "choice": "Max-depth cutoff (15–20 hops from seed), tracked per URL in the Metadata DB",
-      "alternatives": ["Unbounded depth, relying solely on URL-level dedup", "A fixed total crawl-time budget with no per-branch limit"],
+      "alternatives": [
+        "Unbounded depth, relying solely on URL-level dedup",
+        "A fixed total crawl-time budget with no per-branch limit"
+      ],
       "rationale": "Session IDs, calendar widgets, and faceted search filters generate effectively infinite *unique* URLs down a single path — URL dedup alone never triggers because every link really is new. Tracking depth from the nearest seed and cutting off a branch past a threshold bounds the worst case cheaply, without needing to detect the trap pattern itself."
     },
     {
       "title": "Storage split: raw HTML vs. extracted text",
       "choice": "Two separate blob storage locations — raw HTML and clean text",
-      "alternatives": ["A single blob per URL containing both", "Discard raw HTML immediately after parsing to save space"],
+      "alternatives": [
+        "A single blob per URL containing both",
+        "Discard raw HTML immediately after parsing to save space"
+      ],
       "rationale": "Storage is cheap; the ~2MB average page fetched over the wire is the expensive resource. Keeping raw HTML around means text-extraction logic can be improved and re-run against the entire 10B-page corpus later without re-crawling a single URL — a rebuild that would otherwise cost another 5-day crawl."
     }
   ],
@@ -428,6 +655,9 @@
       "source": "hellointerview.com"
     }
   ],
-  "relatedPatterns": ["event-driven-architecture", "design-dropbox-or-google-drive"],
+  "relatedPatterns": [
+    "event-driven-architecture",
+    "design-dropbox-or-google-drive"
+  ],
   "summary": "### Architecture Overview\n\nThis design models a distributed web crawler that discovers, fetches, and extracts text from 10 billion pages in under 5 days, without losing progress and without overloading the servers it crawls.\n\n### Key Design Principles\n\n**Pipelined stages, not a monolithic worker.** Fetching and parsing are split across two queues — the Frontier Queue and the Further Processing Queue — so a failure or slowdown in one stage never forces redoing the other. Fetching is I/O-bound and bandwidth-expensive; parsing is CPU-bound and cheap to redo. Keeping them independent lets each scale on its own bottleneck.\n\n**Politeness is a shared, not per-worker, constraint.** A Redis-backed per-domain lock and sliding-window counter ensure the *entire fleet* — not just one thread — respects each domain's crawl-delay. Robots.txt rules are cached in the same layer so the hot path never blocks on a database read.\n\n**Two-tier deduplication.** A Bloom filter rejects the overwhelming majority of already-seen URLs in O(1) before they ever reach the Metadata DB, while a content hash computed after each fetch catches pages that are byte-identical under different URLs — mirrors, tracking-parameter variants, and syndicated content.\n\n**The frontier is a loop, not a line.** New URLs discovered during parsing flow back through the Dedup Filter and re-enter the Frontier Queue, expanding the crawl outward from the original seed list until either the frontier drains or the 5-day budget runs out.\n\n**Storage is split by purpose.** Raw HTML and extracted text live in separate locations. Keeping the raw HTML means extraction logic can be improved and re-run against the whole corpus later without re-paying the bandwidth cost of re-fetching 10 billion pages.\n\n### Fault Tolerance\n\n- **Fetcher crash mid-fetch:** the Frontier Queue message's visibility timeout expires and another worker retries automatically — no operator intervention needed.\n- **Persistently broken URLs:** after 5 failed attempts (tracked via `ApproximateReceiveCount`), messages move to a Dead Letter Queue instead of retrying forever.\n- **Parser backlog:** the parser fleet autoscales directly on Further Processing Queue depth, so a burst of fetched pages doesn't stall the pipeline.\n- **Domain-level abuse:** the Politeness Rate Limiter's shared lock prevents the fleet from ever exceeding a domain's crawl-delay, even under retry storms."
 }

@@ -112,8 +112,8 @@
     {
       "id": "file-service",
       "kind": "rest-api",
-      "x": 880,
-      "y": 360,
+      "x": 872,
+      "y": 408,
       "name": "File Service",
       "description": "Metadata & presigned URL generation",
       "details": "### Responsibilities\n\n- CRUD operations on file metadata (name, size, MIME type, fingerprint, chunk status)\n- Generate S3 presigned URLs for multipart upload parts (purely local crypto operation)\n- Generate CDN-signed URLs for downloads with short expiration (e.g., 5 min)\n- Verify chunk uploads via S3 ListParts API before marking chunks as uploaded\n- Call S3 CompleteMultipartUpload once all chunks are verified\n- Enforce ACLs via SharedFiles table lookups"
@@ -121,8 +121,8 @@
     {
       "id": "sync-service",
       "kind": "rest-api",
-      "x": 816,
-      "y": 568,
+      "x": 896,
+      "y": 600,
       "name": "Sync Service",
       "description": "Change notifications & sync state",
       "details": "### Responsibilities\n\n- Maintain WebSocket connections per device for real-time push\n- Publish change events (create/update/delete) to connected clients\n- Handle GET /files/changes?since={timestamp} for polling fallback\n- Coordinate delta sync by comparing client and server chunk fingerprints"
@@ -131,7 +131,7 @@
       "id": "notification-worker",
       "kind": "worker-service",
       "x": 1304,
-      "y": 736,
+      "y": 608,
       "name": "Notification Worker",
       "description": "Async event processor",
       "details": "### Responsibilities\n\n- Consume file change events from Kafka\n- Push WebSocket notifications to relevant user devices\n- Update search index and shared file caches asynchronously"
@@ -139,8 +139,8 @@
     {
       "id": "metadata-db",
       "kind": "dynamodb",
-      "x": 1288,
-      "y": 272,
+      "x": 1400,
+      "y": 248,
       "name": "File Metadata DB",
       "description": "DynamoDB / Cassandra for file records",
       "details": "### Schema\n\n**FileMetadata table:**\n- Partition Key: `userId`\n- Sort Key: `fileId`\n- Attributes: name, size, mimeType, fingerprint, status (uploading/uploaded), chunks[], createdAt, updatedAt\n\n**SharedFiles table:**\n- Partition Key: `userId` (who the file is shared with)\n- Sort Key: `fileId`\n- Enables fast lookup of all files shared with a given user without full table scans",
@@ -150,7 +150,7 @@
       "id": "shared-cache",
       "kind": "redis",
       "x": 1280,
-      "y": 424,
+      "y": 408,
       "name": "Shared Files Cache",
       "description": "Redis cache for ACL lookups",
       "details": "### Responsibilities\n\n- Cache userId -> fileId[] mappings for shared files\n- TTL of 5 minutes with cache-aside pattern\n- Reduces DynamoDB read load for frequent share list queries"
@@ -158,8 +158,8 @@
     {
       "id": "sync-websocket",
       "kind": "generic-network",
-      "x": 1336,
-      "y": 552,
+      "x": 1304,
+      "y": 784,
       "name": "WebSocket Manager",
       "description": "Connection state & pub/sub",
       "details": "### Responsibilities\n\n- Maintain persistent WebSocket connections per active device\n- Subscribe to per-user Kafka topics for real-time change push\n- Handle connection drops with exponential backoff reconnection"
@@ -176,8 +176,8 @@
     {
       "id": "message-queue",
       "kind": "kafka",
-      "x": 1080,
-      "y": 736,
+      "x": 1120,
+      "y": 608,
       "name": "Event Bus (Kafka)",
       "description": "Async events for sync & indexing",
       "details": "### Topics\n\n- `file.changes` — file create/update/delete events\n- `sync.notifications` — per-user device notification events\n- `search.index` — search index update events\n- `analytics.events` — usage metrics and billing events"
@@ -185,8 +185,8 @@
     {
       "id": "email-provider",
       "kind": "email-provider",
-      "x": 1496,
-      "y": 736,
+      "x": 1504,
+      "y": 608,
       "name": "Email Provider",
       "description": "Share invite notifications",
       "details": "Sends email invitations when users share files with others who don't yet have accounts."
@@ -293,28 +293,12 @@
       "style": "dashed"
     },
     {
-      "id": "e-sync-ws",
-      "source": "sync-service",
-      "target": "sync-websocket",
-      "sourceHandle": "right-source",
-      "targetHandle": "left-target",
-      "protocol": "tcp"
-    },
-    {
       "id": "e-file-kafka",
       "source": "file-service",
       "target": "message-queue",
       "sourceHandle": "bottom-source",
       "targetHandle": "top-target",
       "protocol": "event"
-    },
-    {
-      "id": "e-worker-ws",
-      "source": "notification-worker",
-      "target": "sync-websocket",
-      "sourceHandle": "top-source",
-      "targetHandle": "bottom-target",
-      "protocol": "tcp"
     },
     {
       "id": "xy-edge__auth-serviceright-source-metadata-dbleft-target",
@@ -342,12 +326,28 @@
       "protocol": "https"
     },
     {
-      "id": "xy-edge__sync-servicebottom-source-message-queueleft-target",
+      "id": "xy-edge__sync-serviceright-source-message-queueleft-target",
       "source": "sync-service",
       "target": "message-queue",
-      "sourceHandle": "bottom-source",
+      "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "event"
+    },
+    {
+      "id": "xy-edge__sync-servicebottom-source-sync-websocketleft-target",
+      "source": "sync-service",
+      "target": "sync-websocket",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "protocol": "tcp"
+    },
+    {
+      "id": "xy-edge__notification-workerbottom-source-sync-websockettop-target",
+      "source": "notification-worker",
+      "target": "sync-websocket",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "tcp"
     }
   ],
   "groups": [
@@ -358,8 +358,8 @@
       "style": "dashed",
       "width": 280,
       "height": 164,
-      "x": 1160,
-      "y": 240
+      "x": 1272,
+      "y": 216
     }
   ],
   "flows": [

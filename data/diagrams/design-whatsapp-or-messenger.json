@@ -31,8 +31,8 @@
     {
       "id": "client-sender",
       "kind": "mobile-app",
-      "x": 80,
-      "y": 200,
+      "x": 256,
+      "y": 352,
       "name": "Alice's Phone (Sender)",
       "description": "Sender's mobile client",
       "details": "### Responsibilities\n\n- Maintain a persistent WebSocket connection to a Chat Server for real-time send/receive\n- Encrypt every outgoing message client-side using the Signal Protocol (X3DH + Double Ratchet)\n- Queue outgoing messages locally when offline and flush on reconnect\n- Upload media (photos/videos/voice notes) directly to blob storage via presigned URLs",
@@ -41,8 +41,8 @@
     {
       "id": "client-recipient",
       "kind": "mobile-app",
-      "x": 80,
-      "y": 560,
+      "x": 256,
+      "y": 536,
       "name": "Bob's Phone (Recipient)",
       "description": "Recipient's mobile client",
       "details": "### Responsibilities\n\n- Receives pushed messages over its own persistent WebSocket connection while online\n- Wakes on an OS push notification and reconnects to pull queued messages when the app was closed or backgrounded\n- Decrypts incoming messages locally — the server never has access to plaintext",
@@ -51,8 +51,8 @@
     {
       "id": "dns",
       "kind": "dns",
-      "x": 440,
-      "y": 380,
+      "x": 528,
+      "y": 456,
       "name": "DNS",
       "description": "Geo-routed resolution",
       "details": "Resolves the client to the nearest regional Load Balancer or CDN edge based on geography, minimizing round-trip latency for both the WebSocket handshake and media downloads.",
@@ -61,8 +61,8 @@
     {
       "id": "cdn",
       "kind": "cdn",
-      "x": 440,
-      "y": 140,
+      "x": 728,
+      "y": 312,
       "name": "Media CDN",
       "description": "Edge cache for shared media",
       "details": "### Responsibilities\n\n- Cache frequently re-requested media (e.g. a photo forwarded across many chats) at edge locations\n- Serve cache hits directly to clients; forward misses to blob storage with request coalescing\n- Absorb load that would otherwise hit origin storage for popular shared media",
@@ -71,8 +71,8 @@
     {
       "id": "load-balancer",
       "kind": "load-balancer",
-      "x": 720,
-      "y": 380,
+      "x": 736,
+      "y": 440,
       "name": "Load Balancer",
       "description": "TLS termination & connection routing",
       "details": "### Responsibilities\n\n- Terminate TLS and distribute incoming WebSocket handshakes and REST calls across the Chat Server and API Gateway fleets\n- Keep a WebSocket connection pinned to a single backend instance for the life of the connection\n- Health-check backend instances and stop routing to unhealthy ones",
@@ -81,8 +81,8 @@
     {
       "id": "chat-gateway",
       "kind": "generic-service",
-      "x": 1080,
-      "y": 140,
+      "x": 1616,
+      "y": 336,
       "name": "Chat Server Fleet",
       "description": "Persistent WebSocket connections",
       "details": "### Responsibilities\n\n- Hold one persistent WebSocket connection per online device\n- Register/deregister each connection's location in the Session Store on connect/disconnect\n- Persist every message to the Message Store before acknowledging the sender (at-least-once durability)\n- Forward messages directly over the recipient's socket when they're online, or hand off to the Message Queue when they're not\n- Delegate to the Group Service when the target is a group rather than a single user",
@@ -91,8 +91,8 @@
     {
       "id": "api-gateway",
       "kind": "api-gateway",
-      "x": 1080,
-      "y": 460,
+      "x": 1048,
+      "y": -16,
       "name": "API Gateway",
       "description": "REST for auth, media, groups, keys",
       "details": "### Responsibilities\n\n- Terminate REST calls for everything outside the real-time message path: auth, media URL issuance, group management, key exchange\n- Authenticate requests via short-lived access tokens issued by the Auth Service\n- Rate-limit per-user request volume",
@@ -101,8 +101,8 @@
     {
       "id": "auth-service",
       "kind": "auth-service",
-      "x": 1360,
-      "y": 60,
+      "x": 1472,
+      "y": -56,
       "name": "Auth Service",
       "description": "Login, tokens, device registration",
       "details": "### Responsibilities\n\n- Verify phone-number/OTP or credential-based login and issue access + refresh tokens\n- Validate tokens presented by the API Gateway on every REST call\n- Manage device registration, since a single account may have multiple linked devices",
@@ -111,8 +111,8 @@
     {
       "id": "presence-service",
       "kind": "generic-service",
-      "x": 1360,
-      "y": 220,
+      "x": 1800,
+      "y": 344,
       "name": "Presence Service",
       "description": "Online / last-seen tracking",
       "details": "### Responsibilities\n\n- Track each contact's online/offline/last-seen status using TTL'd keys in the Session Store\n- Notify a user's contacts when their presence changes, subject to privacy settings\n- Expire presence quickly (seconds) so 'online' status stays accurate",
@@ -121,8 +121,8 @@
     {
       "id": "group-service",
       "kind": "generic-service",
-      "x": 1360,
-      "y": 380,
+      "x": 1392,
+      "y": 200,
       "name": "Group Service",
       "description": "Membership & fan-out",
       "details": "### Responsibilities\n\n- Own group metadata: membership list, admins, group settings\n- Resolve a group ID to its full member list when the Chat Server needs to fan out a message\n- Publish one delivery event per member onto the Message Queue rather than the Chat Server iterating sockets directly",
@@ -131,8 +131,8 @@
     {
       "id": "media-service",
       "kind": "rest-api",
-      "x": 1360,
-      "y": 560,
+      "x": 1168,
+      "y": 280,
       "name": "Media Service",
       "description": "Presigned upload/download URLs",
       "details": "### Responsibilities\n\n- Issue short-lived presigned upload URLs so clients write media directly to blob storage\n- Issue presigned/CDN-signed download URLs scoped to the requesting user's conversations\n- Record media metadata (size, MIME type, storage key) so it can be referenced by a lightweight message payload",
@@ -141,8 +141,8 @@
     {
       "id": "session-store",
       "kind": "redis",
-      "x": 1720,
-      "y": 140,
+      "x": 1584,
+      "y": 720,
       "name": "Session / Routing Store",
       "description": "userId -> chat server, presence",
       "details": "### Schema\n\n- Key `userId:deviceId` → value `chatServerId`, TTL refreshed on every heartbeat\n- Key `userId:presence` → value `online` / `last_seen_ts`, short TTL\n\nA cache-tier store, not a system of record — losing an entry just costs one extra push-notification round trip until the client reconnects.",
@@ -151,8 +151,8 @@
     {
       "id": "message-queue",
       "kind": "kafka",
-      "x": 1720,
-      "y": 320,
+      "x": 1344,
+      "y": 736,
       "name": "Message Queue",
       "description": "Per-user durable delivery",
       "details": "### Topics / Partitioning\n\n- Partitioned by recipient `userId` so a single consumer can own a user's full backlog in order\n- Retains messages long enough to bridge a normal offline period (hours to a few days) before requiring a full client resync\n- Also carries group fan-out events and delivery/read-receipt notifications",
@@ -161,8 +161,8 @@
     {
       "id": "push-worker",
       "kind": "worker-service",
-      "x": 1720,
-      "y": 500,
+      "x": 912,
+      "y": 736,
       "name": "Push Worker",
       "description": "Drains offline queues",
       "details": "### Responsibilities\n\n- Continuously consume per-user queue partitions\n- Check the Session Store first — if the user reconnected in the meantime, skip the push and let the normal WebSocket path deliver instead\n- Otherwise call the Push Gateway with a content-free wake-up payload, never the message body",
@@ -171,8 +171,8 @@
     {
       "id": "push-gateway",
       "kind": "external-api",
-      "x": 1720,
-      "y": 680,
+      "x": 640,
+      "y": 744,
       "name": "Push Notification Gateway",
       "description": "APNs / FCM",
       "details": "Apple's and Google's push infrastructure, external to this system. Delivers a wake-up notification over a channel that stays alive even after the OS has killed our own WebSocket connection to the device.",
@@ -181,8 +181,8 @@
     {
       "id": "message-store",
       "kind": "cassandra",
-      "x": 2080,
-      "y": 140,
+      "x": 1784,
+      "y": -272,
       "name": "Message Store",
       "description": "Durable message history",
       "details": "### Schema\n\n- Partition key: `conversationId`\n- Clustering key: `messageTimestamp` (descending), for fast 'most recent N messages' reads\n\nAppend-only writes, no updates — this matches a wide-column store's strengths and avoids the hot-row contention a relational table would see under this write volume.",
@@ -191,8 +191,8 @@
     {
       "id": "key-store",
       "kind": "dynamodb",
-      "x": 2080,
-      "y": 320,
+      "x": 1424,
+      "y": -280,
       "name": "Prekey Store",
       "description": "Signal Protocol key bundles",
       "details": "Stores each device's identity key and a batch of one-time prekeys used for Signal Protocol X3DH key agreement. A prekey is deleted the moment it's consumed by a new conversation's first message, so a captured bundle can't be replayed to compromise a future session.",
@@ -201,8 +201,8 @@
     {
       "id": "media-storage",
       "kind": "blob-storage",
-      "x": 2080,
-      "y": 500,
+      "x": 1168,
+      "y": -280,
       "name": "Media Blob Storage",
       "description": "Photos, videos, voice notes",
       "details": "### Responsibilities\n\n- Store uploaded photos, videos, and voice notes as immutable blobs, replicated across zones\n- Serve as the CDN's origin on a cache miss\n- Lifecycle-expire very old, never-re-requested media to control storage cost",
@@ -210,37 +210,257 @@
     }
   ],
   "edges": [
-    { "id": "e-sender-dns", "source": "client-sender", "target": "dns", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-recipient-dns", "source": "client-recipient", "target": "dns", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-dns-lb", "source": "dns", "target": "load-balancer", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-dns-cdn", "source": "dns", "target": "cdn", "sourceHandle": "top-source", "targetHandle": "bottom-target", "protocol": "https" },
-    { "id": "e-lb-gateway", "source": "load-balancer", "target": "api-gateway", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-lb-chat", "source": "load-balancer", "target": "chat-gateway", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "websocket", "label": "WebSocket", "animated": true },
-    { "id": "e-gateway-auth", "source": "api-gateway", "target": "auth-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-gateway-group", "source": "api-gateway", "target": "group-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-gateway-media", "source": "api-gateway", "target": "media-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-gateway-keystore", "source": "api-gateway", "target": "key-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
-    { "id": "e-chat-presence", "source": "chat-gateway", "target": "presence-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal" },
-    { "id": "e-chat-session", "source": "chat-gateway", "target": "session-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "tcp" },
-    { "id": "e-chat-queue", "source": "chat-gateway", "target": "message-queue", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "event" },
-    { "id": "e-chat-store", "source": "chat-gateway", "target": "message-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database" },
-    { "id": "e-chat-group", "source": "chat-gateway", "target": "group-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal" },
-    { "id": "e-presence-session", "source": "presence-service", "target": "session-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "tcp" },
-    { "id": "e-group-queue", "source": "group-service", "target": "message-queue", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "event" },
-    { "id": "e-group-store", "source": "group-service", "target": "message-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" },
-    { "id": "e-media-storage", "source": "media-service", "target": "media-storage", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https", "style": "dashed" },
-    { "id": "e-media-queue", "source": "media-service", "target": "message-queue", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "event" },
-    { "id": "e-queue-push", "source": "message-queue", "target": "push-worker", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "message" },
-    { "id": "e-push-gateway", "source": "push-worker", "target": "push-gateway", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "https" },
-    { "id": "e-pushgw-recipient", "source": "push-gateway", "target": "client-recipient", "sourceHandle": "left-source", "targetHandle": "right-target", "protocol": "https", "style": "dashed" },
-    { "id": "e-cdn-storage", "source": "cdn", "target": "media-storage", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https", "style": "dashed", "animated": true }
+    {
+      "id": "e-sender-dns",
+      "source": "client-sender",
+      "target": "dns",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-recipient-dns",
+      "source": "client-recipient",
+      "target": "dns",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-dns-lb",
+      "source": "dns",
+      "target": "load-balancer",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-lb-gateway",
+      "source": "load-balancer",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-lb-chat",
+      "source": "load-balancer",
+      "target": "chat-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "WebSocket",
+      "protocol": "websocket",
+      "animated": true
+    },
+    {
+      "id": "e-gateway-auth",
+      "source": "api-gateway",
+      "target": "auth-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-gateway-group",
+      "source": "api-gateway",
+      "target": "group-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-chat-presence",
+      "source": "chat-gateway",
+      "target": "presence-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "internal"
+    },
+    {
+      "id": "e-pushgw-recipient",
+      "source": "push-gateway",
+      "target": "client-recipient",
+      "sourceHandle": "left-source",
+      "targetHandle": "right-target",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__push-workerleft-source-push-gatewayright-target",
+      "source": "push-worker",
+      "target": "push-gateway",
+      "sourceHandle": "left-source",
+      "targetHandle": "right-target",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__message-queueleft-source-push-workerright-target",
+      "source": "message-queue",
+      "target": "push-worker",
+      "sourceHandle": "left-source",
+      "targetHandle": "right-target",
+      "protocol": "message"
+    },
+    {
+      "id": "xy-edge__media-servicebottom-source-message-queuetop-target",
+      "source": "media-service",
+      "target": "message-queue",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "event"
+    },
+    {
+      "id": "xy-edge__group-servicebottom-source-message-queuetop-target",
+      "source": "group-service",
+      "target": "message-queue",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "event"
+    },
+    {
+      "id": "xy-edge__presence-servicebottom-source-session-storetop-target",
+      "source": "presence-service",
+      "target": "session-store",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "tcp"
+    },
+    {
+      "id": "xy-edge__chat-gatewaybottom-source-session-storetop-target",
+      "source": "chat-gateway",
+      "target": "session-store",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "tcp"
+    },
+    {
+      "id": "xy-edge__chat-gatewaybottom-source-message-queuetop-target",
+      "source": "chat-gateway",
+      "target": "message-queue",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "event"
+    },
+    {
+      "id": "xy-edge__api-gatewaybottom-source-media-servicetop-target",
+      "source": "api-gateway",
+      "target": "media-service",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__dnstop-source-cdnleft-target",
+      "source": "dns",
+      "target": "cdn",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__api-gatewayright-source-key-storebottom-target",
+      "source": "api-gateway",
+      "target": "key-store",
+      "sourceHandle": "right-source",
+      "targetHandle": "bottom-target",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__media-servicetop-source-media-storagebottom-target",
+      "source": "media-service",
+      "target": "media-storage",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__group-servicetop-source-message-storebottom-target",
+      "source": "group-service",
+      "target": "message-store",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__chat-gatewaytop-source-message-storebottom-target",
+      "source": "chat-gateway",
+      "target": "message-store",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "protocol": "database"
+    },
+    {
+      "id": "xy-edge__chat-gatewaytop-source-group-serviceright-target",
+      "source": "chat-gateway",
+      "target": "group-service",
+      "sourceHandle": "top-source",
+      "targetHandle": "right-target",
+      "protocol": "internal"
+    },
+    {
+      "id": "xy-edge__cdntop-source-media-storageleft-target",
+      "source": "cdn",
+      "target": "media-storage",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "style": "dashed",
+      "animated": true
+    }
   ],
   "groups": [
-    { "id": "client-devices", "label": "Client Devices", "color": "#64748b", "style": "dashed" },
-    { "id": "edge-network", "label": "Edge & Network", "color": "#f59e0b", "style": "dashed" },
-    { "id": "app-services", "label": "Real-Time & Application Services", "color": "#6366f1", "style": "dashed" },
-    { "id": "coordination-tier", "label": "Coordination, Queueing & Push", "color": "#ec4899", "style": "dashed" },
-    { "id": "data-tier", "label": "Data & Storage Tier", "color": "#10b981", "style": "dashed" }
+    {
+      "id": "client-devices",
+      "label": "Client Devices",
+      "color": "#64748b",
+      "style": "dashed",
+      "width": 240,
+      "height": 420,
+      "x": 200,
+      "y": 272
+    },
+    {
+      "id": "edge-network",
+      "label": "Edge & Network",
+      "color": "#f59e0b",
+      "style": "dashed",
+      "width": 456,
+      "height": 300,
+      "x": 496,
+      "y": 276
+    },
+    {
+      "id": "app-services",
+      "label": "Real-Time & Application Services",
+      "color": "#6366f1",
+      "style": "dashed",
+      "width": 904,
+      "height": 664,
+      "x": 1016,
+      "y": -84
+    },
+    {
+      "id": "coordination-tier",
+      "label": "Coordination, Queueing & Push",
+      "color": "#ec4899",
+      "style": "dashed",
+      "width": 1416,
+      "height": 264,
+      "x": 504,
+      "y": 644
+    },
+    {
+      "id": "data-tier",
+      "label": "Data & Storage Tier",
+      "color": "#10b981",
+      "style": "dashed",
+      "width": 904,
+      "height": 213,
+      "x": 1016,
+      "y": -348
+    }
   ],
   "flows": [
     {
