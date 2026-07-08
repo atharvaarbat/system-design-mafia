@@ -92,7 +92,7 @@ export const NODE_REGISTRY = {
   'mysql': { label: 'MySQL', category: 'database', icon: Database, color: '#00758f' },
   'mongodb': { label: 'MongoDB', category: 'database', icon: Database, color: '#47a248' },
   'dynamodb': { label: 'DynamoDB', category: 'database', icon: Database, color: '#4053d6', brandLogo: '/diagram/logo/dynamodb.svg' },
-  'cassandra': { label: 'Cassandra', category: 'database', icon: Database, color: '#1287b1' },
+  'cassandra': { label: 'Cassandra', category: 'database', icon: Database, color: '#1287b1', brandLogo: '/diagram/logo/cassandra.svg' },
   'elasticsearch': { label: 'Elasticsearch', category: 'database', icon: Search, color: '#f5a623' },
   'generic-database': { label: 'Database', category: 'database', icon: Database, color: '#10b981' },
 

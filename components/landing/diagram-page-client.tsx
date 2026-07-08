@@ -7,7 +7,7 @@ import SubHeading from '@/components/landing/subheading';
 import Diagram from '@/components/diagram/diagram';
 import Navbar from '@/components/landing/navbar';
 import RichText from '@/components/ui/rich-text';
-import DiagramVisual from '@/components/landing/diagram-visuals';
+import DiagramCard from '@/components/landing/diagram-card';
 import Footer from '@/components/landing/footer';
 import RequirementsSection from '@/components/landing/diagram-sections/requirements-section';
 import EstimatesSection from '@/components/landing/diagram-sections/estimates-section';
@@ -386,59 +386,6 @@ export default function DiagramPageClient({
             )}
           </motion.div>
 
-          {/* Terminal-style metadata strip */}
-          {/* <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.7,
-              ease: [0.16, 1, 0.3, 1],
-              delay: 0.5,
-            }}
-            className="flex flex-wrap items-center gap-x-6 gap-y-1 border border-foreground/5 bg-foreground/1.5 px-5 py-3 text-xs dark:text-foreground/35 text-foreground/75"
-          >
-            <span className="text-foreground/70">$</span>
-            <span>
-              arch inspect {design.title.toLowerCase().replace(/\s+/g, '-')}
-            </span>
-            <span className="h-3 w-px bg-foreground/10" />
-            <div className="flex items-center gap-2">
-
-            <span>
-              <span className="text-foreground">{stats.nodeCount}</span> nodes
-            </span>
-            <span>
-              <span className="text-foreground">{stats.edgeCount}</span> edges
-            </span>
-            <span>
-              <span className="text-foreground">{stats.groupCount}</span> groups
-            </span>
-            <span>
-              <span className="text-foreground">{stats.protocols.length}</span>{' '}
-              protocols
-            </span>
-            </div>
-            {design.difficulty && (
-              <span
-                className={`border px-2 py-0.5 text-[10px] font-bold tracking-widest uppercase ${DIFFICULTY_STYLE[design.difficulty] ?? 'border-foreground/10 text-foreground/40'}`}
-              >
-                {design.difficulty}
-              </span>
-            )}
-            <span className="text-foreground/40">~{readingMinutes} min read</span>
-            <motion.span
-              className="ml-1 inline-block h-4 w-[2px] bg-foreground/40"
-              animate={{ opacity: [1, 0, 1] }}
-              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-            />
-            <span className="ml-auto inline-flex items-center gap-1.5">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-              <span className="text-[10px] tracking-wider text-primary uppercase">
-                verified
-              </span>
-            </span>
-          </motion.div> */}
-
           {/* Section index */}
           {sectionIndex.length > 0 && (
             <motion.nav
@@ -633,39 +580,13 @@ export default function DiagramPageClient({
             <SectionHeader label="Explore" title="More Patterns" />
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {suggested.map((diagram) => (
-                <article key={diagram.slug}>
-                  <Link href={`/d/${diagram.slug}`} className="block" aria-label={`View ${diagram.title} architecture diagram`}>
-                    <motion.div
-                      variants={fadeUp}
-                      whileHover={{ y: -4, transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] } }}
-                      className="group relative flex flex-col border border-foreground/10 bg-foreground/[0.02] transition-colors duration-500 ease-out hover:border-primary/30 hover:bg-primary/[0.03]"
-                    >
-                      <figure className="relative aspect-[4/3] overflow-hidden diagram-card-visual">
-                        <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100" />
-                        <DiagramVisual slug={diagram.slug} />
-                      </figure>
-                      <div className="flex flex-1 flex-col gap-2 p-5">
-                        <h3 className="text-foreground text-sm font-bold tracking-wide uppercase">
-                          {diagram.title}
-                        </h3>
-                        <p className="text-muted-foreground text-xs leading-relaxed">
-                          {diagram.description}
-                        </p>
-                      </div>
-                      <motion.div
-                        className="absolute right-0 top-0 m-3 h-2 w-2 rounded-full border border-foreground/10 bg-foreground/5"
-                        variants={{
-                          hover: {
-                            scale: 1.6,
-                            borderColor: 'var(--color-primary)',
-                            backgroundColor: 'var(--color-primary)',
-                            transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] },
-                          },
-                        }}
-                      />
-                    </motion.div>
-                  </Link>
-                </article>
+                <motion.article
+                  key={diagram.slug}
+                  variants={fadeUp}
+                  whileHover={{ y: -4, transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] } }}
+                >
+                  <DiagramCard diagram={diagram} />
+                </motion.article>
               ))}
             </div>
           </Section>

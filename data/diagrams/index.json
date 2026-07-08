@@ -1,6 +1,28 @@
 {
   "diagrams": [
     {
+      "slug": "design-api-rate-limiter",
+      "title": "Design an API Rate Limiter",
+      "description": "A server-side rate limiting system that protects APIs from abuse using sliding window counters and Redis-backed distributed state.",
+      "tags": ["rate-limiting", "api", "middleware", "scalability", "caching", "distributed-systems"],
+      "difficulty": "intermediate",
+      "nodeCount": 7,
+      "edgeCount": 6,
+      "image": "",
+      "featured": false
+    },
+    {
+      "slug": "design-typeahead-autocomplete",
+      "title": "Design Typeahead Suggestion / Autocomplete",
+      "description": "A ranked prefix-completion system that returns the top-K suggestions within the keystroke latency budget using an in-memory precomputed trie and an offline popularity build pipeline.",
+      "tags": ["typeahead", "autocomplete", "trie", "caching", "precomputation", "event-streaming", "search"],
+      "difficulty": "advanced",
+      "nodeCount": 13,
+      "edgeCount": 13,
+      "image": "",
+      "featured": false
+    },
+    {
       "slug": "design-web-crawler",
       "title": "Design a Web Crawler",
       "description": "A distributed crawler that discovers, fetches, and extracts text from 10 billion web pages within 5 days while respecting robots.txt.",

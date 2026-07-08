@@ -1,0 +1,515 @@
+{
+  "version": "1.0",
+  "title": "Design Typeahead Suggestion / Autocomplete",
+  "description": "A system that returns the top-K ranked prefix completions as a user types, serving results within the keystroke latency budget through precomputed in-memory trie lookups.",
+  "theme": "light",
+  "difficulty": "advanced",
+  "requirements": {
+    "functional": [
+      "Given a typed prefix, the service returns the top-K completions ranked by global popularity — the most-searched continuations, not a random match",
+      "The service ingests search and click events, computing per-query popularity with recency weighting so the ranking tracks real demand over time",
+      "The client debounces keystrokes and cancels superseded requests so a single word scan fires roughly one suggest call instead of three to five",
+      "The system supports an optional real-time blending layer that surfaces trending queries between full rebuild cycles"
+    ],
+    "nonFunctional": [
+      "Latency — p99 per keystroke completes within 100ms, the binding constraint that rules out any per-request ranking or disk access",
+      "Read-heavy — suggest QPS dwarfs write volume (~500K reads vs. 100K writes at peak), so the read path is optimized over the write path",
+      "Availability — degrade gracefully by serving stale or fewer results rather than erroring; a shorter suggestion list is acceptable, a failed search box is not",
+      "Scalability — the serving tier scales linearly by adding more read replicas of the immutable index, and the build pipeline scales independently as a batch job"
+    ]
+  },
+  "estimates": [
+    {
+      "label": "Daily searches",
+      "value": "5B/day",
+      "note": "drives the suggest QPS and corpus growth rate"
+    },
+    {
+      "label": "Searches / sec (peak)",
+      "value": "100K",
+      "note": "each search fires ~5 debounced suggest calls"
+    },
+    {
+      "label": "Suggest QPS (peak)",
+      "value": "500K",
+      "note": "every keystroke is a read — debounce is what keeps it tractable"
+    },
+    {
+      "label": "Distinct query strings",
+      "value": "100M",
+      "note": "~20 chars avg — fits in RAM after radix compression"
+    },
+    {
+      "label": "Trie memory footprint",
+      "value": "12 GB",
+      "note": "the entire ranked trie fits on one machine — no disk on the hot path"
+    },
+    {
+      "label": "Rebuild interval",
+      "value": "1 hr",
+      "note": "offline pipeline produces a new version; between rebuilds the index is read-only"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "browser",
+      "kind": "browser",
+      "x": -136,
+      "y": 96,
+      "name": "Browser / Mobile App",
+      "description": "Client with debounced suggest calls",
+      "details": "### Responsibilities\n\n- Captures keystrokes and applies a client-side debounce (typically 50–100ms) before sending a suggest request\n- Cancels any in-flight request that is superseded by a newer keystroke — typing `car` fires roughly one request, not three\n- Renders the returned top-K completions in a dropdown below the search box\n\n### Client behavior\n\nThe debounce and cancellation logic is the cheapest latency optimization in the system. It cuts suggest traffic by 60–80% with zero server-side changes."
+    },
+    {
+      "id": "cdn",
+      "kind": "cdn",
+      "x": 96,
+      "y": 96,
+      "name": "CDN",
+      "description": "Edge-caches static assets + API responses",
+      "details": "### Responsibilities\n\n- Serves cached static assets (HTML, JS, CSS) from edge locations close to the user\n- Optionally caches suggest API responses for extremely popular, slow-changing prefixes with long TTLs\n- Offloads the origin serving tier for the hottest prefix lookups\n\n### Why a CDN for a dynamic API\n\nSuggest responses for the top ~1K prefixes are nearly static between rebuild cycles and benefit from edge caching. The CDN also terminates TLS close to the user, reducing handshake latency on the first keystroke."
+    },
+    {
+      "id": "load-balancer",
+      "kind": "load-balancer",
+      "x": 296,
+      "y": 96,
+      "name": "Load Balancer",
+      "description": "Distributes traffic across API Gateways",
+      "details": "### Responsibilities\n\n- Distributes incoming HTTPS traffic across a pool of API Gateway instances\n- Performs health checks and removes unhealthy backends from rotation\n- Supports layer 7 routing to separate suggest traffic from event logging traffic\n\n### Why a load balancer\n\nA single entry point decouples client configuration from backend topology. Backends can be added, removed, or replaced without updating DNS or client code."
+    },
+    {
+      "id": "api-gateway",
+      "kind": "api-gateway",
+      "x": 504,
+      "y": 96,
+      "name": "API Gateway",
+      "description": "Authentication, rate limiting, routing",
+      "details": "### Responsibilities\n\n- Authenticates each request and enforces per-client rate limits to protect the serving tier from abuse\n- Routes `GET /v1/suggest` requests to the Suggest Service and routes `POST /v1/events` calls to the event ingestion endpoint\n- Terminates TLS and handles request validation before internal services see any traffic\n\n### Authentication approach\n\nSuggestions for unauthenticated users are served from a shared pool. Authenticated sessions may blend in per-user signals at query time (a variant)."
+    },
+    {
+      "id": "suggest-svc",
+      "kind": "rest-api",
+      "x": 720,
+      "y": 96,
+      "name": "Suggest Service",
+      "description": "Core read-path logic and cache orchestration",
+      "details": "### Responsibilities\n\n- Receives a validated `GET /v1/suggest?prefix=car&k=10` request from the API Gateway\n- Checks Redis for precomputed top-K completions for the given prefix — on cache hit, returns immediately\n- On cache miss, routes the query to the appropriate Trie Shard via prefix-based routing (no ranking, just a pointer walk)\n- Populates Redis with the trie shard's response so subsequent lookups hit the cache\n- Asynchronously logs the search event to Kafka for downstream popularity computation\n\n### Why not query the trie shard on every request\n\nRedis sits closer to the Suggest Service (same AZ or host) and handles the hottest prefixes with sub-millisecond latency. The trie shards are a tier above Redis — they hold the full index for all prefixes, but only the misses reach them."
+    },
+    {
+      "id": "redis-cache",
+      "kind": "redis",
+      "x": 824,
+      "y": -128,
+      "name": "Redis Cache",
+      "description": "In-memory cache for hot prefix top-K",
+      "details": "### Responsibilities\n\n- Caches the precomputed top-K results for frequently queried prefixes\n- Keys are prefix strings, values are the sorted top-K list as a fast-to-deserialize data structure (e.g. packed JSON or a custom binary format)\n- Supports TTL-based eviction so stale entries are naturally purged after a rebuild cycle\n\n### Cache size estimate\n\nThe top 10% of distinct prefixes account for ~90% of suggest traffic. With 10M cached entries at ~200 bytes each, Redis needs roughly 2 GB for a full hot-prefix cache — easily accommodated on the serving host."
+    },
+    {
+      "id": "trie-shard-a",
+      "kind": "generic-database",
+      "x": 1088,
+      "y": 104,
+      "name": "Trie Shard (a–m)",
+      "description": "In-memory ranked trie, prefixes a–m",
+      "details": "### Responsibilities\n\n- Holds the radix-compressed trie for prefixes starting with characters `a` through `m` in memory\n- Answers lookup requests by walking to the prefix node and returning its precomputed top-K list — O(prefix length) time, no ranking\n- Receives fresh trie versions from the Trie Builder via atomic pointer swap\n\n### Why radix compression\n\nA plain trie on 100M queries would have hundreds of millions of single-child nodes from long unique tails. Radix compression collapses each chain into one edge labelled with the whole substring, removing most nodes and pointer hops. This shrinks the 12 GB estimate by 3–5x."
+    },
+    {
+      "id": "trie-shard-b",
+      "kind": "generic-database",
+      "x": 1464,
+      "y": 288,
+      "name": "Trie Shard (n–z)",
+      "description": "In-memory ranked trie, prefixes n–z",
+      "details": "### Responsibilities\n\n- Holds the radix-compressed trie for prefixes starting with characters `n` through `z` in memory\n- Answers lookup requests by walking to the prefix node and returning its precomputed top-K list\n- Receives fresh trie versions from the Trie Builder via atomic pointer swap\n\n### Skew-aware sharding\n\nIf `s*` and `t*` prefixes dominate traffic, those ranges can be sub-sharded further (e.g. `s-a` through `s-m` on one node and `s-n` through `s-z` on another). The router holds a boundary table so each request touches exactly one shard."
+    },
+    {
+      "id": "trie-shard-c",
+      "kind": "generic-database",
+      "x": 1464,
+      "y": 488,
+      "name": "Trie Shard (hot split)",
+      "description": "Sub-shard for high-traffic prefix ranges",
+      "details": "### Responsibilities\n\n- Hosts sub-shards of the hottest prefix ranges (e.g. `a` through `c` or the `s*` family split across multiple nodes)\n- Follows the same in-memory ranked trie structure as the other shards\n- Added when a single shard's QPS or memory approaches its ceiling\n\n### When to add a split shard\n\nMonitoring tracks per-shard CPU, memory, and QPS. When any shard crosses 70% of capacity, the traffic distribution is analyzed and hot ranges are split across new shards in the next rebuild cycle."
+    },
+    {
+      "id": "kafka",
+      "kind": "kafka",
+      "x": 392,
+      "y": 400,
+      "name": "Kafka",
+      "description": "Durable event stream for search signals",
+      "details": "### Responsibilities\n\n- Receives search and click events published asynchronously by the Suggest Service\n- Provides ordered, durable, replayable event storage with configurable retention (e.g. 7 days)\n- Decouples the hot read path from the build pipeline — if the pipeline is down, events buffer in Kafka without any impact on suggest latency\n\n### Partition strategy\n\nEvents are partitioned by query string hash so the Aggregator can process all events for a given query on one consumer, enabling correct per-query aggregation without cross-partition coordination."
+    },
+    {
+      "id": "aggregator-svc",
+      "kind": "worker-service",
+      "x": 688,
+      "y": 392,
+      "name": "Aggregator Service",
+      "description": "Computes popularity scores with recency decay",
+      "details": "### Responsibilities\n\n- Consumes event batches from Kafka on a scheduled interval (e.g. every 15 minutes)\n- Aggregates raw search and click counts into per-query popularity scores, applying time decay so stale fads fade\n- Writes the resulting `query_string → score` map to Cassandra for durable storage\n\n### Decay formula\n\nEach day's activity is weighted by a decay factor: `score = sum(count_d * factor^days_ago)`. With factor 0.5, 1,000 searches today count as 1,000, but 1,000 searches three days ago count as 125. A query that spiked last week sinks below a rising one today."
+    },
+    {
+      "id": "cassandra-db",
+      "kind": "cassandra",
+      "x": 952,
+      "y": 560,
+      "name": "Cassandra",
+      "description": "Durable popularity score store",
+      "details": "### Responsibilities\n\n- Stores the authoritative `query_string → score` mapping as the durable source of truth for the trie builder\n- Modeled as a wide-column table keyed by query string hash, with columns for daily counts and the computed composite score\n- Written by the Aggregator Service and read by the Trie Builder — never touched by the hot path\n\n### Why Cassandra\n\nCassandra's linear write scaling and lack of a single point of failure match the event ingestion workload. Reads are scan-heavy (the builder reads the full table at rebuild time), which Cassandra handles efficiently through its sorted partition design."
+    },
+    {
+      "id": "trie-builder",
+      "kind": "worker-service",
+      "x": 1200,
+      "y": 392,
+      "name": "Trie Builder",
+      "description": "Offline ranked trie construction & deploy",
+      "details": "### Responsibilities\n\n- Runs on a schedule (e.g. every hour) or on demand when popularity scores change significantly\n- Reads the full popularity table from Cassandra and constructs a radix-compressed trie in memory\n- Computes each node's top-K via bottom-up propagation: a parent merges its children's precomputed top-K lists, re-sorts by score, and keeps the top K — no node ever scans the millions of leaves beneath it\n- Generates an immutable, lock-free trie structure and deploys it to every shard via atomic pointer swap\n\n### Crash resilience\n\nIf the builder crashes mid-build, nothing breaks — the old trie continues serving reads. The builder simply restarts and retries. The completed trie is deployed only after full construction succeeds."
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-browser-cdn",
+      "source": "browser",
+      "target": "cdn",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "e-cdn-lb",
+      "source": "cdn",
+      "target": "load-balancer",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "e-lb-gw",
+      "source": "load-balancer",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "e-gw-suggest",
+      "source": "api-gateway",
+      "target": "suggest-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTP",
+      "protocol": "http",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "e-kafka-aggregator",
+      "source": "kafka",
+      "target": "aggregator-svc",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "event batches",
+      "protocol": "message",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "e-aggregator-cassandra",
+      "source": "aggregator-svc",
+      "target": "cassandra-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "write popularity scores",
+      "protocol": "database",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "e-cassandra-builder",
+      "source": "cassandra-db",
+      "target": "trie-builder",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "read full popularity table",
+      "protocol": "internal",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "xy-edge__suggest-svctop-source-redis-cacheleft-target",
+      "source": "suggest-svc",
+      "target": "redis-cache",
+      "sourceHandle": "top-source",
+      "targetHandle": "left-target",
+      "label": "top-K cache lookup",
+      "protocol": "database",
+      "style": "solid",
+      "animated": true
+    },
+    {
+      "id": "xy-edge__suggest-svcbottom-source-kafkatop-target",
+      "source": "suggest-svc",
+      "target": "kafka",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "async event log",
+      "protocol": "message",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__suggest-svcright-source-trie-shard-aleft-target",
+      "source": "suggest-svc",
+      "target": "trie-shard-a",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "cache miss fallback",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__trie-builderright-source-trie-shard-bleft-target",
+      "source": "trie-builder",
+      "target": "trie-shard-b",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "deploy trie",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__trie-builderright-source-trie-shard-cleft-target",
+      "source": "trie-builder",
+      "target": "trie-shard-c",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "deploy trie",
+      "protocol": "internal",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__trie-buildertop-source-trie-shard-abottom-target",
+      "source": "trie-builder",
+      "target": "trie-shard-a",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "deploy trie",
+      "protocol": "internal",
+      "style": "dashed"
+    }
+  ],
+  "flows": [
+    {
+      "id": "suggest-prefix",
+      "title": "Suggest a Prefix (Hot Path)",
+      "description": "A user types in the search box — the system returns the top-K completions within the keystroke latency budget.",
+      "steps": [
+        {
+          "text": "The user types in the search box. After a client-side debounce (~50ms), a GET /v1/suggest request is dispatched. Superseded requests are cancelled — typing 'car' fires roughly one call, not three.",
+          "nodeIds": ["browser"],
+          "edgeIds": []
+        },
+        {
+          "text": "The request reaches the CDN. For extremely popular prefixes the CDN returns the cached response directly, avoiding the origin trip entirely.",
+          "nodeIds": ["browser", "cdn"],
+          "edgeIds": ["e-browser-cdn"]
+        },
+        {
+          "text": "The CDN forwards the request to the Load Balancer, which routes it to a healthy API Gateway instance.",
+          "nodeIds": ["cdn", "load-balancer"],
+          "edgeIds": ["e-cdn-lb"]
+        },
+        {
+          "text": "The Load Balancer passes the request to the API Gateway, which authenticates the client, enforces rate limits, and routes the request to the Suggest Service.",
+          "nodeIds": ["load-balancer", "api-gateway"],
+          "edgeIds": ["e-lb-gw"]
+        },
+        {
+          "text": "The API Gateway forwards the validated request to the Suggest Service. The service looks up the prefix in Redis — on cache hit, the precomputed top-K is returned immediately without any further query.",
+          "nodeIds": ["api-gateway", "suggest-svc", "redis-cache"],
+          "edgeIds": ["e-gw-suggest", "e-suggest-redis"]
+        },
+        {
+          "text": "On cache miss, the Suggest Service queries the Trie Shard that owns this prefix's range. The shard walks its in-memory radix-compressed trie to the prefix node and returns the precomputed top-K list in O(prefix length) time — no ranking, no disk.",
+          "nodeIds": ["suggest-svc", "trie-shard-a"],
+          "edgeIds": ["e-suggest-shard"]
+        },
+        {
+          "text": "The top-K completions flow back through the chain and are rendered in a dropdown below the search box. The entire round trip completes within the user's keystroke latency budget.",
+          "nodeIds": ["suggest-svc", "api-gateway", "browser"],
+          "edgeIds": []
+        }
+      ]
+    },
+    {
+      "id": "build-ranked-trie",
+      "title": "Ingest Signals & Build the Trie (Build Path)",
+      "description": "Events from user searches flow through the offline pipeline, producing a fresh ranked trie that is atomically deployed to the serving tier.",
+      "steps": [
+        {
+          "text": "The Suggest Service asynchronously publishes each search and click event to Kafka. These events include the query string, a timestamp, and whether the user clicked a suggestion or submitted a raw query.",
+          "nodeIds": ["suggest-svc", "kafka"],
+          "edgeIds": ["e-suggest-kafka"]
+        },
+        {
+          "text": "The Aggregator Service consumes event batches from Kafka on a scheduled interval (e.g. every 15 minutes). Events are partitioned by query string, so all events for the same query are processed by the same consumer.",
+          "nodeIds": ["kafka", "aggregator-svc"],
+          "edgeIds": ["e-kafka-aggregator"]
+        },
+        {
+          "text": "The Aggregator computes per-query popularity scores with recency decay — a query that spiked last week sinks below a rising one today. Scores are written to the Cassandra popularity store.",
+          "nodeIds": ["aggregator-svc", "cassandra-db"],
+          "edgeIds": ["e-aggregator-cassandra"]
+        },
+        {
+          "text": "The Trie Builder reads the full popularity table from Cassandra and constructs a fresh radix-compressed ranked trie using bottom-up top-K propagation — each node's top-K is a merge of its children's lists, not a subtree scan.",
+          "nodeIds": ["cassandra-db", "trie-builder"],
+          "edgeIds": ["e-cassandra-builder"]
+        },
+        {
+          "text": "The completed immutable trie is deployed to every shard via an atomic pointer swap. Reads already in flight finish on the old trie; new reads pick up the new version. No lock, no half-built state.",
+          "nodeIds": ["trie-builder", "trie-shard-a", "trie-shard-b", "trie-shard-c"],
+          "edgeIds": ["e-builder-shard-a", "e-builder-shard-b", "e-builder-shard-c"]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "When to rank — offline or at query time",
+      "choice": "Precompute top-K per node during offline build",
+      "alternatives": [
+        "Rank at query time: find all matching queries, sort by popularity, return top-K"
+      ],
+      "rationale": "Ranking at query time fails the latency budget as the corpus grows — a short prefix like `c` could match millions of queries, and sorting them per keystroke is O(N log N) over a growing corpus with a fixed time budget. By precomputing the ranked top-K for every prefix during the offline build, the hot path becomes O(prefix length) — a pointer walk and a memory read. The trade-off is rebuild-cycle staleness, but popularity shifts over minutes to hours while reads arrive constantly."
+    },
+    {
+      "title": "Data structure for prefix lookup",
+      "choice": "In-memory radix-compressed trie with per-node top-K",
+      "alternatives": [
+        "Database table with LIKE prefix query and ORDER BY score",
+        "Elasticsearch prefix query"
+      ],
+      "rationale": "A database `WHERE query LIKE 'prefix%' ORDER BY score LIMIT 10` requires a full index scan or a prefix scan plus a sort per query — unacceptably slow at 500K QPS. Elasticsearch adds network overhead and per-query scoring. A radix-compressed trie held in RAM eliminates disk and network I/O: lookup costs one pointer walk per character and returns a pre-sorted list. The 12 GB estimate confirms the trie fits comfortably on a single serving host, and radix compression shrinks it further."
+    },
+    {
+      "title": "Build timing — batch rebuild vs. real-time update",
+      "choice": "Offline batch rebuild on a schedule (every hour)",
+      "alternatives": [
+        "Real-time incremental trie updates on every event",
+        "Continuous streaming pipeline that updates trie in near-real-time"
+      ],
+      "rationale": "Incremental updates require mutable shared state and write locks on the trie — they introduce contention on the read path and risk readers seeing half-applied updates. A batch rebuild produces a complete, immutable, internally consistent trie that is swapped in atomically. The 1-hour rebuild interval is acceptable because popularity changes slowly. When trending matters, a small real-time layer blends in recent top queries without touching the heavy trie."
+    },
+    {
+      "title": "Trie distribution — sharding strategy",
+      "choice": "Prefix-range-based sharding with skew-aware splits",
+      "alternatives": [
+        "Consistent hashing across shards",
+        "Random shard assignment with scatter-gather"
+      ],
+      "rationale": "Consistent hashing scatters a prefix's completions across multiple shards, requiring a read to query all shards and merge results — O(N shards) per lookup. Prefix-range sharding ensures every prefix lives on exactly one shard: one lookup, one response. Skew-aware sub-sharding splits hot ranges (e.g. `s*`) across more shards than cold ranges (`z*`), keeping load balanced without scatter-gather."
+    },
+    {
+      "title": "Trie update mechanism",
+      "choice": "Immutable trie with atomic pointer swap",
+      "alternatives": [
+        "In-place trie mutation with read-write locks",
+        "Copy-on-write with reference counting"
+      ],
+      "rationale": "In-place mutation requires every read to acquire a lock or risk seeing a partially updated structure. Readers in a concurrent 500K QPS system contend destructively. An immutable trie built off the serving path and exposed via a single atomic pointer swap eliminates all synchronization: readers see a consistent snapshot without ever taking a lock. The old trie is garbage-collected once all in-flight reads referencing it complete."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Hot prefix skew",
+      "problem": "Short prefixes like `a`, `s`, or `th` receive a disproportionate share of suggest traffic because they match enormous numbers of completions and are typed by nearly every user. A single shard holding these ranges can be overloaded while other shards sit idle.",
+      "mitigation": "The routing layer supports skew-aware sub-sharding: hot ranges are split across multiple shards (e.g. `s-a` through `s-m` on one shard, `s-n` through `s-z` on another). The boundary table is updated during each rebuild cycle based on observed traffic patterns."
+    },
+    {
+      "title": "Cache stampede on trie swap",
+      "problem": "When a fresh trie is deployed, the Redis cache contains entries built from the old trie's data. If the old and new rankings differ significantly, the first wave of requests after the swap all miss Redis simultaneously and hit the trie shards in a thundering herd.",
+      "mitigation": "Cache TTLs are set to a fraction of the rebuild interval (e.g. 15 minutes) so the cache drains gradually rather than all at once. Additionally, the Suggest Service can pre-warm Redis with the new trie's top prefixes before the swap completes."
+    },
+    {
+      "title": "Rebuild-cycle staleness for trending queries",
+      "problem": "A query that begins surging minutes after a rebuild finishes will not appear in suggestions until the next build up to an hour later. For rapidly developing events (breaking news, viral moments), hour-old rankings feel noticeably stale.",
+      "mitigation": "A lightweight real-time layer blends in: a small in-memory structure tracks recently popular queries over a short sliding window. At query time, the Suggest Service merges the precomputed top-K with the real-time list — both K-length — re-sorts, and keeps the top K. This adds a handful of comparisons per request, not a full ranking."
+    },
+    {
+      "title": "Full trie build resource contention",
+      "problem": "The Trie Builder reads the entire Cassandra popularity table and constructs a multi-gigabyte trie in memory. During this window, the builder competes for Cassandra read capacity and network bandwidth with other consumers. A naive implementation can degrade the aggregator's write throughput.",
+      "mitigation": "The builder runs on dedicated hosts and throttles its Cassandra read rate to leave headroom for concurrent writes. The build itself is stateless and resumable — if it is interrupted, the old trie continues serving and the builder retries on the next scheduled interval."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why does ranking at query time fail the latency budget as the corpus grows?",
+      "answer": "A short prefix like `c` can match millions of queries in the corpus. Sorting them by popularity per keystroke is O(M log M) where M grows with the corpus — but the keystroke latency budget stays fixed. By precomputing the ranked top-K for every prefix, the hot path is O(prefix length) independent of corpus size: a pointer walk and a memory read, never a full scan or sort."
+    },
+    {
+      "question": "How is a trie node's top-K computed during the build without scanning its entire subtree?",
+      "answer": "Each node's top-K is built from its children's precomputed top-K lists, not by examining every leaf below it. Each child already stores its own sorted top-K. To fill a parent, the builder takes the union of its children's lists — plus any query that ends exactly at the parent — sorts by score, and keeps the top K. A single bottom-up pass (leaves first) fills every node this way. No node ever scans the millions of leaves beneath it."
+    },
+    {
+      "question": "Why is the trie deployed via an atomic pointer swap instead of an in-place update?",
+      "answer": "An in-place update requires mutating shared state while 500K QPS of reads access the same structure. This means write locks, reader-writer contention, and the risk of a reader seeing a half-built node. An immutable trie built offline and swapped in with a single atomic pointer operation guarantees every read sees a consistent snapshot without ever taking a lock — and the old trie stays alive until all in-flight references to it are released."
+    },
+    {
+      "question": "What happens if the trie builder crashes mid-build?",
+      "answer": "Nothing breaks. The old trie continues serving reads on all shards because the builder constructs the new version off to the side — the shards' pointers never change until the final atomic swap. The builder simply restarts and retries on the next scheduled interval. This isolation is a direct benefit of separating the build pipeline from the serving tier."
+    },
+    {
+      "question": "How do you surface a rising query that started trending between scheduled rebuilds?",
+      "answer": "A small, fast-updating side structure tracks recently popular queries over a short sliding window. At suggest time, the service merges the precomputed top-K with this real-time list — both are at most K long, so the merge is O(K log K) = a few dozen comparisons. The blended results give the trending query a recency boost without bringing heavy ranking back onto the read path."
+    },
+    {
+      "question": "Why prefix-range sharding instead of consistent hashing?",
+      "answer": "Consistent hashing scatters a prefix's completions across multiple shards, so each suggest lookup must query all shards and merge their results — O(N shards) work per read. Prefix-range sharding routes every prefix to exactly one shard: one lookup, one response. Skew-aware splits within the range scheme handle hot prefixes without scatter-gather, which would otherwise dominate the latency budget."
+    }
+  ],
+  "references": [
+    {
+      "title": "Using Finite State Transducers in Lucene — Michael McCandless",
+      "url": "https://blog.mikemccandless.com/2010/12/using-finite-state-transducers-in.html",
+      "source": "blog.mikemccandless.com"
+    },
+    {
+      "title": "Search suggesters — Elasticsearch completion suggester",
+      "url": "https://www.elastic.co/guide/en/elasticsearch/reference/current/search-suggesters.html",
+      "source": "elastic.co"
+    },
+    {
+      "title": "System Design Interview: Autocomplete / Type-ahead System",
+      "url": "https://medium.com/double-pointer/system-design-interview-autocomplete-type-ahead-system-for-a-search-box-1ac968f9f121",
+      "source": "medium.com"
+    },
+    {
+      "title": "Typeahead System Design — System Design School",
+      "url": "https://systemdesignschool.io/problems/typeahead/solution",
+      "source": "systemdesignschool.io"
+    },
+    {
+      "title": "Amazon ElastiCache for Redis — in-memory caching best practices",
+      "url": "https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/BestPractices.html",
+      "source": "AWS Docs"
+    }
+  ],
+  "relatedPatterns": [
+    "design-web-crawler",
+    "event-driven-architecture",
+    "design-twitter"
+  ],
+  "summary": "### Architecture Overview\n\nThe Typeahead Suggestion system is split into two decoupled paths: a hot read path that serves ranked prefix completions from memory within the keystroke latency budget, and an offline build path that ingests events, computes popularity, and constructs fresh ranked tries.\n\n### Hot Read Path\n\nEach keystroke fires a debounced `GET /v1/suggest` request. The call flows through the CDN, Load Balancer, and API Gateway to the Suggest Service. The Suggest Service first checks Redis for the precomputed top-K completions of the typed prefix — on cache hit, results return in under a millisecond. On cache miss, the service routes to the appropriate Trie Shard via prefix-based routing. The shard holds a radix-compressed trie where every node stores its own precomputed top-K list, so a lookup is a pointer walk to the prefix node and a memory read of the cached results — no ranking, no sort, no disk. The entire round trip completes within the per-keystroke budget.\n\n### Offline Build Pipeline\n\nThe Suggest Service asynchronously publishes search and click events to Kafka. The Aggregator Service consumes event batches on a 15-minute schedule, computing per-query popularity scores with recency decay so stale fads fade and rising queries gain rank. Aggregated scores are written to Cassandra. The Trie Builder periodically reads the full popularity table and constructs a fresh radix-compressed ranked trie using bottom-up top-K propagation — each node's top-K is a merge of its children's precomputed lists, never a subtree scan. The completed immutable trie is deployed to every shard via an atomic pointer swap: all shards atomically switch to the new version without locking, while reads in flight finish on the old trie.\n\n### Key Design Principles\n\n**Rank offline, serve from memory.** Precomputing the ranked top-K for every prefix is what makes the per-keystroke latency budget attainable. The decision to rank when data changes (offline) rather than when it is read is the central design principle that shapes everything else.\n\n**Immutable trie with atomic swap.** The trie is rebuilt entirely off the serving path and swapped in as a single atomic operation. This eliminates read-write contention, keeps the read path lock-free, and provides natural crash isolation — a failed build simply leaves the old trie in place.\n\n**Prefix-based sharding with skew awareness.** The trie is split by leading characters so each request touches exactly one shard. Hot prefix ranges are sub-sharded further to prevent skew from overwhelming a single node, while cold ranges share a shard efficiently."
+}

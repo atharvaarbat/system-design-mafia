@@ -1,0 +1,341 @@
+{
+  "version": "1.0",
+  "title": "Design an API Rate Limiter",
+  "description": "A server-side rate limiting system that protects APIs from abuse by controlling request volume using sliding window counters and Redis-backed distributed state.",
+  "summary": "### Core Architecture\n\nThe rate limiter sits as middleware between the API Gateway and backend services. Every inbound request passes through it, where a lightweight decision engine checks the caller's current usage against configured rules before deciding to allow, throttle, or block.\n\n- The **Rules Engine** stores rate limit definitions — e.g. \"100 requests per minute for free-tier users, 1000 for premium\" — keyed by endpoint, user tier, or geography\n- The **Redis Counter Store** holds per-identifier counters with automatic TTL expiry. For sliding window log mode, Redis sorted sets store each request's timestamp; for sliding window counter mode, only two integers per window are needed\n- Allowed requests flow through to the backend **API Service**. Blocked requests receive HTTP 429 (Too Many Requests) with a Retry-After header\n- A **Logging & Analytics** pipeline consumes rate-limited events asynchronously for dashboards, abuse detection, and rule tuning\n\n### Algorithm Choices\n\nThe design supports multiple algorithms, configurable per-route:\n\n- **Sliding Window Log** — most accurate; stores every request timestamp in a Redis sorted set, evicts expired entries, then counts remaining entries. O(log N) per check\n- **Sliding Window Counter** — memory-efficient; approximates the sliding window by weighting the previous window's counter. Only 2 counters per identifier\n- **Token Bucket** — intuitive; refills tokens at a fixed rate. Burst-friendly but requires tuning bucket depth\n- **Fixed Window Counter** — simplest; resets a counter at calendar-aligned boundaries. Prone to burst-at-boundary traffic spikes\n\n### Distributed Considerations\n\nIn a multi-datacenter deployment, all rate limiter instances share the same Redis cluster. Cross-region replication keeps counters eventually consistent — slight over-counting during synchronization windows is acceptable compared to the latency cost of synchronous coordination. Local in-process counters serve as a fallback during Redis degradation, providing approximate rate limiting until the cluster recovers.",
+  "difficulty": "intermediate",
+  "requirements": {
+    "functional": [
+      "The system limits the number of requests a user, IP address, or API key can make within a configurable time window",
+      "The system returns HTTP 429 (Too Many Requests) with a Retry-After header when a caller exceeds their limit",
+      "Rate limit rules are configurable per endpoint, user tier, geographic region, and authentication status",
+      "The system logs all rate-limited requests for real-time monitoring, dashboards, and retrospective abuse analysis",
+      "The rate limiter supports multiple algorithms — sliding window log, sliding window counter, token bucket, and fixed window — with per-route selection"
+    ],
+    "nonFunctional": [
+      "Decision latency must stay under 5ms at P99 — rate limiting adds negligible overhead to every single API call",
+      "The system must handle 10M+ requests per second at peak without becoming a bottleneck itself",
+      "Rate limit counters must survive individual middleware instance restarts — state lives in Redis, not in process memory",
+      "The rate limiter must gracefully degrade under Redis failure — falling back to approximate local counters rather than failing open or closed"
+    ]
+  },
+  "estimates": [
+    { "label": "Peak RPS", "value": "10M+", "note": "rate limiter decides on every request — throughput is the top constraint" },
+    { "label": "Decision latency", "value": "<5ms", "note": "P99 — users should never feel the rate limiter" },
+    { "label": "Active users", "value": "1B", "note": "counter keyspace must handle billions of distinct identifiers" },
+    { "label": "Redis ops/sec", "value": "20M+", "note": "each request is a read + conditional write, doubling the request rate" },
+    { "label": "Rules count", "value": "~500", "note": "loaded into local cache at startup, refreshed every few minutes" }
+  ],
+  "flows": [
+    {
+      "id": "allow-request",
+      "title": "Request within rate limit",
+      "description": "A user sends an API request that falls within their allowed quota. The rate limiter checks, approves, and forwards it to the backend.",
+      "steps": [
+        {
+          "text": "The client sends an API request over HTTPS to the API Gateway, which terminates TLS and authenticates the caller.",
+          "nodeIds": ["client", "api-gateway"],
+          "edgeIds": ["e-client-gw"]
+        },
+        {
+          "text": "The API Gateway forwards the authenticated request context (user ID, tier, endpoint) to the Rate Limiter Middleware.",
+          "nodeIds": ["api-gateway", "rate-limiter"],
+          "edgeIds": ["e-gw-limiter"]
+        },
+        {
+          "text": "The middleware loads the applicable rule from the Rules Engine — e.g., '100 requests per minute for free-tier users on /api/videos' — then caches it locally for subsequent requests.",
+          "nodeIds": ["rate-limiter", "rules-engine"],
+          "edgeIds": ["e-limiter-rules"]
+        },
+        {
+          "text": "The middleware queries Redis for the user's current counter. With a sliding window log, it evicts timestamps older than the window, counts the remaining entries, and finds the user is still under the limit.",
+          "nodeIds": ["rate-limiter", "redis-cache"],
+          "edgeIds": ["e-limiter-redis"]
+        },
+        {
+          "text": "The middleware appends the current timestamp to the sorted set (or increments the counter), then forwards the request to the backend API Service along the happy path.",
+          "nodeIds": ["rate-limiter", "api-service"],
+          "edgeIds": ["e-limiter-api"]
+        },
+        {
+          "text": "The API Service processes the business logic and returns a successful response to the client through the reverse path.",
+          "nodeIds": ["api-service"]
+        }
+      ]
+    },
+    {
+      "id": "block-request",
+      "title": "Request blocked (rate limited)",
+      "description": "A user or attacker exceeds their rate limit. The middleware rejects the request before it ever reaches the backend.",
+      "steps": [
+        {
+          "text": "An API request arrives at the gateway from a user who has already exhausted their quota in the current window.",
+          "nodeIds": ["client", "api-gateway"],
+          "edgeIds": ["e-client-gw"]
+        },
+        {
+          "text": "The API Gateway authenticates the request and passes the caller's identity to the Rate Limiter Middleware.",
+          "nodeIds": ["api-gateway", "rate-limiter"],
+          "edgeIds": ["e-gw-limiter"]
+        },
+        {
+          "text": "The middleware queries Redis, finds that the caller's counter already meets or exceeds the threshold, and determines the request must be blocked.",
+          "nodeIds": ["rate-limiter", "redis-cache"],
+          "edgeIds": ["e-limiter-redis"]
+        },
+        {
+          "text": "The middleware immediately returns HTTP 429 (Too Many Requests) with a Retry-After header. The request never reaches the API Service — protecting backend capacity.",
+          "nodeIds": ["rate-limiter"]
+        },
+        {
+          "text": "The blocked event is asynchronously pushed to the Logging & Analytics service for dashboards, abuse detection, and retrospective rule tuning.",
+          "nodeIds": ["rate-limiter", "logging-service"],
+          "edgeIds": ["e-limiter-logging"]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Server-side vs client-side rate limiting",
+      "choice": "Server-side middleware in the API gateway",
+      "alternatives": ["Client-side enforcement in the mobile/web app"],
+      "rationale": "Client-side rate limiting is trivially bypassed by modifying client code or disabling JavaScript. Server-side enforcement at the API gateway guarantees every request — regardless of origin — passes through the same gate. This is the only placement that can protect against both malicious attackers and buggy clients."
+    },
+    {
+      "title": "Counter storage: Redis vs relational database",
+      "choice": "Redis with atomic counters and sorted sets",
+      "alternatives": ["PostgreSQL with row-level counters", "In-process memory within the middleware"],
+      "rationale": "Rate limiting demands sub-millisecond reads and writes on the hot path of every API request. Redis delivers this with in-memory storage and atomic ops like INCR and ZREMRANGEBYSCORE. A relational database adds 10–50ms of query latency per check, and its durability guarantees are unnecessary because lost counters only mean a temporary over-allocation. In-process counters can't scale across instances without a shared store."
+    },
+    {
+      "title": "Which rate limiting algorithm",
+      "choice": "Sliding window log with Redis sorted sets",
+      "alternatives": ["Fixed window counter", "Token bucket", "Leaky bucket"],
+      "rationale": "Fixed window counters suffer from burst-at-boundary spikes — 100 requests at 0:59 and 100 more at 1:00 double the effective rate. Token buckets need careful burst tuning. Sliding window log uses Redis sorted sets (ZSET) to store timestamps and evict expired entries in O(log N), providing precise per-window accounting. The memory cost is acceptable: at 100 req/user with 5M active users, that's roughly 5 GB of timestamp data."
+    },
+    {
+      "title": "Middleware vs standalone service",
+      "choice": "Middleware deployed within the API gateway process",
+      "alternatives": ["Dedicated rate limiter service as a separate deployment"],
+      "rationale": "Embedding the rate limiter as middleware avoids an extra network hop on the critical path — every request would need two hops instead of one if the limiter were a separate service. For a component that must decide on every single request, that latency penalty is unacceptable. A standalone service only makes sense when the rate limiter must be shared across completely independent API gateways."
+    },
+    {
+      "title": "Throttling response strategy",
+      "choice": "Hard blocking with HTTP 429",
+      "alternatives": ["Throttling (queue and delay requests)", "Shaping (deprioritize over-limit requests)"],
+      "rationale": "Hard blocking is the simplest and most predictable strategy for API protection. HTTP 429 with Retry-After tells the client exactly what happened and when to retry. Throttling requires buffering and queuing, which adds complexity and can mask capacity problems. Shaping requires priority scheduling across the entire backend — too invasive for most systems."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Redis hot key contention",
+      "problem": "A viral user or a botnet sharing a single IP generates millions of requests, concentrating all counter reads and writes on one Redis shard. That shard becomes a hot spot, latency spikes, and the rate limiter itself starts timing out.",
+      "mitigation": "Shard the keyspace by user ID or a composite key (user_id + endpoint) so load distributes evenly across Redis cluster nodes. For the hottest keys, use local in-process approximate counters that sync to Redis asynchronously — short-term precision loss is acceptable."
+    },
+    {
+      "title": "Race conditions in distributed counter updates",
+      "problem": "In a multi-instance deployment, two middleware processes can read the same counter before either writes, both see the count below threshold, and both allow the request through — letting a burst slip past the limit.",
+      "mitigation": "Use Redis atomic operations: INCR for fixed-window counters (atomic increment and check), or Lua scripting for sliding window sorted sets (evict, count, add, and check in one atomic script execution). These guarantee correctness without distributed locks."
+    },
+    {
+      "title": "Clock skew across data centers",
+      "problem": "Sliding window and fixed window algorithms rely on accurate timestamps. If middleware instances in different data centers have clock drift of even a few seconds, the counters may systematically over-count or under-count requests across regions.",
+      "mitigation": "Use Redis server timestamps via the TIME command instead of the middleware's local clock. For sliding window algorithms, align window boundaries to a server-coordinated epoch rather than local wall-clock time."
+    },
+    {
+      "title": "Memory exhaustion from sliding window logs",
+      "problem": "A sliding window log stores every individual request timestamp in a Redis sorted set. At 100 requests per second per user with 10M active users in a 1-minute window, that's 60 billion entries — infeasible for any reasonable Redis cluster.",
+      "mitigation": "Switch to the sliding window counter algorithm for high-volume routes: it stores only two integers per window (the previous window's count and the current window's count), reducing memory from O(N) to O(1) per identifier. Reserve sliding window logs for low-volume, high-precision routes like payment APIs."
+    },
+    {
+      "title": "Cascading failure when Redis degrades",
+      "problem": "If Redis becomes slow or partially unavailable, every middleware instance may accumulate pending Redis commands. The backlog increases latency for the rate limiter itself, which can cascade into timeouts across all upstream API calls.",
+      "mitigation": "Implement a circuit breaker: if Redis P99 latency exceeds 10ms, fall back to approximate local counters that are slightly over-generous (e.g., 110% of the configured limit). This sacrifices precision for availability. Redis Sentinel provides automatic failover for primary nodes."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why does the rate limiter live as middleware inside the API gateway rather than as a standalone service?",
+      "answer": "Every single API request must pass through the rate limiter. Adding a separate service would introduce an extra network hop on every request, doubling latency and adding a failure point. As middleware, the decision happens in-process with no additional round trip — critical at 10M+ RPS where every microsecond matters."
+    },
+    {
+      "question": "What is the burst-at-boundary problem in fixed window counters, and how does sliding window log solve it?",
+      "answer": "Fixed window counters reset at calendar-aligned boundaries (e.g., the start of each minute). A caller can send 100 requests at 0:59 and 100 more at 1:00, effectively doubling their allowed rate across the boundary. Sliding window log avoids this by tracking the actual timestamps within a rolling window — old entries expire continuously rather than all at once at an arbitrary boundary."
+    },
+    {
+      "question": "Why Redis instead of PostgreSQL for storing rate limit counters?",
+      "answer": "Rate limit counters need to be read and written on every API request with sub-millisecond latency — Redis's in-memory architecture delivers this naturally. PostgreSQL's disk-based storage adds 10–50ms per query, and its durability guarantees are wasted on ephemeral counter data. If Redis loses a counter due to a restart, the worst outcome is a temporary over-allocation of requests, not permanent data loss."
+    },
+    {
+      "question": "What happens if Redis is slow or unreachable? How should the rate limiter behave?",
+      "answer": "The rate limiter should never fail open (allow all) or fail closed (block all). The correct behavior is a circuit breaker pattern: if Redis latency exceeds a threshold (e.g., 10ms P99), each middleware instance falls back to approximate local counters that are intentionally over-generous — allowing, say, 110% of the configured limit. This means a slight temporary over-allocation, which is vastly better than either a full outage or disabling all protection."
+    },
+    {
+      "question": "How do you prevent race conditions where two middleware instances both read a counter below the limit and both allow the request?",
+      "answer": "Redis atomic operations solve this. For fixed window counters, use INCR which atomically increments and returns the new value. For sliding window logs, wrap the evict-count-add-check logic in a Lua script that runs atomically on the Redis server. This guarantees that concurrent reads from different middleware instances are serialized at the Redis level without requiring distributed locks."
+    },
+    {
+      "question": "Why does the rate limiter send HTTP 429 instead of silently dropping excess requests?",
+      "answer": "HTTP 429 (Too Many Requests) is the standard HTTP protocol signal for rate limiting. It tells the client exactly why the request was rejected, making the failure mode debuggable. The Retry-After header gives well-behaved clients a precise backoff interval. Silently dropping requests would appear as a network timeout, leading to confusing user experiences and potentially infinite retry loops."
+    },
+    {
+      "question": "When would you choose the sliding window counter algorithm over the sliding window log algorithm?",
+      "answer": "Sliding window counter stores only two integers per identifier (previous window's count and current window's count), using O(1) memory instead of O(N) where N is the number of requests in the window. Choose it for high-volume endpoints (e.g., general API rate limits at 100 requests/second/user) where the memory cost of storing every timestamp is prohibitive. Reserve sliding window logs for low-volume, high-precision scenarios like payment API limits where exact accounting matters."
+    }
+  ],
+  "references": [
+    { "title": "System Design Interview — Rate Limiter (Alex Xu, Chapter 4)", "url": "https://bytebytego.com", "source": "bytebytego.com" },
+    { "title": "Stripe — Rate Limiters and API Design", "url": "https://stripe.com/blog/rate-limiters", "source": "stripe.com" },
+    { "title": "GitHub REST API Rate Limiting Documentation", "url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api", "source": "docs.github.com" },
+    { "title": "Redis Rate Limiting Patterns", "url": "https://redis.io/glossary/rate-limiting/", "source": "redis.io" },
+    { "title": "Twitter API Rate Limits", "url": "https://developer.twitter.com/en/docs/twitter-api/v1/rate-limits", "source": "developer.twitter.com" }
+  ],
+  "relatedPatterns": ["design-web-crawler", "design-twitter"],
+  "nodes": [
+    {
+      "id": "client",
+      "kind": "mobile-app",
+      "x": 140,
+      "y": 440,
+      "name": "User / Client",
+      "description": "Mobile app or web browser",
+      "details": "### Request Origin\n\n- Sends API requests over HTTPS to the gateway\n- Can be a mobile app, single-page application, or third-party service using an API key\n- The rate limiter treats clients as untrusted: all enforcement is server-side, never delegated to the client\n\nThe client receives HTTP 429 responses with a Retry-After header when rate limited, allowing well-behaved applications to implement exponential backoff."
+    },
+    {
+      "id": "api-gateway",
+      "kind": "api-gateway",
+      "x": 380,
+      "y": 440,
+      "name": "API Gateway",
+      "description": "Entry point for all traffic",
+      "group": "rate-limiter-tier",
+      "details": "### Responsibilities\n\n- Terminates TLS and authenticates every incoming request\n- Extracts caller identity (user ID, API key, IP address) and forwards it as request context\n- Passes requests to the Rate Limiter Middleware before any backend service\n\nThe gateway is the natural home for rate limiting middleware because it sees every request before any downstream service does."
+    },
+    {
+      "id": "rate-limiter",
+      "kind": "generic-service",
+      "x": 640,
+      "y": 440,
+      "name": "Rate Limiter Middleware",
+      "description": "Core decision engine",
+      "group": "rate-limiter-tier",
+      "details": "### Responsibilities\n\n- Determines whether each request should be allowed, throttled, or blocked\n- Reads applicable rules from the Rules Engine and caches them locally\n- Queries and updates counters in Redis atomically\n- Returns HTTP 429 with Retry-After for blocked requests\n- Forwards allowed requests to the backend API Service\n\n### Decision Flow\n\nFor each request, the middleware executes: (1) load the matching rule, (2) check the current counter against the limit, (3) if allowed, increment the counter and forward; if blocked, return 429 and log the event. This entire decision should complete in under 5ms."
+    },
+    {
+      "id": "rules-engine",
+      "kind": "generic-service",
+      "x": 640,
+      "y": 180,
+      "name": "Rules Engine",
+      "description": "Rate limit configuration store",
+      "group": "rate-limiter-tier",
+      "details": "### Responsibilities\n\n- Stores all rate limiting rules: per-endpoint limits, per-tier quotas, per-region overrides\n- Supports dynamic rule updates without restarting middleware\n- Pushes rule changes to middleware instances via a pub/sub channel or periodic polling\n\n### Rule Examples\n\n- Standard users: 100 requests/minute on `/api/videos`\n- Premium users: 1000 requests/minute on `/api/videos`\n- Unauthenticated: 10 requests/minute per IP on `/api/search`\n- Write endpoints: 30 requests/minute per user regardless of tier"
+    },
+    {
+      "id": "redis-cache",
+      "kind": "redis",
+      "x": 380,
+      "y": 700,
+      "name": "Redis Counter Store",
+      "description": "Per-identifier rate limit counters",
+      "group": "data-tier",
+      "details": "### Storage Patterns\n\n- **Sliding Window Log**: Each counter is a Redis sorted set (ZSET) keyed by `{identifier}:{endpoint}:{window}`. Each member is a request timestamp (score = timestamp) — expired entries are removed via ZREMRANGEBYSCORE, and the count comes from ZCARD\n- **Sliding Window Counter**: Only two keys per identifier — `{key}:prev_count` and `{key}:curr_count` — with an overlapping weight formula that approximates the true sliding window\n- **Token Bucket**: A key for the current token count and a last-refill-timestamp, updated with Lua for atomicity\n- All keys have a TTL equal to the window duration plus a small buffer, so expired data is automatically reclaimed"
+    },
+    {
+      "id": "logging-service",
+      "kind": "generic-service",
+      "x": 640,
+      "y": 700,
+      "name": "Logging & Analytics",
+      "description": "Rate limit event pipeline",
+      "group": "data-tier",
+      "details": "### Responsibilities\n\n- Consumes rate-limited events asynchronously from the middleware\n- Feeds real-time dashboards showing blocked request rates per endpoint, user, and region\n- Drives an abuse detection pipeline: sudden spikes in rate-limited events from a single IP or user trigger automated investigation\n- Stores historical data for retrospective rule tuning — e.g., finding the right limit for a new endpoint based on observed traffic patterns\n\nEvents are pushed via a message queue or written to a log shipper, never on the critical path of request processing."
+    },
+    {
+      "id": "api-service",
+      "kind": "rest-api",
+      "x": 980,
+      "y": 440,
+      "name": "API Service",
+      "description": "Protected backend service",
+      "details": "### Responsibilities\n\n- Processes the actual business logic of each API request\n- Never sees requests that exceed the rate limit — they are blocked upstream by the middleware\n- Benefits from reduced load during traffic spikes and abuse events\n\nThe API Service is completely decoupled from rate limiting concerns. It trusts that any request reaching it has already been authenticated and rate-checked by the middleware, keeping the service logic clean and focused on its domain."
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-client-gw",
+      "source": "client",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "animated": true,
+      "width": 2
+    },
+    {
+      "id": "e-gw-limiter",
+      "source": "api-gateway",
+      "target": "rate-limiter",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "animated": true,
+      "width": 2
+    },
+    {
+      "id": "e-limiter-redis",
+      "source": "rate-limiter",
+      "target": "redis-cache",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "internal",
+      "style": "dashed",
+      "width": 1.5
+    },
+    {
+      "id": "e-limiter-rules",
+      "source": "rules-engine",
+      "target": "rate-limiter",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "internal",
+      "style": "dotted",
+      "width": 1.5
+    },
+    {
+      "id": "e-limiter-api",
+      "source": "rate-limiter",
+      "target": "api-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "animated": true,
+      "width": 2
+    },
+    {
+      "id": "e-limiter-logging",
+      "source": "rate-limiter",
+      "target": "logging-service",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "event",
+      "style": "dashed",
+      "width": 1.5
+    }
+  ],
+  "groups": [
+    {
+      "id": "rate-limiter-tier",
+      "label": "Rate Limiting Layer",
+      "color": "#6366f1",
+      "style": "dashed"
+    },
+    {
+      "id": "data-tier",
+      "label": "Data Tier",
+      "color": "#10b981",
+      "style": "dashed"
+    }
+  ]
+}

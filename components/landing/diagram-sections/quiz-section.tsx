@@ -47,7 +47,7 @@ export default function QuizSection({ quiz }: { quiz: QuizItem[] }) {
                 <span className={`mt-0.5 shrink-0 font-doto text-sm font-black ${isOpen ? 'text-primary' : 'text-foreground/25'}`}>
                   Q{i + 1}
                 </span>
-                <span className="flex-1 text-sm leading-relaxed text-foreground/80">
+                <span className="flex-1 font-poppins text-sm leading-relaxed text-foreground/80">
                   {item.question}
                 </span>
                 <span className="mt-0.5 shrink-0 text-foreground/30">

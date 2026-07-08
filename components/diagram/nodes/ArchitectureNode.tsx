@@ -193,7 +193,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
         trigger={
           <div
             onContextMenu={handleContextMenu}
-            className={`group relative w-fit rounded-xl transition-[opacity,filter] duration-500 ${selected && editable ? 'bg-primary/20' : ''} ${isDimmed ? 'opacity-20 grayscale' : ''}`}
+            className={`group font-poppins relative w-fit rounded-xl transition-[opacity,filter] duration-500 ${selected && editable ? 'bg-primary/20' : ''} ${isDimmed ? 'opacity-20 grayscale' : ''}`}
           >
             {highlightState === 'active' && (
               <div className="pointer-events-none absolute -inset-1.5 rounded-xl border-2 border-primary/70 bg-primary/8 shadow-[0_0_28px_color-mix(in_oklab,var(--color-primary)_35%,transparent)]" />
@@ -230,7 +230,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
                   : <Icon className="absolute inset-0 m-auto h-5 w-5 text-white" strokeWidth={2} />}
               </div>
 
-              <span className="max-w-24 truncate text-center text-xs font-semibold text-zinc-800 dark:text-zinc-100">
+              <span className="max-w-24 truncate text-center text-xs font- text-zinc-800 dark:text-zinc-100">
                 {label}
               </span>
 
