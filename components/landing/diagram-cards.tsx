@@ -106,7 +106,7 @@ export default function DiagramCards() {
       <div
         ref={ghostRef}
         aria-hidden
-        className="pointer-events-none absolute top-16 left-0 font-doto text-[18vw] leading-none font-black tracking-tight whitespace-nowrap text-transparent uppercase select-none"
+        className="pointer-events-none absolute top-16 left-0 font-doto text-[8vw] leading-none font-black tracking-tight whitespace-nowrap text-transparent uppercase select-none"
         style={{
           WebkitTextStroke: '1px color-mix(in oklab, var(--foreground) 10%, transparent)',
         }}

@@ -1,3 +1,4 @@
+import { motion } from 'motion/react';
 import MicroservicesDiagram from './microservices';
 import UrlShorteningDiagram from './url-shortening';
 import EventDrivenDiagram from './event-driven';
@@ -21,5 +22,12 @@ const visualMap: Record<string, () => React.ReactNode> = {
 export default function DiagramVisual({ slug }: { slug: string }) {
   const Component = visualMap[slug];
   if (!Component) return null;
-  return <Component />;
+  return (
+    <motion.div
+      className='backdrop-contrast-[1.3] contrast-[1.3]'
+      whileHover="hover"
+    >
+      <Component />
+    </motion.div>
+  );
 }
