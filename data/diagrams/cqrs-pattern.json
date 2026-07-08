@@ -2,20 +2,211 @@
   "version": "1.0",
   "title": "CQRS Pattern",
   "description": "Command Query Responsibility Segregation — separate read and write models for optimized performance and scalability.",
+  "difficulty": "advanced",
+  "requirements": {
+    "functional": [
+      "Customers can submit commands — place order, update shipping address, cancel order — that mutate state through a single validated write path",
+      "Customers and internal dashboards can query order status, history, and aggregated analytics without ever touching the transactional write store",
+      "New read-optimized views (a search index, an analytics rollup) can be added later without changing how commands are validated or written",
+      "The read store can be dropped and rebuilt from the write store's history if it becomes corrupted or needs a new shape",
+      "Support staff see a highly available view of order state even during write-side incidents, even if that view is briefly stale"
+    ],
+    "nonFunctional": [
+      "Strong consistency on writes — an order is never left partially applied; every command either fully commits or fully fails",
+      "Read availability and latency are decoupled from write load — a checkout traffic spike must not slow down dashboard queries",
+      "Read replication lag stays bounded — under a few hundred milliseconds at p99 under normal load",
+      "Read throughput scales an order of magnitude beyond write throughput without touching the write database",
+      "The system tolerates a temporarily stale read store rather than sacrificing write-side availability"
+    ]
+  },
+  "estimates": [
+    { "label": "Write throughput", "value": "5K ops/sec", "note": "orders placed/updated at peak checkout" },
+    { "label": "Read throughput", "value": "250K qps", "note": "dashboards + storefront reads dwarf writes" },
+    { "label": "Read : write ratio", "value": "50 : 1", "note": "justifies a denormalized, independently-scaled read store" },
+    { "label": "Replication lag (p99)", "value": "<300ms", "note": "the budget that keeps 'eventual' consistency acceptable" },
+    { "label": "Read model size", "value": "~10x write model", "note": "denormalization duplicates data across query shapes" }
+  ],
+  "flows": [
+    {
+      "id": "place-order",
+      "title": "Place an order (write path)",
+      "description": "From a validated command to a durable, committed state change.",
+      "steps": [
+        {
+          "text": "The client sends a command — not a query — describing what should change. The Command API is the only component allowed to accept it.",
+          "nodeIds": ["client", "command-api"],
+          "edgeIds": ["e-client-cmd"]
+        },
+        {
+          "text": "The Command API validates every business rule before touching storage, then writes the new state to write-db inside a single transaction. It either fully commits or fully fails — there is no partial order.",
+          "nodeIds": ["command-api", "write-db"],
+          "edgeIds": ["e-cmd-write"]
+        },
+        {
+          "text": "write-db's change feed publishes the committed change. The projector (syncer) is the only component that ever reads this feed.",
+          "nodeIds": ["write-db", "syncer"],
+          "edgeIds": ["e-write-sync"]
+        },
+        {
+          "text": "syncer transforms the normalized write into the read model's denormalized shape and upserts it into read-db. The read side catches up asynchronously, milliseconds to seconds behind the write.",
+          "nodeIds": ["syncer", "read-db"],
+          "edgeIds": ["e-sync-read"]
+        }
+      ]
+    },
+    {
+      "id": "query-order",
+      "title": "Query order status (read path)",
+      "description": "How a read is served without ever touching the write database.",
+      "steps": [
+        {
+          "text": "The client sends a query. The Query API handles every read — it has no ability to mutate state, and it never calls write-db.",
+          "nodeIds": ["client", "query-api"],
+          "edgeIds": ["e-client-qry"]
+        },
+        {
+          "text": "The Query API checks read-cache first. Given a 50:1 read:write ratio, most requests for active orders are satisfied here without touching a database at all.",
+          "nodeIds": ["query-api", "read-cache"],
+          "edgeIds": ["e-qry-cache"]
+        },
+        {
+          "text": "On a cache miss, read-cache reads through to read-db and backfills itself so the next identical query is a cache hit.",
+          "nodeIds": ["read-cache", "read-db"],
+          "edgeIds": ["e-cache-read"]
+        },
+        {
+          "text": "Because read-db is already shaped for this exact query, the response is a single indexed lookup — no joins across orders, customers, and inventory tables like a normalized schema would require.",
+          "nodeIds": ["read-db"],
+          "edgeIds": []
+        }
+      ]
+    },
+    {
+      "id": "rebuild-read-model",
+      "title": "Rebuild the read model from scratch",
+      "description": "What happens when the read side needs a new shape, or recovers from corruption.",
+      "steps": [
+        {
+          "text": "An operator points the projector back at the very beginning of write-db's change history instead of its current offset.",
+          "nodeIds": ["write-db", "syncer"],
+          "edgeIds": ["e-write-sync"]
+        },
+        {
+          "text": "syncer replays every historical change through the (possibly updated) transformation logic, upserting into read-db exactly as it would for a brand-new write.",
+          "nodeIds": ["syncer", "read-db"],
+          "edgeIds": ["e-sync-read"]
+        },
+        {
+          "text": "In-flight queries keep being served from read-cache — stale, but available — for the entire duration of the replay. The write path is never paused.",
+          "nodeIds": ["query-api", "read-cache"],
+          "edgeIds": ["e-qry-cache"]
+        },
+        {
+          "text": "Once the replay catches up to the live offset, syncer switches back to streaming new changes in real time, and the cache naturally repopulates with the corrected data.",
+          "nodeIds": ["syncer", "read-db", "read-cache"],
+          "edgeIds": ["e-sync-read", "e-cache-read"]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Separate models for reads and writes",
+      "choice": "Independent write-db and read-db, kept in sync asynchronously",
+      "alternatives": ["Single normalized database serving both paths"],
+      "rationale": "A 50:1 read:write ratio means the two paths have almost nothing in common operationally. Forcing them to share one schema means every index that helps reads slows writes, and every write-optimized constraint forces a join at read time. Splitting the models lets each be tuned — and scaled — for what it actually does."
+    },
+    {
+      "title": "Async propagation instead of dual writes",
+      "choice": "Change-feed → projector (syncer) → read-db",
+      "alternatives": ["Write to both stores in the same transaction", "Two-phase commit across write-db and read-db"],
+      "rationale": "A distributed transaction across two different databases couples their availability — a slow read-db would now block every write. Streaming changes through a projector keeps write latency dependent on write-db alone, at the cost of read-db lagging by up to the ~300ms p99 budget. That trade is worth it because nothing here needs read-your-write guarantees at the database layer."
+    },
+    {
+      "title": "Cache in front of the read store",
+      "choice": "Cache-aside Redis layer for the Query API",
+      "alternatives": ["Serve every read straight from read-db"],
+      "rationale": "At 250K qps, hitting read-db for every request would require a database cluster sized for peak read traffic even though most of those reads repeat the same handful of hot orders. A cache-aside layer absorbs the repeat traffic cheaply, leaving read-db sized for genuine cache misses instead of total volume."
+    },
+    {
+      "title": "Denormalized, query-shaped read model",
+      "choice": "read-db stores pre-joined, query-optimized documents",
+      "alternatives": ["Reuse the normalized write schema for reads too"],
+      "rationale": "The write schema is shaped to make single-order updates safe and atomic, not to answer 'show me every order for this customer in the last 90 days' quickly. Denormalizing lets each read model pre-compute exactly the shape its query needs, so adding a new dashboard is a new projection, never a migration on write-db."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Stale reads right after a write",
+      "problem": "A customer places an order, then immediately checks its status and — because the projector hasn't caught up yet — doesn't see it. This is the defining failure mode of CQRS, not an edge case.",
+      "mitigation": "Bound and monitor replication lag as a first-class SLO (the ~300ms p99 target). For flows that truly need read-your-writes, route that specific read to write-db instead of read-db, or have the client optimistically render its own command's result."
+    },
+    {
+      "title": "Projector falling behind under write bursts",
+      "problem": "A sustained spike in commands can outrun the projector's processing rate, growing the change-feed backlog and pushing replication lag well past its budget.",
+      "mitigation": "Scale the projector horizontally by partitioning the change feed, and alert on lag directly rather than inferring it — lag is the single metric that tells you the read side is falling behind reality."
+    },
+    {
+      "title": "Cache and read-db disagreeing",
+      "problem": "read-cache only refreshes on a miss or explicit invalidation, so it can keep serving an order's old status well after read-db (and write-db) have already moved on.",
+      "mitigation": "Invalidate cache entries from the same change feed the projector consumes, and keep a short TTL as a backstop so a missed invalidation self-heals within seconds."
+    },
+    {
+      "title": "Read-model schema drift",
+      "problem": "As new query shapes get added, each one is its own projection that can silently fall out of sync with write-side changes — a broken projector can corrupt a read shape for hours before anyone notices a wrong number on a dashboard.",
+      "mitigation": "Version each read projection, treat 'replay from scratch' (see the rebuild flow) as a routine operational tool rather than a last resort, and alert on projector error rate, not just lag."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why can read-db be dropped and rebuilt at any time without an outage?",
+      "answer": "It's a derived, disposable projection of write-db's history — replaying the change feed through the projector regenerates it exactly. The write path never depends on read-db existing, so rebuilding it is invisible to commands."
+    },
+    {
+      "question": "What consistency guarantee does CQRS give up, and why is that acceptable here?",
+      "answer": "Strict (read-your-writes) consistency between a command committing and the very next query seeing it. It's acceptable because the read side bounds that lag to a known budget (~300ms p99) and nothing in the requirements demands instant read-after-write."
+    },
+    {
+      "question": "Why not just write to write-db and read-db in the same transaction?",
+      "answer": "That would couple the two stores' availability and latency together — a slow read-db would now block every write. Streaming changes asynchronously through a projector keeps the write path's guarantees dependent on write-db alone."
+    },
+    {
+      "question": "Why does the diagram put a cache in front of read-db instead of write-db?",
+      "answer": "The 50:1 read:write ratio means the read side is where caching pays off. Caching writes would be dangerous — it risks serving a stale value for a store that must stay strongly consistent — while caching reads only risks serving slightly-stale data, which this system already tolerates."
+    },
+    {
+      "question": "If read-cache and read-db disagree right after a write, which one is 'more correct'?",
+      "answer": "read-db, since the projector writes to it directly while the cache only updates on a miss or explicit invalidation. In practice it rarely matters which is 'more correct' — what matters is how long the disagreement can last, which is why invalidation and TTLs exist."
+    }
+  ],
+  "references": [
+    { "title": "Martin Fowler — CQRS", "url": "https://martinfowler.com/bliki/CQRS.html", "source": "martinfowler.com" },
+    { "title": "Microsoft Azure Architecture Center — CQRS pattern", "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs", "source": "learn.microsoft.com" },
+    { "title": "Martin Fowler — Event Sourcing", "url": "https://martinfowler.com/eaaDev/EventSourcing.html", "source": "martinfowler.com" },
+    { "title": "Microsoft Azure Architecture Center — Event Sourcing pattern", "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing", "source": "learn.microsoft.com" }
+  ],
+  "relatedPatterns": ["event-driven-architecture", "e-commerce-microservices"],
+  "summary": "### Why Split Reads From Writes\n\nMost systems read far more than they write — order status gets checked constantly, orders get placed comparatively rarely. **CQRS (Command Query Responsibility Segregation)** takes that asymmetry seriously by giving reads and writes two entirely separate models, each free to be optimized for its own workload instead of compromising on one shared schema.\n\nA command mutates state and enforces business rules. A query only reads and is never allowed to change anything. Once that split is explicit, the two paths can scale, fail, and evolve completely independently.\n\n### The Write Side\n\nThe Command API is the only thing allowed to write. It validates every command against the domain's rules and commits the result to write-db inside a transaction — normalized, correct, and boring on purpose. Boring is the point: the write side's only job is to never let bad data through.\n\n### Keeping the Read Side Fresh\n\nwrite-db never talks to read-db directly. Instead, a change feed carries every committed write to the projector (syncer), which transforms it into whatever shape the read side needs and upserts it into read-db.\n\nThis makes the read model:\n\n- Eventually consistent — a write becomes visible on the read side milliseconds to seconds later, not instantly\n- Disposable — replaying the change feed from the beginning regenerates read-db from scratch\n- Independently shaped — a new query pattern just needs a new projection, not a migration on the write schema\n\n### The Read Side\n\nThe Query API adds one more optimization on top of the already-denormalized read-db: a cache-aside Redis layer. Because reads outnumber writes 50 to 1, absorbing repeat reads in Redis is often more impactful than anything that could be done to read-db itself.\n\n### The Trade-off\n\nCQRS trades strict consistency for independent scalability. A client that writes and then immediately reads its own write may briefly see stale data. That is an explicit, bounded cost — not a bug — and it buys a read path that can be cached, denormalized, and scaled without ever putting the write path's correctness at risk.",
   "nodes": [
-    { "id": "client", "kind": "browser", "name": "Client", "x": 100, "y": 300 },
-    { "id": "command-api", "kind": "rest-api", "name": "Command API", "x": 350, "y": 150, "description": "Handles writes (INSERT/UPDATE/DELETE)" },
-    { "id": "query-api", "kind": "rest-api", "name": "Query API", "x": 350, "y": 450, "description": "Handles reads (SELECT)" },
-    { "id": "write-db", "kind": "postgres", "name": "Write Database", "x": 600, "y": 150, "description": "Normalized OLTP" },
-    { "id": "read-db", "kind": "postgres", "name": "Read Database", "x": 600, "y": 450, "description": "Denormalized OLAP" },
-    { "id": "syncer", "kind": "worker-service", "name": "Sync Worker", "x": 600, "y": 300, "description": "Propagates changes" }
+    { "id": "client", "kind": "browser", "name": "Client", "description": "Sends commands & issues queries", "x": 100, "y": 300, "details": "The single entry point for both sides of CQRS — from the client's perspective there is one API, not two databases.\n\n- Sends **commands** (place, cancel, update) to the Command API\n- Sends **queries** (status, history, search) to the Query API\n- Never talks to either database directly" },
+    { "id": "command-api", "kind": "rest-api", "name": "Command API", "x": 380, "y": 140, "description": "Validates and writes state changes", "details": "Owns the entire write path and enforces every invariant before anything is persisted.\n\n- Validates business rules — an order can never be half-applied\n- Writes directly and synchronously to write-db inside a transaction\n- Has zero knowledge of whether (or how) a read model exists", "group": "write-side" },
+    { "id": "write-db", "kind": "postgres", "name": "Write Database", "x": 660, "y": 140, "description": "Normalized OLTP store of record", "details": "The single source of truth — normalized, transactional, and optimized for correctness over read speed.\n\n- Every command either fully commits or fully rolls back\n- Emits a change feed that the projector consumes\n- Never queried directly by clients — that's the read side's job", "group": "write-side" },
+    { "id": "syncer", "kind": "worker-service", "name": "Projector / Sync Worker", "x": 660, "y": 300, "description": "Streams write-db changes into the read model", "details": "The bridge between the two models — the only component that understands both schemas.\n\n- Consumes write-db's change feed and transforms each change into the read model's shape\n- Can replay the entire history from offset zero to rebuild read-db from scratch\n- Falling behind only delays freshness — it never blocks a write from committing" },
+    { "id": "query-api", "kind": "rest-api", "name": "Query API", "x": 380, "y": 460, "description": "Serves reads from cache and read-db", "details": "Owns the entire read path and never touches write-db.\n\n- Reads through read-cache first (cache-aside)\n- Falls back to read-db on a cache miss and backfills the cache\n- Free to add new query shapes without asking the write side for permission", "group": "read-side" },
+    { "id": "read-cache", "kind": "redis", "name": "Read Cache", "x": 660, "y": 460, "description": "Cache-aside layer in front of read-db", "details": "Absorbs the vast majority of read traffic given how heavily reads outnumber writes.\n\n- Populated lazily on cache misses, not on every write\n- Can serve slightly stale data for a short TTL window — an explicit trade this pattern makes\n- Losing the cache entirely just costs one extra read-db round trip per request, not an outage", "group": "read-side" },
+    { "id": "read-db", "kind": "postgres", "name": "Read Database", "x": 940, "y": 460, "description": "Denormalized, query-optimized store", "details": "A denormalized, query-shaped copy of the data — built for fast reads, not for enforcing correctness.\n\n- Pre-joined and indexed for exactly the queries the Query API needs\n- Updated asynchronously by the projector, so it is eventually — not immediately — consistent\n- Disposable: can be dropped and rebuilt from write-db's history at any time", "group": "read-side" }
   ],
   "edges": [
     { "id": "e-client-cmd", "source": "client", "target": "command-api", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https", "label": "Commands" },
     { "id": "e-client-qry", "source": "client", "target": "query-api", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https", "label": "Queries" },
-    { "id": "e-cmd-db", "source": "command-api", "target": "write-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" },
-    { "id": "e-qry-db", "source": "query-api", "target": "read-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" },
-    { "id": "e-write-sync", "source": "write-db", "target": "syncer", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "style": "dotted" },
-    { "id": "e-sync-read", "source": "syncer", "target": "read-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed", "animated": true, "label": "Sync" }
+    { "id": "e-cmd-write", "source": "command-api", "target": "write-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed", "label": "Write" },
+    { "id": "e-write-sync", "source": "write-db", "target": "syncer", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "internal", "style": "dotted", "label": "Change feed" },
+    { "id": "e-sync-read", "source": "syncer", "target": "read-db", "sourceHandle": "bottom-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed", "animated": true, "label": "Project" },
+    { "id": "e-qry-cache", "source": "query-api", "target": "read-cache", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "label": "Read (cache-aside)" },
+    { "id": "e-cache-read", "source": "read-cache", "target": "read-db", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed", "label": "On miss" }
+  ],
+  "groups": [
+    { "id": "write-side", "label": "Write Side", "color": "#ef4444", "style": "dashed" },
+    { "id": "read-side", "label": "Read Side", "color": "#10b981", "style": "dashed" }
   ]
 }

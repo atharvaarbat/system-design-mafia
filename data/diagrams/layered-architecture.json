@@ -2,12 +2,171 @@
   "version": "1.0",
   "title": "Layered Architecture",
   "description": "Traditional n-tier architecture organizing code into horizontal layers with strict dependency flow.",
+  "difficulty": "beginner",
+  "requirements": {
+    "functional": [
+      "A user's request flows strictly downward — presentation to API to business logic to persistence to database — and the response flows back up the same path",
+      "New business rules are added inside the Business Logic Layer without the Persistence Layer or the database schema needing to know about them",
+      "The Presentation Layer can be restyled or replaced (web, mobile) without changing any business logic, as long as it still talks to the same API Layer",
+      "The Persistence Layer can change ORMs or query strategies without the Business Logic Layer noticing, as long as its interface contract stays the same"
+    ],
+    "nonFunctional": [
+      "Each layer only depends on the layer directly beneath it — no layer skips a layer, and no layer calls upward",
+      "The system is easy to reason about for newcomers — a request's path through the code is always the same four hops, in the same order",
+      "Because everything runs in one deployable unit, a change anywhere requires redeploying the entire application",
+      "The database absorbs the full load of every request, since there is no cache or read-side shortcut in this design"
+    ]
+  },
+  "estimates": [
+    { "label": "Layers", "value": "5", "note": "UI, API, business, persistence, database — a fixed, well-known hop count" },
+    { "label": "Deploy units", "value": "1", "note": "the whole application ships and scales as a single monolith" },
+    { "label": "Typical team size", "value": "1-2 teams", "note": "layering alone doesn't force team boundaries the way microservices do" },
+    { "label": "Cross-layer shortcuts allowed", "value": "0", "note": "strict layering forbids skipping a layer, even for a 'quick' read" }
+  ],
+  "flows": [
+    {
+      "id": "handle-request",
+      "title": "Handle a user request",
+      "description": "The one path every request takes, in both directions.",
+      "steps": [
+        {
+          "text": "A request enters at the Presentation Layer — the only layer allowed to face the user directly. It performs no business logic of its own; it just gathers input and calls down.",
+          "nodeIds": ["ui", "api"],
+          "edgeIds": ["e-ui-api"]
+        },
+        {
+          "text": "The API Layer exposes a stable contract (REST/GraphQL) and immediately delegates to the Business Logic Layer — it never talks to the database directly.",
+          "nodeIds": ["api", "business"],
+          "edgeIds": ["e-api-biz"]
+        },
+        {
+          "text": "The Business Logic Layer applies the actual rules of the domain, then asks the Persistence Layer to load or save state — it never constructs a query itself.",
+          "nodeIds": ["business", "persistence"],
+          "edgeIds": ["e-biz-persist"]
+        },
+        {
+          "text": "The Persistence Layer translates that request into real data-access calls against the Database — the lowest layer, and the only one allowed to speak the database's native protocol.",
+          "nodeIds": ["persistence", "db"],
+          "edgeIds": ["e-persist-db"]
+        },
+        {
+          "text": "The result travels back up through the exact same four hops in reverse. The layer boundary is respected in both directions — nothing ever shortcuts past a layer on the way back either.",
+          "nodeIds": ["ui", "api", "business", "persistence", "db"],
+          "edgeIds": ["e-ui-api", "e-api-biz", "e-biz-persist", "e-persist-db"]
+        }
+      ]
+    },
+    {
+      "id": "layer-skip-antipattern",
+      "title": "Why a layer never skips down",
+      "description": "The rule this pattern enforces, and what it costs to keep it.",
+      "steps": [
+        {
+          "text": "Imagine the API Layer tried to query the Database directly, bypassing Business Logic and Persistence, to save a network hop on a 'simple' read.",
+          "nodeIds": ["api", "db"],
+          "edgeIds": []
+        },
+        {
+          "text": "Notice the diagram has no edge connecting those two layers directly — that absence is the architecture's actual rule, not just a convention written in a wiki page.",
+          "nodeIds": ["business", "persistence"],
+          "edgeIds": ["e-biz-persist"]
+        },
+        {
+          "text": "The cost of the shortcut: validation in the Business Logic Layer gets bypassed, any query-shaping logic in the Persistence Layer gets bypassed, and every future schema migration now has to hunt down this one exceptional caller.",
+          "nodeIds": ["business", "persistence"],
+          "edgeIds": ["e-biz-persist"]
+        },
+        {
+          "text": "Strict layering pays for this discipline with an extra hop of latency on every single request — a deliberate trade, versus a pattern like hexagonal or CQRS that lets a performance-critical path shortcut where it's genuinely safe to.",
+          "nodeIds": ["api", "business", "persistence", "db"],
+          "edgeIds": ["e-api-biz", "e-biz-persist", "e-persist-db"]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Strict layering — no skipped layers",
+      "choice": "Every call passes through all five layers in order",
+      "alternatives": ["Allow a layer to call two levels down for a 'fast path'"],
+      "rationale": "With zero cross-layer shortcuts allowed, the dependency graph stays simple enough that any newcomer can trace a request's path through the codebase without exceptions to memorize. The cost is an extra hop of latency on every request — a trade this pattern makes deliberately in favor of comprehensibility."
+    },
+    {
+      "title": "One deployable unit",
+      "choice": "A monolithic layered application",
+      "alternatives": ["Split each layer into its own deployable service (microservices)"],
+      "rationale": "For a team of 1-2 groups, one deploy unit means one CI pipeline, one release process, and no network calls between layers to secure or version. Microservices would buy independent scaling per layer, but this system doesn't yet have a layer whose load justifies that operational cost."
+    },
+    {
+      "title": "Persistence Layer as the only SQL-aware code",
+      "choice": "A dedicated Persistence Layer owns all database access",
+      "alternatives": ["Let the Business Logic Layer issue queries directly"],
+      "rationale": "Isolating every query behind one layer means a database or ORM swap touches exactly one place in the codebase, and it confines the entire SQL-injection attack surface to code that is reviewed and tested specifically for it."
+    },
+    {
+      "title": "Presentation Layer stays logic-free",
+      "choice": "The UI only translates input and output — no business rules live here",
+      "alternatives": ["Duplicate validation in both the UI and the Business Logic Layer for snappier feedback"],
+      "rationale": "A single source of truth for business rules avoids the two copies drifting apart. When a second UI (mobile) is added later, it inherits the exact same enforced rules for free instead of re-implementing them."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Every request pays for all four hops",
+      "problem": "Even a trivial read crosses Presentation, API, Business Logic, and Persistence before it ever reaches the Database. Under high load that fixed overhead adds up across every single request, not just the expensive ones.",
+      "mitigation": "This pattern alone doesn't solve it — it pairs well with introducing a cache in front of Persistence, or evolving toward a read-optimized pattern like CQRS once the overhead genuinely matters."
+    },
+    {
+      "title": "The whole application scales as one unit",
+      "problem": "If only the Persistence Layer is under load, the entire monolith still has to be scaled (redeployed, given more instances) to handle it — wasting resources on the other four layers that were never the bottleneck.",
+      "mitigation": "This is the fundamental trade of layered versus microservice architectures. Extracting the hot layer into its own independently scalable service is the usual next step once it becomes a genuine, measured bottleneck."
+    },
+    {
+      "title": "Anemic pass-through layers",
+      "problem": "Over time, a layer can degenerate into 'call the layer below, do nothing else' boilerplate — providing the structure of layering without enforcing any real rule or translation.",
+      "mitigation": "Only keep a layer if it enforces something real. Collapse a layer that has become a pure pass-through rather than preserving it out of habit."
+    },
+    {
+      "title": "A single database is the ultimate bottleneck",
+      "problem": "Because every layer eventually funnels into one Database, that database's throughput caps the whole system's throughput no matter how much the upper layers are scaled.",
+      "mitigation": "Read replicas and connection pooling at the Persistence Layer buy headroom; once read and write load diverge enough, evolving toward CQRS is the more structural fix."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why is the API Layer forbidden from calling the Database directly, even for a trivial read?",
+      "answer": "Strict layering is the whole point of this pattern — every call passes through Business Logic and Persistence so validation and query-shaping logic are never bypassed. Skipping a layer would let bugs and schema coupling creep in through an unenforced exception."
+    },
+    {
+      "question": "What's the actual cost this architecture pays in exchange for its simplicity?",
+      "answer": "Every request pays for the full hop chain through all layers even when only one layer's logic matters for that request, and the whole application has to scale as a single deployable unit rather than scaling just the layer under load."
+    },
+    {
+      "question": "If the team wanted to move from PostgreSQL to a different database, which layer changes?",
+      "answer": "Only the Persistence Layer's data-access implementation — assuming the Business Logic Layer depends on it through a stable interface rather than concrete query code, the layers above never notice the swap."
+    },
+    {
+      "question": "Why does keeping the Presentation Layer 'logic-free' matter?",
+      "answer": "It keeps business rules in exactly one place. Without that discipline, the UI's validation and the Business Logic Layer's validation drift apart over time, and any future UI (mobile) would have to re-implement rules from scratch instead of inheriting them."
+    },
+    {
+      "question": "Once one layer — say, the Database — is clearly the bottleneck, what's the natural next architectural step?",
+      "answer": "Decouple that layer's scaling from the rest of the system: add read replicas or a cache at the Persistence Layer, or move toward a pattern like CQRS that gives the read path its own independently scaled store."
+    }
+  ],
+  "references": [
+    { "title": "Martin Fowler — PresentationDomainDataLayering", "url": "https://martinfowler.com/bliki/PresentationDomainDataLayering.html", "source": "martinfowler.com" },
+    { "title": "Microsoft Azure Architecture Center — N-tier architecture style", "url": "https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/n-tier", "source": "learn.microsoft.com" },
+    { "title": "Martin Fowler — Patterns of Enterprise Application Architecture", "url": "https://martinfowler.com/eaaCatalog/", "source": "martinfowler.com" }
+  ],
+  "relatedPatterns": ["hexagonal-architecture", "cqrs-pattern"],
+  "summary": "### A Fixed, Predictable Path\n\n**Layered Architecture** organizes an application into horizontal tiers, each depending only on the tier directly beneath it. It is the most traditional way to structure a monolith, and its main virtue is predictability: any request's path through the codebase is always the same fixed sequence of hops, in the same order, with no exceptions to memorize.\n\n### The Five Layers\n\n- **Presentation Layer** — faces the user, translates input and output, contains no business rules of its own\n- **API Layer** — exposes a stable contract and routes into the business tier\n- **Business Logic Layer** — the only place domain rules are enforced\n- **Persistence Layer** — the only code allowed to construct a query or call an ORM\n- **Database** — the actual data store, spoken to only by the layer directly above it\n\n### The Rule That Matters\n\nThe entire value of this pattern rests on one constraint: **no layer skips a layer**. The API Layer never queries the Database directly, and the Presentation Layer never touches Persistence, even when a shortcut looks harmless. Enforcing this consistently is what keeps the dependency graph simple enough to reason about — the moment shortcuts are allowed for convenience, the graph stops being layered at all.\n\n### The Trade\n\nStrict layering buys simplicity and a single deployable unit at the cost of two things: every request pays for the full hop chain even when most of it is unnecessary overhead, and the whole application has to scale together even if only one layer — usually the database — is actually under load. Those costs are exactly what patterns like CQRS or hexagonal architecture exist to relax, once a system outgrows this one's assumptions.",
   "nodes": [
-    { "id": "ui", "kind": "browser", "name": "Presentation Layer", "x": 300, "y": 80, "description": "UI / Controllers" },
-    { "id": "api", "kind": "api-gateway", "name": "API Layer", "x": 300, "y": 230, "description": "REST / GraphQL endpoints" },
-    { "id": "business", "kind": "rest-api", "name": "Business Logic Layer", "x": 300, "y": 380, "description": "Service layer" },
-    { "id": "persistence", "kind": "postgres", "name": "Persistence Layer", "x": 300, "y": 530, "description": "Data access / ORM" },
-    { "id": "db", "kind": "dynamodb", "name": "Database", "x": 300, "y": 700, "description": "Actual data store" }
+    { "id": "ui", "kind": "browser", "name": "Presentation Layer", "x": 300, "y": 80, "description": "UI / Controllers", "details": "The only layer allowed to face the user directly.\n\n- Gathers input and renders output — no business rules live here\n- Calls down into the API Layer and nothing else\n- Can be replaced (web, mobile) without the layers below ever noticing" },
+    { "id": "api", "kind": "api-gateway", "name": "API Layer", "x": 300, "y": 230, "description": "REST / GraphQL endpoints", "details": "The stable contract between the outside world and the rest of the system.\n\n- Exposes REST or GraphQL endpoints to the Presentation Layer\n- Delegates immediately to the Business Logic Layer — never queries the Database itself\n- Has no edge to the Database in this diagram on purpose; that absence is the rule" },
+    { "id": "business", "kind": "rest-api", "name": "Business Logic Layer", "x": 300, "y": 380, "description": "Service layer", "details": "The only place domain rules are enforced — the single source of truth for what's allowed.\n\n- Applies validation and business rules before any state changes\n- Asks the Persistence Layer to load or save state, never constructs a query itself\n- A UI validation and this layer's validation should never disagree, because only this layer's is authoritative" },
+    { "id": "persistence", "kind": "postgres", "name": "Persistence Layer", "x": 300, "y": 530, "description": "Data access / ORM", "details": "The only code in the system allowed to speak the database's native protocol.\n\n- Owns all ORM/query logic behind a stable interface\n- Swapping the underlying database or ORM is isolated to this one layer\n- Confines the entire SQL-injection attack surface to code built specifically to be reviewed for it" },
+    { "id": "db", "kind": "dynamodb", "name": "Database", "x": 300, "y": 700, "description": "Actual data store", "details": "The bottom of the stack — spoken to only by the Persistence Layer directly above it.\n\n- Every request in the system eventually funnels through here\n- Its throughput caps the whole system's throughput, since there is no cache or read replica in this design\n- The natural place to add read replicas or evolve toward CQRS once load here becomes the clear bottleneck" }
   ],
   "edges": [
     { "id": "e-ui-api", "source": "ui", "target": "api", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "https" },

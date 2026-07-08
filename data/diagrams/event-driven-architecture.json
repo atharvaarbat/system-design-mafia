@@ -2,20 +2,192 @@
   "version": "1.0",
   "title": "Event-Driven Architecture",
   "description": "Asynchronous event producers and consumers connected through a message broker for decoupled communication.",
+  "difficulty": "advanced",
+  "requirements": {
+    "functional": [
+      "A single business action (e.g. an order being placed) can trigger any number of independent downstream reactions without the producer knowing what they are",
+      "New consumers can subscribe to existing events and start reacting to them without any change to the producer or to other consumers",
+      "A consumer that is temporarily down does not lose events — it catches up from where it left off once it recovers",
+      "A message that repeatedly fails processing is isolated so it cannot block every other message behind it",
+      "Each consumer maintains its own view of state, shaped for what it specifically needs to do"
+    ],
+    "nonFunctional": [
+      "Producers and consumers are decoupled in time, in deployment, and in failure — one going down never blocks the other",
+      "The broker durably retains events so consumers can be added later and still process history, not just what happens after they subscribe",
+      "Throughput scales by adding consumer instances and broker partitions, not by making any single service faster",
+      "Delivery is at-least-once — consumers must be able to safely process the same event more than once",
+      "Ordering is guaranteed only within a partition, not globally across the whole event stream"
+    ]
+  },
+  "estimates": [
+    { "label": "Events published", "value": "50K/sec", "note": "peak producer throughput the broker must sustain" },
+    { "label": "Consumer groups", "value": "10+", "note": "each new feature is a new subscriber, not a producer change" },
+    { "label": "Retention window", "value": "7 days", "note": "how far back a newly added consumer can replay history" },
+    { "label": "Retry budget", "value": "5 attempts", "note": "failures beyond this route to the dead-letter queue" },
+    { "label": "Consumer lag alert", "value": ">10s", "note": "the threshold that pages on-call before staleness becomes visible to users" }
+  ],
+  "flows": [
+    {
+      "id": "publish-event",
+      "title": "Publish an event and fan it out",
+      "description": "From a client action to two independent consumers reacting in parallel.",
+      "steps": [
+        {
+          "text": "The client sends a request that represents a business action — not a request for a specific side effect. The gateway routes it to the Event Producer.",
+          "nodeIds": ["client", "api-gw"],
+          "edgeIds": ["e-client-gw"]
+        },
+        {
+          "text": "The gateway forwards the request to the Event Producer, which owns this action's logic.",
+          "nodeIds": ["api-gw", "producer"],
+          "edgeIds": ["e-gw-producer"]
+        },
+        {
+          "text": "The producer commits its own state change, then publishes an event describing what happened to the broker. Critically, the producer never calls a consumer directly — it doesn't even know how many exist.",
+          "nodeIds": ["producer", "broker"],
+          "edgeIds": ["e-producer-broker"]
+        },
+        {
+          "text": "The broker durably appends the event to a partitioned log. Consumer A, subscribed independently, reads and processes it at its own pace.",
+          "nodeIds": ["broker", "consumer-1"],
+          "edgeIds": ["e-broker-c1"]
+        },
+        {
+          "text": "Consumer B — a completely different subscriber group — reads the exact same event in parallel, unaware that Consumer A exists.",
+          "nodeIds": ["broker", "consumer-2"],
+          "edgeIds": ["e-broker-c2"]
+        },
+        {
+          "text": "Each consumer writes its own resulting state. If Consumer A were deleted entirely tomorrow, Consumer B's processing would be completely unaffected.",
+          "nodeIds": ["consumer-1", "db"],
+          "edgeIds": ["e-c1-db"]
+        }
+      ]
+    },
+    {
+      "id": "poison-message-dlq",
+      "title": "A poison message and the dead-letter queue",
+      "description": "What happens when one event can never be processed successfully.",
+      "steps": [
+        {
+          "text": "The broker delivers an event to Consumer B as usual.",
+          "nodeIds": ["broker", "consumer-2"],
+          "edgeIds": ["e-broker-c2"]
+        },
+        {
+          "text": "Consumer B's processing throws — malformed payload, a bug, a downstream dependency being down. The broker redelivers the same event for another attempt, since delivery here is at-least-once.",
+          "nodeIds": ["broker", "consumer-2"],
+          "edgeIds": ["e-broker-c2"]
+        },
+        {
+          "text": "After exhausting the retry budget, the event is routed out of the main flow into the dead-letter queue instead of being retried forever — this is what keeps one bad message from blocking every message behind it in the partition.",
+          "nodeIds": ["consumer-2", "dlq"],
+          "edgeIds": ["e-c2-dlq"]
+        },
+        {
+          "text": "Meanwhile Consumer A's independent subscription keeps processing normally the whole time — one consumer's poison message never touches another consumer group's stream.",
+          "nodeIds": ["broker", "consumer-1"],
+          "edgeIds": ["e-broker-c1"]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Producer publishes instead of calling consumers",
+      "choice": "Publish one event to a broker",
+      "alternatives": ["Producer calls each consumer's API directly (orchestration)"],
+      "rationale": "With 10+ consumer groups and growing, direct calls would mean every new feature requires a code change and a redeploy of the producer. Publishing an event once lets any number of consumers subscribe — including ones that don't exist yet — with zero changes to the producer."
+    },
+    {
+      "title": "A durable, partitioned log instead of a transient queue",
+      "choice": "Kafka-style broker with consumer groups and a 7-day retention window",
+      "alternatives": ["In-memory pub/sub with no retention", "A queue where each message is consumed exactly once by exactly one worker"],
+      "rationale": "Retention means a consumer added next month can replay the last 7 days of history instead of starting blind. Consumer groups mean Consumer A and Consumer B can both process every event independently — a plain queue would hand each message to only one of them."
+    },
+    {
+      "title": "Each consumer owns its own state",
+      "choice": "Consumer A and Consumer B write independently, each shaped for its own use case",
+      "alternatives": ["A single shared service owns all writes to the database on consumers' behalf"],
+      "rationale": "Coupling consumers to a shared writer reintroduces the exact coordination cost events were meant to remove — a schema change for one consumer risks breaking another. In this diagram they share one database for simplicity; at larger scale each consumer typically owns its own datastore entirely."
+    },
+    {
+      "title": "Dead-letter queue for poison messages",
+      "choice": "Route messages that exceed the retry budget to a DLQ",
+      "alternatives": ["Retry forever", "Drop the failing message silently"],
+      "rationale": "Retrying forever lets one malformed event stall an entire partition behind it; dropping it silently loses data with no trace. A DLQ (see the poison-message flow) keeps the main stream moving while giving an operator a concrete queue to inspect, fix, and replay from."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Consumer lag under load",
+      "problem": "If the broker accepts events faster than a consumer can process them, its backlog grows continuously. Downstream state falls further and further behind — sometimes past the point where it's still useful.",
+      "mitigation": "Autoscale consumer instances against a lag metric, not CPU, and set partition count as the hard ceiling on parallelism — the consumer lag alert at >10s is the signal that catches this before it's visible to users."
+    },
+    {
+      "title": "A poison message blocking a partition",
+      "problem": "Kafka-style brokers guarantee order only by processing a partition's messages sequentially. A message the consumer can never successfully process would otherwise stall every message queued behind it in that partition indefinitely.",
+      "mitigation": "The dead-letter queue (see the poison-message flow) removes the offending message after the retry budget is exhausted, letting the partition continue while the bad message waits for manual inspection."
+    },
+    {
+      "title": "At-least-once delivery causing duplicate processing",
+      "problem": "Broker redelivery on failure, timeout, or consumer-group rebalance means the same event can reach a consumer more than once. A consumer that isn't expecting this will double-apply the side effect.",
+      "mitigation": "Consumers key writes by the event's unique ID and make the write idempotent (upsert instead of insert-only), so processing the same event twice produces the same end state as processing it once."
+    },
+    {
+      "title": "Ordering only guaranteed within a partition",
+      "problem": "Two events for the same entity that land in different partitions can be processed out of order — a 'cancel' could be processed before the 'create' it depends on.",
+      "mitigation": "Choose a partition key derived from the entity ID itself, so every event for the same entity always lands in the same partition and is processed strictly in order relative to each other."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why does the producer publish an event instead of calling each consumer directly?",
+      "answer": "Decoupling. The producer doesn't need to know how many consumers exist, a new consumer can subscribe without any producer change, and a consumer outage never blocks the producer from publishing."
+    },
+    {
+      "question": "What happens to a message that a consumer keeps failing to process?",
+      "answer": "It's retried up to a fixed budget (5 attempts here), then routed to the dead-letter queue instead of being retried forever — this keeps one bad message from blocking every other message queued behind it in the same partition."
+    },
+    {
+      "question": "Why can Consumer A and Consumer B both process the same event without coordinating with each other?",
+      "answer": "They belong to different consumer groups. The broker tracks each group's read position (offset) independently, so every group sees every event regardless of what any other group has already consumed."
+    },
+    {
+      "question": "What ordering guarantee does the broker actually provide, and why does the partition key matter?",
+      "answer": "Order is guaranteed only within a single partition, never across the whole topic. Choosing the partition key (usually the entity ID) determines which events are guaranteed to arrive in order relative to each other."
+    },
+    {
+      "question": "Why is at-least-once delivery a problem for consumers, and how is it usually solved?",
+      "answer": "A consumer can receive the same event more than once after a retry or rebalance. The fix is making the write idempotent — keying on the event's unique ID so reprocessing it produces the same result instead of double-applying the effect."
+    }
+  ],
+  "references": [
+    { "title": "Apache Kafka — official documentation", "url": "https://kafka.apache.org/documentation/", "source": "kafka.apache.org" },
+    { "title": "Confluent — Event-Driven Architecture patterns", "url": "https://developer.confluent.io/", "source": "developer.confluent.io" },
+    { "title": "AWS — What is Event-Driven Architecture?", "url": "https://aws.amazon.com/event-driven-architecture/", "source": "aws.amazon.com" },
+    { "title": "Martin Fowler — What do you mean by \"Event-Driven\"?", "url": "https://martinfowler.com/articles/201701-event-driven.html", "source": "martinfowler.com" }
+  ],
+  "relatedPatterns": ["cqrs-pattern", "e-commerce-microservices"],
+  "summary": "### Decoupling Through Events\n\nIn a request-driven system, a producer that wants two things to happen must call both directly — and now depends on both being available. **Event-Driven Architecture** breaks that dependency: a producer publishes a fact about what already happened, and any number of consumers react to it independently, without the producer ever knowing they exist.\n\n### The Broker Is the Contract\n\nThe Message Broker is a durable, partitioned log, not a transient mailbox. Every event a producer publishes is retained for a fixed window (7 days here), which means:\n\n- A consumer can be added next month and still replay history from before it existed\n- A consumer that crashes for an hour resumes exactly where it left off, losing nothing\n- Multiple consumer groups can each read the entire event stream independently — one group's progress never affects another's\n\n### Fan-Out in Practice\n\nConsumer A and Consumer B in this diagram both subscribe to the same events but belong to different consumer groups, so the broker delivers every event to both. Each writes its own resulting state, shaped for its own purpose — this is what makes it safe to keep adding consumers without ever touching the producer.\n\n### What This Trades Away\n\nDecoupling isn't free. Delivery is **at-least-once**, so consumers must tolerate duplicate processing. Ordering is only guaranteed **within a partition**, so anything that depends on strict global order needs its partition key chosen carefully. And a message that can never be processed successfully needs somewhere to go besides an infinite retry loop — which is exactly what the dead-letter queue is for.",
   "nodes": [
     {
       "id": "client",
       "kind": "browser",
       "x": 100,
       "y": 300,
-      "name": "Client App"
+      "name": "Client App",
+      "description": "Triggers a business action",
+      "details": "Initiates the action that eventually becomes an event — it has no idea how many consumers will react to it.\n\n- Sends a normal request through the API Gateway\n- Gets a response as soon as the producer commits its own state\n- Never waits for any consumer to finish processing"
     },
     {
       "id": "api-gw",
       "kind": "api-gateway",
       "x": 350,
       "y": 300,
-      "name": "API Gateway"
+      "name": "API Gateway",
+      "description": "Routes requests to the producer",
+      "details": "The synchronous front door to an otherwise asynchronous system.\n\n- Authenticates and rate-limits the request\n- Routes to the Event Producer\n- Has nothing to do with the event fan-out that happens afterward"
     },
     {
       "id": "producer",
@@ -23,7 +195,8 @@
       "x": 600,
       "y": 150,
       "name": "Event Producer",
-      "description": "Publishes events"
+      "description": "Publishes events",
+      "details": "Owns the business action and reports it as a fact, not a command to any specific consumer.\n\n- Commits its own state change first\n- Publishes one event describing what happened to the broker\n- Never calls a consumer directly, and doesn't know how many exist"
     },
     {
       "id": "broker",
@@ -31,7 +204,8 @@
       "x": 600,
       "y": 368,
       "name": "Message Broker",
-      "description": "Event Bus / Kafka"
+      "description": "Event Bus / Kafka",
+      "details": "A durable, partitioned log — the entire contract this architecture depends on.\n\n- Retains events for a fixed window (7 days) so late-joining consumers can replay history\n- Guarantees order only within a partition, never across the whole topic\n- Tracks each consumer group's offset independently, enabling true fan-out"
     },
     {
       "id": "consumer-1",
@@ -39,7 +213,9 @@
       "x": 976,
       "y": 136,
       "name": "Consumer A",
-      "description": "Processes events"
+      "description": "Processes events",
+      "details": "One independent subscriber group among several.\n\n- Reads at its own pace — a slow instance doesn't slow the producer or other consumers\n- Writes its own resulting state\n- Unaffected by Consumer B or the DLQ path entirely",
+      "group": "consumers"
     },
     {
       "id": "consumer-2",
@@ -47,14 +223,28 @@
       "x": 816,
       "y": 376,
       "name": "Consumer B",
-      "description": "Processes events"
+      "description": "Processes events",
+      "details": "A second, independent subscriber group reading the exact same event stream as Consumer A.\n\n- Must treat processing as idempotent, since delivery is at-least-once\n- Retries a failing event up to the retry budget before it moves to the DLQ\n- A bug here never blocks Consumer A's processing",
+      "group": "consumers"
     },
     {
       "id": "db",
       "kind": "postgres",
       "x": 1000,
       "y": 384,
-      "name": "Database"
+      "name": "Database",
+      "description": "Consumer-owned state",
+      "details": "Where consumers persist the result of processing an event.\n\n- Written to independently by each consumer\n- Shared here for simplicity — at larger scale each consumer typically owns its own store\n- Writes should be idempotent, keyed by the event's unique ID"
+    },
+    {
+      "id": "dlq",
+      "kind": "sqs",
+      "x": 816,
+      "y": 580,
+      "name": "Dead Letter Queue",
+      "description": "Holds messages that exhausted their retries",
+      "details": "The safety valve that keeps a poison message from blocking its whole partition.\n\n- Receives an event only after it exceeds the retry budget (5 attempts)\n- Gives an operator a concrete place to inspect, fix, and replay a failed event\n- Its depth is itself a monitored signal — a growing DLQ means something upstream is broken, not just one bad message",
+      "group": "consumers"
     }
   ],
   "edges": [
@@ -119,6 +309,19 @@
       "targetHandle": "left-target",
       "protocol": "database",
       "style": "dashed"
+    },
+    {
+      "id": "e-c2-dlq",
+      "source": "consumer-2",
+      "target": "dlq",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "message",
+      "style": "dashed",
+      "label": "Retries exhausted"
     }
+  ],
+  "groups": [
+    { "id": "consumers", "label": "Consumers", "color": "#6366f1", "style": "dashed" }
   ]
 }

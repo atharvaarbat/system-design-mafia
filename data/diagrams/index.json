@@ -1,6 +1,24 @@
 {
   "diagrams": [
     {
+      "slug": "design-web-crawler",
+      "title": "Design a Web Crawler",
+      "description": "A distributed crawler that discovers, fetches, and extracts text from 10 billion web pages within 5 days while respecting robots.txt.",
+      "tags": ["crawler", "distributed-systems", "queueing", "fault-tolerance", "politeness"],
+      "difficulty": "advanced",
+      "nodeCount": 15,
+      "edgeCount": 22
+    },
+    {
+      "slug": "design-whatsapp-or-messenger",
+      "title": "Design WhatsApp / Facebook Messenger",
+      "description": "A real-time messaging platform with 1:1 and group chat, offline delivery via push notifications, and end-to-end encryption.",
+      "tags": ["messaging", "real-time", "websocket", "chat", "encryption"],
+      "difficulty": "advanced",
+      "nodeCount": 18,
+      "edgeCount": 24
+    },
+    {
       "slug": "design-youtube-or-netflix",
       "title": "Design YouTube or Netflix",
       "description": "A video streaming platform supporting fast video upload and smooth, adaptive streaming.",
@@ -17,6 +35,15 @@
       "difficulty": "advanced",
       "nodeCount": 13,
       "edgeCount": 15
+    },
+    {
+      "slug": "design-twitter",
+      "title": "Design Twitter for Millions of Users",
+      "description": "A microblogging platform with tweet ingestion, hybrid fan-out timelines, typeahead search, and real-time notifications.",
+      "tags": ["social-media", "fan-out", "typeahead", "search", "real-time", "kafka"],
+      "difficulty": "advanced",
+      "nodeCount": 38,
+      "edgeCount": 39
     },
     {
       "slug": "design-dropbox-or-google-drive",
@@ -51,8 +78,8 @@
       "description": "Asynchronous event processing with message broker",
       "tags": ["event-driven", "kafka", "async", "microservices"],
       "difficulty": "advanced",
-      "nodeCount": 7,
-      "edgeCount": 7
+      "nodeCount": 8,
+      "edgeCount": 8
     },
     {
       "slug": "hexagonal-architecture",
@@ -60,8 +87,8 @@
       "description": "Ports and adapters pattern for clean domain logic",
       "tags": ["hexagonal", "ports-adapters", "ddd", "clean-architecture"],
       "difficulty": "intermediate",
-      "nodeCount": 6,
-      "edgeCount": 6
+      "nodeCount": 7,
+      "edgeCount": 7
     },
     {
       "slug": "cqrs-pattern",
@@ -69,8 +96,8 @@
       "description": "Command Query Responsibility Segregation",
       "tags": ["cqrs", "command", "query", "event-sourcing"],
       "difficulty": "advanced",
-      "nodeCount": 6,
-      "edgeCount": 6
+      "nodeCount": 7,
+      "edgeCount": 7
     },
     {
       "slug": "layered-architecture",

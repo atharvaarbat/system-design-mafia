@@ -2,13 +2,226 @@
   "version": "1.0",
   "title": "Hexagonal Architecture",
   "description": "Ports and adapters pattern — core domain logic isolated from infrastructure concerns.",
+  "difficulty": "intermediate",
+  "requirements": {
+    "functional": [
+      "The domain core can be exercised in complete isolation, with no real database, queue, or HTTP framework involved",
+      "The same business logic can be triggered by an HTTP request or a queued message without duplicating any rule",
+      "Swapping PostgreSQL for a different datastore, or REST for gRPC, never requires touching the domain core",
+      "New driving adapters — a CLI, a scheduled job, a second queue — can be added without modifying existing ones",
+      "The core can call out to multiple secondary systems (database, object storage, payment provider) through explicit, narrow interfaces"
+    ],
+    "nonFunctional": [
+      "Dependency direction is enforced inward — adapters depend on the core's ports; the core never imports adapter code",
+      "Business rules are covered by fast, in-memory unit tests instead of slow integration tests against real infrastructure",
+      "A failure or slow response from one secondary adapter (the payment provider) is isolated behind its port and never leaks a raw infrastructure exception into the domain",
+      "A new technology choice — a different database engine, a different message broker — is an adapter-level concern, not a rewrite of business logic"
+    ]
+  },
+  "estimates": [
+    { "label": "Core test coverage", "value": ">90%", "note": "achievable with pure in-memory unit tests, no infra needed" },
+    { "label": "Adapters per port (typical)", "value": "2-3", "note": "e.g. Postgres in production, an in-memory fake in tests" },
+    { "label": "Driving adapters here", "value": "2", "note": "REST and Queue both call the exact same inbound port" },
+    { "label": "Driven adapters here", "value": "3", "note": "DB, storage, and payment — swappable independently of each other" }
+  ],
+  "flows": [
+    {
+      "id": "http-request-flow",
+      "title": "Handle an inbound HTTP command",
+      "description": "How a request crosses the boundary into the core and back out through its ports.",
+      "steps": [
+        {
+          "text": "The client sends an HTTP request to the Inbound Adapter (REST) — the only place in the system that understands HTTP verbs, headers, and status codes.",
+          "nodeIds": ["client", "in-adapter"],
+          "edgeIds": ["e-c1-in1"]
+        },
+        {
+          "text": "The REST adapter translates the request into a plain call against the Domain Core's inbound port. No HTTP concept crosses this boundary — the core has never heard of a status code.",
+          "nodeIds": ["in-adapter", "core"],
+          "edgeIds": ["e-in1-core"]
+        },
+        {
+          "text": "The core executes its business logic, then calls out through its database port to persist the result.",
+          "nodeIds": ["core", "out-adapter-1"],
+          "edgeIds": ["e-core-out1"]
+        },
+        {
+          "text": "The core also calls out through its storage port to save a related file, and through its payment port to charge the customer — three separate outbound calls, three separate narrow interfaces, each unaware the others exist.",
+          "nodeIds": ["core", "out-adapter-2", "out-adapter-3"],
+          "edgeIds": ["e-core-out2", "e-core-out3"]
+        }
+      ]
+    },
+    {
+      "id": "queue-message-flow",
+      "title": "Handle the same action from a queue",
+      "description": "The whole point of hexagonal architecture: a second entry point, zero duplicated logic.",
+      "steps": [
+        {
+          "text": "Instead of an HTTP request, the exact same business action arrives as a message on a queue, picked up by the Inbound Adapter (Queue).",
+          "nodeIds": ["client", "in-adapter-2"],
+          "edgeIds": ["e-c2-in2"]
+        },
+        {
+          "text": "The queue adapter translates the message into the identical inbound port call that the REST adapter uses. The core cannot tell — and does not care — which adapter invoked it.",
+          "nodeIds": ["in-adapter-2", "core"],
+          "edgeIds": ["e-in2-core"]
+        },
+        {
+          "text": "From here execution is indistinguishable from the HTTP path: the same core logic calls the same outbound ports in the same way.",
+          "nodeIds": ["core", "out-adapter-1"],
+          "edgeIds": ["e-core-out1"]
+        },
+        {
+          "text": "Because both adapters funnel into one inbound port, a bug fix or a new business rule is written exactly once and instantly applies to both the HTTP and queue entry points.",
+          "nodeIds": ["in-adapter", "in-adapter-2", "core"],
+          "edgeIds": ["e-in1-core", "e-in2-core"]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Business logic never imports infrastructure",
+      "choice": "Ports (interfaces) are owned and defined by the core; adapters implement them",
+      "alternatives": ["Domain services call ORM/HTTP client libraries directly"],
+      "rationale": "If the core imported a database driver, replacing that driver would mean editing business logic to do it. Owning the port interface inverts the dependency: the core defines what it needs in its own vocabulary, and it's the adapter's job to satisfy that contract — not the other way around."
+    },
+    {
+      "title": "Two driving adapters, one core",
+      "choice": "The REST adapter and the Queue adapter both call the same inbound port",
+      "alternatives": ["Duplicate the business logic inside the queue consumer for speed"],
+      "rationale": "Duplicating logic in a second adapter guarantees the two paths drift apart the first time one gets a bug fix the other doesn't. Funneling both into one port means the >90% unit-tested core is exercised identically no matter which adapter triggered it."
+    },
+    {
+      "title": "Three narrow outbound ports instead of one generic repository",
+      "choice": "Separate database, storage, and payment ports",
+      "alternatives": ["One broad 'InfrastructureService' interface the core depends on"],
+      "rationale": "A single generic interface hides very different failure modes behind one name — a slow payment provider looks the same as a slow disk write. Narrow, named ports let each adapter fail, retry, or time out on its own terms, and a payment provider outage never has a code path to touch the database port."
+    },
+    {
+      "title": "Explicit boundary object mapping",
+      "choice": "Adapters translate between wire formats and domain objects at the boundary",
+      "alternatives": ["Pass HTTP DTOs or ORM entities straight into the core"],
+      "rationale": "An HTTP DTO or an ORM entity is shaped by its framework's conventions, not the domain's. Leaking either into the core means a REST library upgrade or an ORM migration can silently change what the 'domain object' means — mapping at the boundary keeps the core's vocabulary entirely its own."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Anemic ports that leak infrastructure details",
+      "problem": "If a port's interface is shaped around the adapter's data model — say, a method that takes a raw SQL row — swapping that adapter still forces a rewrite of the core. The abstraction exists in name only.",
+      "mitigation": "Define every port in the domain's own vocabulary (\"reserveInventory\", not \"updateRow\"), and have the adapter do all the translation work in both directions."
+    },
+    {
+      "title": "A slow or unavailable payment provider blocking the core",
+      "problem": "If the core calls its payment port synchronously and the underlying provider is degraded, the core's own execution stalls waiting on a dependency it was supposed to be isolated from.",
+      "mitigation": "Put timeouts and a circuit breaker inside the payment adapter itself, so the core only ever sees a clean domain-level failure (e.g. PaymentDeclined or PaymentUnavailable) — never a raw HTTP timeout."
+    },
+    {
+      "title": "Overhead for trivial CRUD",
+      "problem": "Wrapping a simple create-read screen in ports and adapters can be more ceremony — interfaces, mappers, boundary objects — than the feature is worth.",
+      "mitigation": "Reserve strict hexagonal boundaries for logic that is genuinely nontrivial, has multiple entry points, or needs its infrastructure swapped; let simple CRUD skip the extra layers."
+    },
+    {
+      "title": "Testing adapters gets neglected",
+      "problem": "Teams often unit-test the core exhaustively (hence the >90% figure) but skip integration tests on the adapters, so the seams — SQL mapping, HTTP status codes, message serialization — go unverified until production.",
+      "mitigation": "Run a small contract-test suite per adapter against the real dependency (or a faithful test double) in CI, separate from the core's unit tests."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why can the domain core be unit-tested without a real database?",
+      "answer": "The core depends only on port interfaces, not concrete adapters. Tests can substitute an in-memory fake for the database port, which is exactly what pushes core coverage above 90% without spinning up any real infrastructure."
+    },
+    {
+      "question": "Both a REST call and a queue message can trigger the same business action here. What's actually happening architecturally?",
+      "answer": "Both are driving adapters that translate their own input format into one identical call on the core's inbound port. The core has no way to tell which adapter invoked it, because that information was never part of the port's contract."
+    },
+    {
+      "question": "Why does the core have three separate outbound ports instead of one shared 'infrastructure' interface?",
+      "answer": "Interface segregation. Each dependency's shape and failure mode stays isolated behind its own port — a payment provider outage has no path to affect the database port, and swapping one adapter never ripples into the others."
+    },
+    {
+      "question": "If PostgreSQL were replaced with a different database tomorrow, what part of the codebase actually changes?",
+      "answer": "Only the outbound database adapter that implements that port. The core and the port interface itself stay untouched, because the core never depended on PostgreSQL — it depended on its own port contract."
+    },
+    {
+      "question": "Where does HTTP status-code logic or message-queue acknowledgment logic live, and why does that matter?",
+      "answer": "Entirely inside the adapters, never the core. That's what lets the exact same business logic be reused across an HTTP endpoint and a queue consumer, and keeps the core free of any single transport mechanism's concerns."
+    }
+  ],
+  "references": [
+    { "title": "Alistair Cockburn — Hexagonal Architecture (the original pattern)", "url": "https://alistair.cockburn.us/hexagonal-architecture/", "source": "alistair.cockburn.us" },
+    { "title": "Netflix Tech Blog — Ready for changes with Hexagonal Architecture", "url": "https://netflixtechblog.com/ready-for-changes-with-hexagonal-architecture-b315ec967749", "source": "netflixtechblog.com" },
+    { "title": "Herberto Graça — Ports & Adapters Architecture", "url": "https://herbertograca.com/2017/09/14/ports-adapters-architecture/", "source": "herbertograca.com" },
+    { "title": "Domain-Driven Design Community", "url": "https://www.dddcommunity.org/", "source": "dddcommunity.org" }
+  ],
+  "relatedPatterns": ["layered-architecture", "cqrs-pattern"],
+  "summary": "### Isolating the Business Rules\n\nMost architectures let business logic quietly absorb infrastructure concerns — a service class that calls an ORM directly, a domain function that constructs SQL. **Hexagonal Architecture** (ports and adapters) draws a hard line around the Domain Core and forces every dependency to cross it through an explicit, named interface: a **port**.\n\nNothing outside the core is allowed to define what the core needs. The core defines its own ports, in its own vocabulary, and it is the adapter's job to satisfy that contract.\n\n### Driving Adapters — Getting Requests In\n\nThe Inbound Adapter (REST) and Inbound Adapter (Queue) sit on the left side of the hexagon. Both translate their own input format — an HTTP request, a queued message — into the exact same call on the core's inbound port.\n\nThis is the pattern's clearest payoff: the core cannot tell which adapter invoked it, so a bug fix or a new rule is written once and applies to both entry points immediately.\n\n### Driven Adapters — Calling Out\n\nOn the right side, the core depends on three separate outbound ports instead of one shared interface:\n\n- A database port for persistence\n- A storage port for files\n- A payment port for charging the customer\n\nKeeping these narrow and separate means a slow or failing payment provider is isolated behind its own port — it never has a code path into the database adapter, and swapping any one of the three never touches the others.\n\n### What This Buys You\n\nBecause the core depends only on ports, it can hit >90% test coverage using in-memory fakes instead of real infrastructure. Because adapters are the only things that know about HTTP, SQL, or message queues, replacing any piece of infrastructure is an adapter-level change, not a domain rewrite.\n\n### What It Costs\n\nThe pattern adds real ceremony — interfaces, boundary mappers, extra test doubles — that isn't worth paying for trivial CRUD. It earns its keep specifically where business logic is nontrivial, has more than one entry point, or is genuinely expected to outlive today's choice of database or transport.",
   "nodes": [
-    { "id": "client", "kind": "browser", "name": "Client", "x": 100, "y": 300 },
-    { "id": "in-adapter", "kind": "api-gateway", "name": "Inbound Adapter (REST)", "x": 300, "y": 130, "description": "Primary / driving adapter" },
-    { "id": "in-adapter-2", "kind": "worker-service", "name": "Inbound Adapter (Queue)", "x": 300, "y": 470, "description": "Primary / driving adapter" },
-    { "id": "core", "kind": "container", "name": "Domain Core", "x": 550, "y": 300, "description": "Business logic & ports" },
-    { "id": "out-adapter-1", "kind": "postgres", "name": "Outbound Adapter (DB)", "x": 800, "y": 150, "description": "Secondary / driven adapter" },
-    { "id": "out-adapter-2", "kind": "s3", "name": "Outbound Adapter (S3)", "x": 800, "y": 450, "description": "Secondary / driven adapter" }
+    {
+      "id": "client",
+      "kind": "browser",
+      "name": "Client",
+      "x": 100,
+      "y": 300,
+      "description": "Triggers the driving adapters",
+      "details": "The consumer of the system — doesn't know or care whether its request ends up hitting REST or a queue.\n\n- Talks to whichever driving adapter is appropriate for the channel\n- Never has any awareness of the domain core or its ports\n- Could be a browser, a mobile app, or another service entirely"
+    },
+    {
+      "id": "in-adapter",
+      "kind": "api-gateway",
+      "name": "Inbound Adapter (REST)",
+      "x": 300,
+      "y": 130,
+      "description": "Primary / driving adapter",
+      "details": "Translates HTTP into the core's own vocabulary.\n\n- Owns every HTTP concern — routing, status codes, headers, auth\n- Maps the request body into whatever input type the inbound port expects\n- The core would function identically if this adapter were deleted and replaced"
+    },
+    {
+      "id": "in-adapter-2",
+      "kind": "worker-service",
+      "name": "Inbound Adapter (Queue)",
+      "x": 300,
+      "y": 470,
+      "description": "Primary / driving adapter",
+      "details": "A second driving adapter, calling the exact same inbound port as the REST adapter.\n\n- Owns message deserialization and acknowledgment\n- Never duplicates business logic — it only translates and forwards\n- Proves the core is transport-agnostic: it cannot tell REST and Queue apart"
+    },
+    {
+      "id": "core",
+      "kind": "container",
+      "name": "Domain Core",
+      "x": 550,
+      "y": 300,
+      "description": "Business logic & ports",
+      "details": "The only part of the system that matters from a business-rules perspective — everything else is replaceable plumbing around it.\n\n- Defines its own inbound and outbound ports, in its own domain vocabulary\n- Depends on zero concrete infrastructure — no SQL, no HTTP client, no message library\n- Reaches >90% unit-test coverage using in-memory fakes for every port"
+    },
+    {
+      "id": "out-adapter-1",
+      "kind": "postgres",
+      "name": "Outbound Adapter (DB)",
+      "x": 800,
+      "y": 150,
+      "description": "Secondary / driven adapter",
+      "details": "Implements the core's database port.\n\n- The only place SQL, an ORM, or a connection pool is ever mentioned\n- Can be swapped for a different engine entirely without the core noticing\n- Its interface is shaped in domain terms (e.g. \"saveOrder\"), not table rows"
+    },
+    {
+      "id": "out-adapter-2",
+      "kind": "s3",
+      "name": "Outbound Adapter (S3)",
+      "x": 800,
+      "y": 450,
+      "description": "Secondary / driven adapter",
+      "details": "Implements the core's storage port.\n\n- Owns every object-storage detail — bucket names, keys, presigned URLs\n- The core just asks to \"store this file\" and gets a reference back\n- Independent of the database and payment adapters entirely"
+    },
+    {
+      "id": "out-adapter-3",
+      "kind": "external-api",
+      "name": "Outbound Adapter (Payment)",
+      "x": 800,
+      "y": 300,
+      "description": "Secondary / driven adapter",
+      "details": "Implements the core's payment port, wrapping an external payment provider.\n\n- Absorbs timeouts and retries so the core only ever sees a clean domain outcome (charged, declined, unavailable)\n- The core has no idea it's calling an external HTTP API under the hood\n- Isolating this port means a payment-provider outage can't cascade into the database or storage paths"
+    }
   ],
   "edges": [
     { "id": "e-c1-in1", "source": "client", "target": "in-adapter", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
@@ -16,7 +229,8 @@
     { "id": "e-in1-core", "source": "in-adapter", "target": "core", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "label": "Port call" },
     { "id": "e-in2-core", "source": "in-adapter-2", "target": "core", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "label": "Port call" },
     { "id": "e-core-out1", "source": "core", "target": "out-adapter-1", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" },
-    { "id": "e-core-out2", "source": "core", "target": "out-adapter-2", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "style": "dashed" }
+    { "id": "e-core-out2", "source": "core", "target": "out-adapter-2", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "style": "dashed" },
+    { "id": "e-core-out3", "source": "core", "target": "out-adapter-3", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal", "style": "dashed", "label": "Port call" }
   ],
   "groups": [
     { "id": "hex-core", "label": "Hexagonal Boundary", "style": "dashed", "width": 320, "height": 220, "x": 460, "y": 190 }

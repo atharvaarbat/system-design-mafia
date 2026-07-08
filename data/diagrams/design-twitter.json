@@ -1,0 +1,280 @@
+{
+  "version": "1.0",
+  "title": "Design Twitter for Millions of Users",
+  "description": "A microblogging platform at Twitter/X scale — tweet ingestion, hybrid fan-out timelines, typeahead search, and real-time notifications, each broken into its own diagram.",
+  "summary": "### 1. Tweet Ingestion & Write Path\n\nHandles the moment a tweet is created: validating content, minting a globally unique ID, persisting the tweet, and kicking off everything that has to happen next.\n\n- A dedicated ID Generation Service mints Snowflake-style IDs so tweet IDs are unique and roughly time-sortable without a single central counter\n- Media uploads bypass the API tier entirely via pre-signed URLs straight to object storage\n- Every write ends with a single Kafka event — the write path never blocks on fan-out, search indexing, or notifications\n\n### 2. Home Timeline Generation (Read Path)\n\nServes the personalized feed a user sees on open, in well under a second.\n\n- A Fan-out Worker continuously drains the tweet-created stream and pushes new tweet IDs onto every follower's precomputed timeline — the classic fan-out-on-write\n- Accounts with tens of millions of followers are exempted from push fan-out; their tweets are merged in at read time from a dedicated cache instead\n- Redis holds the hot, precomputed timeline; Cassandra is the durable system of record behind it\n\n### 3. Typeahead Search & Full-Text Search\n\nTurns every keystroke in the search box into an instant, ranked suggestion, and serves full-text search over tweets and accounts.\n\n- Suggestions are never ranked on the fly — a sharded, in-memory trie stores each prefix's top-K completions pre-sorted, so a keystroke is a lookup, not a computation\n- An offline pipeline aggregates query and click frequency from a log of every search, then periodically rebuilds the trie and atomically swaps it onto the serving shards\n- A Redis cache absorbs repeat lookups for hot prefixes before they ever reach a trie shard\n\n### 4. Notifications & Trending Topics\n\nFans engagement events (likes, retweets, replies, mentions) out to the people who need to see them, and surfaces what's trending right now.\n\n- Engagement events flow through a shared Kafka topic, decoupling the action that caused a notification from however many notifications it produces\n- A Notification Worker writes to a per-user notification feed and forwards eligible events to a push gateway for delivery even when the app is closed\n- A separate Trending Aggregator keeps a sliding-window count of hashtag/topic volume in Redis, refreshed independently of the notification path",
+  "difficulty": "advanced",
+  "groups": [
+    { "id": "frame-write", "label": "1. Tweet Ingestion & Write Path", "color": "#f59e0b", "style": "solid", "x": 80, "y": 0, "width": 1700, "height": 880 },
+    { "id": "frame-timeline", "label": "2. Home Timeline Generation (Read Path)", "color": "#6366f1", "style": "solid", "x": 80, "y": 1280, "width": 1500, "height": 900 },
+    { "id": "frame-search", "label": "3. Typeahead & Full-Text Search", "color": "#10b981", "style": "solid", "x": 80, "y": 2580, "width": 1550, "height": 850 },
+    { "id": "frame-notif", "label": "4. Notifications & Trending Topics", "color": "#ec4899", "style": "solid", "x": 80, "y": 3830, "width": 1250, "height": 800 }
+  ],
+  "nodes": [
+    { "id": "write-client", "kind": "mobile-app", "x": 160, "y": 440, "name": "Client (Mobile/Web)", "description": "Composes tweets", "details": "The origin of every tweet — mobile app or web client. It debounces nothing here (unlike the search box); a post is a single deliberate submit, not a per-keystroke stream.", "group": "frame-write" },
+    { "id": "write-gateway", "kind": "api-gateway", "x": 420, "y": 440, "name": "API Gateway", "description": "Auth, rate limiting", "details": "Terminates TLS, authenticates the user, and rate-limits post volume per account before anything reaches the Tweet Service.", "group": "frame-write" },
+    { "id": "write-tweet-svc", "kind": "rest-api", "x": 680, "y": 440, "name": "Tweet Service", "description": "Validates & persists tweets", "details": "### Responsibilities\n\n- Validates tweet length and content\n- Requests a unique ID from the ID Generation Service\n- Writes the tweet row and publishes the 'tweet_created' event\n\nThis service never touches media bytes or follower lists directly — both are delegated so it stays fast under sustained write load.", "group": "frame-write" },
+    { "id": "write-id-gen", "kind": "grpc-service", "x": 680, "y": 180, "name": "ID Generation Service", "description": "Snowflake-style unique IDs", "details": "Mints 64-bit IDs from a timestamp + worker ID + sequence number, so every tweet ID is globally unique and roughly time-sortable without a shared counter or a database round trip.", "group": "frame-write" },
+    { "id": "write-media-s3", "kind": "s3", "x": 420, "y": 700, "name": "Media Storage (S3)", "description": "Images, video, GIFs", "details": "Receives media uploads directly from the client via a pre-signed URL. Video/image bytes never pass through the API tier, which only ever handles small JSON payloads.", "group": "frame-write" },
+    { "id": "write-tweet-db", "kind": "cassandra", "x": 980, "y": 440, "name": "Tweet Store (Cassandra)", "description": "Sharded by tweet ID", "details": "The system of record for tweet content, partitioned by tweet ID for even write distribution. Optimized for high-throughput sequential writes and point reads by ID.", "group": "frame-write" },
+    { "id": "write-graph-db", "kind": "generic-database", "x": 980, "y": 700, "name": "Social Graph Store", "description": "Follower/following edges", "details": "A dedicated adjacency store for the follow graph, isolated from tweet content so it can be sharded and scaled purely by lookup pattern — 'who follows this account' is on the hot path for every single fan-out.", "group": "frame-write" },
+    { "id": "write-kafka", "kind": "kafka", "x": 1240, "y": 440, "name": "Tweet Events (Kafka)", "description": "'tweet_created' topic", "details": "Every successful tweet write ends with one event here. Everything downstream — timeline fan-out, search indexing, notifications — consumes from this topic independently, so the write path never blocks on any of them.", "group": "frame-write" },
+    { "id": "write-fanout-dispatcher", "kind": "worker-service", "x": 1500, "y": 440, "name": "Fan-out Dispatcher", "description": "Push vs. pull decision", "details": "Consumes 'tweet_created' events and reads the author's follower count from the Social Graph Store. Below the celebrity threshold it triggers push fan-out (see diagram 2); above it, the tweet is left for pull-based fan-in at read time.", "group": "frame-write" },
+
+    { "id": "tl-client", "kind": "mobile-app", "x": 160, "y": 1720, "name": "Client (Mobile/Web)", "description": "Opens the home timeline", "details": "Requests the home timeline on app open and on pull-to-refresh.", "group": "frame-timeline" },
+    { "id": "tl-gateway", "kind": "api-gateway", "x": 420, "y": 1720, "name": "API Gateway", "description": "Auth, rate limiting", "details": "Authenticates the timeline request and routes it to the Timeline Service.", "group": "frame-timeline" },
+    { "id": "tl-timeline-svc", "kind": "rest-api", "x": 680, "y": 1720, "name": "Timeline Service", "description": "Assembles the home timeline", "details": "Reads the precomputed tweet-ID list from Redis, hydrates full tweet content from the Tweet Store, and merges in any pull-model (celebrity) tweets before returning the feed — the whole call is budgeted for well under a second.", "group": "frame-timeline" },
+    { "id": "tl-fanout-worker", "kind": "worker-service", "x": 680, "y": 1400, "name": "Fan-out Worker", "description": "Pushes tweet IDs to followers", "details": "Continuously drains the tweet-created stream for non-celebrity authors, reads their follower list, and writes the new tweet ID onto every follower's timeline — both the durable store and the hot cache.", "group": "frame-timeline" },
+    { "id": "tl-timeline-db", "kind": "cassandra", "x": 980, "y": 1400, "name": "Timeline Store (Cassandra)", "description": "Durable per-user timelines", "details": "Partitioned by user ID, clustered by tweet time. The durable record of each user's fanned-out timeline, rebuilt into Redis on a cache miss.", "group": "frame-timeline" },
+    { "id": "tl-timeline-cache", "kind": "redis", "x": 980, "y": 1720, "name": "Timeline Cache (Redis)", "description": "Precomputed, ~800 tweet IDs", "details": "Holds the top ~800 precomputed tweet IDs per active user. This is the fast path — most timeline reads never touch Cassandra at all.", "group": "frame-timeline" },
+    { "id": "tl-graph-db", "kind": "generic-database", "x": 680, "y": 1980, "name": "Social Graph Store", "description": "Shared with Write Path", "details": "The same follow-graph store used by the Fan-out Dispatcher in diagram 1, duplicated here since diagrams don't share edges — the Fan-out Worker reads it to know who to push to.", "group": "frame-timeline" },
+    { "id": "tl-tweet-db", "kind": "cassandra", "x": 1240, "y": 1720, "name": "Tweet Store (Cassandra)", "description": "Shared with Write Path", "details": "The same tweet content store from diagram 1, duplicated here — the Timeline Service hydrates full tweet bodies from it after resolving the ID list.", "group": "frame-timeline" },
+    { "id": "tl-celeb-cache", "kind": "redis", "x": 1240, "y": 1980, "name": "Celebrity Tweet Cache", "description": "Pull-model hot accounts", "details": "Caches the most recent tweets from high-follower accounts that are exempt from push fan-out, so merging them into a requester's timeline at read time is a cache hit, not a cold query.", "group": "frame-timeline" },
+
+    { "id": "se-client", "kind": "mobile-app", "x": 160, "y": 3000, "name": "Client (Mobile/Web)", "description": "Types into the search box", "details": "Debounces keystrokes client-side before sending a prefix request — cutting requests for a word like 'car' from three to roughly one.", "group": "frame-search" },
+    { "id": "se-gateway", "kind": "api-gateway", "x": 420, "y": 3000, "name": "API Gateway", "description": "Auth, rate limiting", "details": "Routes keystroke-level typeahead requests and full search submissions to their respective services.", "group": "frame-search" },
+    { "id": "se-typeahead-svc", "kind": "rest-api", "x": 680, "y": 2820, "name": "Typeahead Service", "description": "Prefix suggestions per keystroke", "details": "Serves ranked completions for a partial query. Checks Redis first, falls back to the trie shard cluster, and asynchronously logs every query for the offline ranking pipeline.", "group": "frame-search" },
+    { "id": "se-search-svc", "kind": "rest-api", "x": 680, "y": 3180, "name": "Search Service", "description": "Full-text tweet & user search", "details": "Handles a submitted search query end-to-end, querying the Elasticsearch index for matching tweets and accounts. This is a separate, heavier path from typeahead's per-keystroke lookups.", "group": "frame-search" },
+    { "id": "se-suggest-cache", "kind": "redis", "x": 980, "y": 2720, "name": "Suggestion Cache (Redis)", "description": "Hot prefixes, sub-ms reads", "details": "Absorbs repeat requests for the same hot prefixes so they never spend trie-shard CPU at all — even an O(prefix length) memory lookup costs something at 500K requests/sec.", "group": "frame-search" },
+    { "id": "se-trie-shards", "kind": "grpc-service", "x": 980, "y": 2880, "name": "Trie Shard Cluster", "description": "In-memory ranked prefix tries", "details": "### Design\n\n- Each node caches its top-K completions pre-sorted by popularity — a keystroke is a lookup, not a ranking computation\n- Radix compression collapses single-child chains to shrink memory footprint\n- Busy prefixes are split across more shards than rare ones (skew-aware sharding)\n\nThe whole ranked trie is small enough (single-digit GB) to live fully in memory across the shard fleet.", "group": "frame-search" },
+    { "id": "se-es", "kind": "elasticsearch", "x": 980, "y": 3180, "name": "Search Index (Elasticsearch)", "description": "Full-text tweet & user index", "details": "Inverted index over tweet text, hashtags, and account bios, powering the full search path (as opposed to prefix typeahead, which never touches this index).", "group": "frame-search" },
+    { "id": "se-query-log", "kind": "kafka", "x": 680, "y": 2640, "name": "Query Log (Kafka)", "description": "Raw prefix queries & clicks", "details": "Every typeahead request (and, where available, the suggestion the user clicked) is logged here asynchronously — the raw material the offline ranking pipeline aggregates from.", "group": "frame-search" },
+    { "id": "se-aggregator", "kind": "worker-service", "x": 980, "y": 2640, "name": "Aggregation Job", "description": "Hourly query-frequency rollup", "details": "Consumes the query log and tallies how often each phrase was searched or clicked, filtering out low-frequency noise before it ever influences ranking.", "group": "frame-search" },
+    { "id": "se-freq-db", "kind": "cassandra", "x": 1240, "y": 2640, "name": "Query Frequency Store", "description": "Aggregated counts, 30-day TTL", "details": "Holds rolled-up query popularity counts. Entries older than the retention window are dropped so the trie stays sized to genuinely current query patterns, not historical noise.", "group": "frame-search" },
+    { "id": "se-trie-builder", "kind": "worker-service", "x": 1240, "y": 2880, "name": "Trie Builder", "description": "Offline rebuild + atomic swap", "details": "On a fixed cadence (minutes to hours, not real time), reads the latest frequency data and builds a fresh ranked trie from scratch, then atomically swaps it onto the serving shards — the hot read path never pays a rebuild cost.", "group": "frame-search" },
+
+    { "id": "no-client", "kind": "mobile-app", "x": 160, "y": 3970, "name": "Client (Mobile/Web)", "description": "Views notifications & trends", "details": "Displays the notification feed and trending-topics module, and is the eventual target of push delivery.", "group": "frame-notif" },
+    { "id": "no-gateway", "kind": "api-gateway", "x": 420, "y": 3970, "name": "API Gateway", "description": "Auth, rate limiting", "details": "Routes notification-feed and trending-topic reads to the Notification & Trends Service.", "group": "frame-notif" },
+    { "id": "no-notif-svc", "kind": "rest-api", "x": 680, "y": 3970, "name": "Notification & Trends Service", "description": "Serves feed + trending topics", "details": "A read-only API over the Notification Store and Trending Cache — it never computes anything itself, just serves what the async workers have already produced.", "group": "frame-notif" },
+    { "id": "no-kafka", "kind": "kafka", "x": 160, "y": 4250, "name": "Engagement Events (Kafka)", "description": "Likes, retweets, replies, mentions", "details": "The shared event stream for every engagement action. Decouples the action that caused a notification from however many downstream notifications and trend updates it produces.", "group": "frame-notif" },
+    { "id": "no-notif-worker", "kind": "worker-service", "x": 420, "y": 4250, "name": "Notification Worker", "description": "Fans out per-recipient notifications", "details": "Consumes engagement events, builds a notification payload per recipient, appends it to their entry in the Notification Store, and forwards eligible events to the Push Gateway for immediate delivery.", "group": "frame-notif" },
+    { "id": "no-notif-db", "kind": "dynamodb", "x": 680, "y": 4250, "name": "Notification Store (DynamoDB)", "description": "Per-user feed, sharded by user ID", "details": "Notification reads are always single-item lookups by user ID, which is exactly DynamoDB's partition-key access pattern — predictable latency even during a viral-tweet write spike.", "group": "frame-notif" },
+    { "id": "no-push", "kind": "external-api", "x": 980, "y": 4130, "name": "Push Gateway (APNs/FCM)", "description": "Mobile push delivery", "details": "Delivers the notification directly to the recipient's device via Apple/Google push services, working even when the app is closed.", "group": "frame-notif" },
+    { "id": "no-trend-worker", "kind": "worker-service", "x": 420, "y": 4430, "name": "Trending Aggregator", "description": "Sliding-window hashtag counts", "details": "Maintains a sliding-window count of hashtag and topic mentions from the same engagement stream, independent of the per-user notification path, and refreshes the Trending Cache on a short interval.", "group": "frame-notif" },
+    { "id": "no-trend-cache", "kind": "redis", "x": 680, "y": 4430, "name": "Trending Cache (Redis)", "description": "Top-N topics per region", "details": "Holds the current top trending topics, typically partitioned by region, refreshed every few minutes by the Trending Aggregator.", "group": "frame-notif" }
+  ],
+  "edges": [
+    { "id": "e-w1", "source": "write-client", "target": "write-gateway", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "HTTPS", "protocol": "https" },
+    { "id": "e-w2", "source": "write-gateway", "target": "write-tweet-svc", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "gRPC", "protocol": "grpc" },
+    { "id": "e-w3", "source": "write-tweet-svc", "target": "write-id-gen", "sourceHandle": "top-source", "targetHandle": "bottom-target", "label": "Get ID", "protocol": "grpc" },
+    { "id": "e-w4", "source": "write-tweet-svc", "target": "write-media-s3", "sourceHandle": "bottom-source", "targetHandle": "right-target", "label": "Pre-signed URL", "protocol": "internal" },
+    { "id": "e-w5", "source": "write-client", "target": "write-media-s3", "sourceHandle": "bottom-source", "targetHandle": "left-target", "label": "Direct Upload", "protocol": "https", "style": "dashed" },
+    { "id": "e-w6", "source": "write-tweet-svc", "target": "write-tweet-db", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Write", "protocol": "database" },
+    { "id": "e-w7", "source": "write-tweet-svc", "target": "write-kafka", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Publish", "protocol": "message" },
+    { "id": "e-w8", "source": "write-kafka", "target": "write-fanout-dispatcher", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Consume", "protocol": "message", "style": "dashed", "animated": true },
+    { "id": "e-w9", "source": "write-fanout-dispatcher", "target": "write-graph-db", "sourceHandle": "left-source", "targetHandle": "right-target", "label": "Read Followers", "protocol": "database" },
+
+    { "id": "e-t1", "source": "tl-client", "target": "tl-gateway", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "HTTPS", "protocol": "https" },
+    { "id": "e-t2", "source": "tl-gateway", "target": "tl-timeline-svc", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "gRPC", "protocol": "grpc" },
+    { "id": "e-t3", "source": "tl-timeline-svc", "target": "tl-timeline-cache", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Read Timeline", "protocol": "database" },
+    { "id": "e-t4", "source": "tl-timeline-svc", "target": "tl-tweet-db", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Hydrate", "protocol": "database" },
+    { "id": "e-t5", "source": "tl-timeline-svc", "target": "tl-celeb-cache", "sourceHandle": "right-source", "targetHandle": "top-target", "label": "Merge (Pull)", "protocol": "database", "style": "dashed" },
+    { "id": "e-t6", "source": "tl-fanout-worker", "target": "tl-timeline-db", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Write (Fan-out)", "protocol": "database", "style": "dashed" },
+    { "id": "e-t7", "source": "tl-fanout-worker", "target": "tl-timeline-cache", "sourceHandle": "right-source", "targetHandle": "top-target", "label": "Cache Push", "protocol": "database", "style": "dashed" },
+    { "id": "e-t8", "source": "tl-fanout-worker", "target": "tl-graph-db", "sourceHandle": "bottom-source", "targetHandle": "top-target", "label": "Read Followers", "protocol": "database" },
+
+    { "id": "e-s1", "source": "se-client", "target": "se-gateway", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "HTTPS", "protocol": "https" },
+    { "id": "e-s2", "source": "se-gateway", "target": "se-typeahead-svc", "sourceHandle": "right-source", "targetHandle": "bottom-target", "label": "Prefix Query", "protocol": "grpc" },
+    { "id": "e-s3", "source": "se-gateway", "target": "se-search-svc", "sourceHandle": "right-source", "targetHandle": "top-target", "label": "Search Query", "protocol": "grpc" },
+    { "id": "e-s4", "source": "se-typeahead-svc", "target": "se-suggest-cache", "sourceHandle": "right-source", "targetHandle": "bottom-target", "label": "Cache Check", "protocol": "database" },
+    { "id": "e-s5", "source": "se-typeahead-svc", "target": "se-trie-shards", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Trie Lookup", "protocol": "internal" },
+    { "id": "e-s6", "source": "se-trie-shards", "target": "se-suggest-cache", "sourceHandle": "top-source", "targetHandle": "bottom-target", "label": "Populate Cache", "protocol": "database", "style": "dashed" },
+    { "id": "e-s7", "source": "se-search-svc", "target": "se-es", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Query", "protocol": "internal" },
+    { "id": "e-s8", "source": "se-typeahead-svc", "target": "se-query-log", "sourceHandle": "top-source", "targetHandle": "bottom-target", "label": "Log Query", "protocol": "message", "style": "dashed" },
+    { "id": "e-s9", "source": "se-query-log", "target": "se-aggregator", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Consume", "protocol": "message", "style": "dashed" },
+    { "id": "e-s10", "source": "se-aggregator", "target": "se-freq-db", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Write Counts", "protocol": "database" },
+    { "id": "e-s11", "source": "se-freq-db", "target": "se-trie-builder", "sourceHandle": "bottom-source", "targetHandle": "top-target", "label": "Read Frequencies", "protocol": "database", "style": "dashed" },
+    { "id": "e-s12", "source": "se-trie-builder", "target": "se-trie-shards", "sourceHandle": "left-source", "targetHandle": "right-target", "label": "Atomic Swap", "protocol": "internal", "style": "dashed", "animated": true },
+
+    { "id": "e-n1", "source": "no-client", "target": "no-gateway", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "HTTPS", "protocol": "https" },
+    { "id": "e-n2", "source": "no-gateway", "target": "no-notif-svc", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "gRPC", "protocol": "grpc" },
+    { "id": "e-n3", "source": "no-notif-svc", "target": "no-notif-db", "sourceHandle": "bottom-source", "targetHandle": "top-target", "label": "Read Feed", "protocol": "database" },
+    { "id": "e-n4", "source": "no-notif-svc", "target": "no-trend-cache", "sourceHandle": "bottom-source", "targetHandle": "top-target", "label": "Read Trends", "protocol": "database" },
+    { "id": "e-n5", "source": "no-kafka", "target": "no-notif-worker", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Consume", "protocol": "message", "style": "dashed", "animated": true },
+    { "id": "e-n6", "source": "no-notif-worker", "target": "no-notif-db", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Write", "protocol": "database" },
+    { "id": "e-n7", "source": "no-notif-worker", "target": "no-push", "sourceHandle": "right-source", "targetHandle": "bottom-target", "label": "Forward", "protocol": "message", "style": "dashed", "animated": true },
+    { "id": "e-n8", "source": "no-push", "target": "no-client", "sourceHandle": "left-source", "targetHandle": "bottom-target", "label": "Push", "protocol": "https", "style": "dashed", "animated": true },
+    { "id": "e-n9", "source": "no-kafka", "target": "no-trend-worker", "sourceHandle": "bottom-source", "targetHandle": "left-target", "label": "Consume", "protocol": "message", "style": "dashed" },
+    { "id": "e-n10", "source": "no-trend-worker", "target": "no-trend-cache", "sourceHandle": "right-source", "targetHandle": "left-target", "label": "Write Counts", "protocol": "database" }
+  ],
+  "requirements": {
+    "functional": [
+      "Users can post tweets (with optional images, video, or GIFs), and each tweet appears in followers' timelines within seconds.",
+      "Users can follow/unfollow accounts and view a home timeline aggregating tweets from everyone they follow.",
+      "Users get instant, ranked suggestions as they type in the search box, and can run full-text search over tweets and accounts.",
+      "Users receive near-real-time notifications for likes, retweets, replies, and mentions, even when the app is closed.",
+      "The system surfaces trending topics and hashtags computed from recent tweet volume."
+    ],
+    "nonFunctional": [
+      "Massive scale — hundreds of millions of daily active users and a firehose of hundreds of millions of tweets per day.",
+      "Low latency — the home timeline and search suggestions must both return in well under a second.",
+      "High availability — the posting and timeline paths must survive individual node or shard failures with no single point of failure.",
+      "Eventual consistency is acceptable almost everywhere (timelines, counts, trends) in exchange for availability and throughput.",
+      "Extreme fan-out — a single tweet from a top account must reach tens of millions of followers within seconds."
+    ]
+  },
+  "estimates": [
+    { "label": "Daily Active Users", "value": "300M", "note": "generates billions of timeline reads per day" },
+    { "label": "Tweets / Day", "value": "500M", "note": "~6,000 writes/sec sustained, far higher during major events" },
+    { "label": "Timeline Read:Write", "value": "~1000:1", "note": "reads dominate — push cost onto the cached read path" },
+    { "label": "Peak Suggest QPS", "value": "500K/s", "note": "keystroke traffic on the search box dwarfs tweet volume" },
+    { "label": "Suggestion Trie Size", "value": "~12 GB", "note": "small enough to fully shard and replicate in memory" },
+    { "label": "Celebrity Fan-out", "value": "50M+", "note": "one tweet can mean 50M+ timeline writes if pushed naively" }
+  ],
+  "flows": [
+    {
+      "id": "post-tweet",
+      "title": "Post a tweet",
+      "description": "The write path — from compose to a durable, event-published tweet. Scoped entirely to frame 1.",
+      "steps": [
+        { "text": "The client sends the tweet through the API Gateway to the Tweet Service, which requests a globally unique, time-sortable ID from the ID Generation Service before persisting anything.", "nodeIds": ["write-client", "write-gateway", "write-tweet-svc", "write-id-gen"], "edgeIds": ["e-w1", "e-w2", "e-w3"] },
+        { "text": "If the tweet has an attached image or video, the client uploads the media directly to blob storage using a pre-signed URL issued by the Tweet Service — the media bytes never pass through the API tier.", "nodeIds": ["write-tweet-svc", "write-media-s3", "write-client"], "edgeIds": ["e-w4", "e-w5"] },
+        { "text": "The Tweet Service writes the tweet to the sharded Cassandra store, then publishes a 'tweet_created' event to Kafka so downstream systems can react without blocking the write.", "nodeIds": ["write-tweet-svc", "write-tweet-db", "write-kafka"], "edgeIds": ["e-w6", "e-w7"] },
+        { "text": "The Fan-out Dispatcher consumes the event and reads the author's follower list from the Social Graph Store to decide, based on follower count, whether to push or leave the tweet for pull-based fan-in.", "nodeIds": ["write-kafka", "write-fanout-dispatcher", "write-graph-db"], "edgeIds": ["e-w8", "e-w9"] }
+      ]
+    },
+    {
+      "id": "load-timeline",
+      "title": "Load the home timeline",
+      "description": "The read path — how a user's feed is assembled with sub-second latency. Scoped entirely to frame 2.",
+      "steps": [
+        { "text": "The client requests the home timeline through the API Gateway; the Timeline Service reads the precomputed list of tweet IDs from the Redis cache — the fast path built ahead of time by fan-out-on-write.", "nodeIds": ["tl-client", "tl-gateway", "tl-timeline-svc", "tl-timeline-cache"], "edgeIds": ["e-t1", "e-t2", "e-t3"] },
+        { "text": "Full tweet content is hydrated from the Tweet Store, and tweets from celebrity accounts — which use pull-based fan-out to avoid a write explosion — are merged in from a dedicated cache at read time.", "nodeIds": ["tl-timeline-svc", "tl-tweet-db", "tl-celeb-cache"], "edgeIds": ["e-t4", "e-t5"] },
+        { "text": "Independently of any single read, the Fan-out Worker is continuously draining the tweet-created event stream: for each new tweet it reads the author's follower list and pushes the tweet ID onto every follower's durable timeline.", "nodeIds": ["tl-fanout-worker", "tl-graph-db", "tl-timeline-db"], "edgeIds": ["e-t8", "e-t6"] },
+        { "text": "The worker also writes the same tweet ID into the Redis timeline cache, so the next time any of those followers opens the app, their feed is already sitting in memory.", "nodeIds": ["tl-fanout-worker", "tl-timeline-cache"], "edgeIds": ["e-t7"] }
+      ]
+    },
+    {
+      "id": "typeahead-suggest",
+      "title": "Type-ahead search suggestions",
+      "description": "How a keystroke becomes an instant, ranked suggestion. Scoped entirely to frame 3.",
+      "steps": [
+        { "text": "As the user types each character, the client — after debouncing keystrokes to cut request volume by roughly two-thirds — sends the current prefix through the API Gateway to the Typeahead Service.", "nodeIds": ["se-client", "se-gateway", "se-typeahead-svc"], "edgeIds": ["e-s1", "e-s2"] },
+        { "text": "The Typeahead Service checks the Redis suggestion cache first. On a hit it returns instantly; on a miss, it queries the sharded trie cluster, where suggestions for that prefix were already ranked and sorted ahead of time.", "nodeIds": ["se-typeahead-svc", "se-suggest-cache", "se-trie-shards"], "edgeIds": ["e-s4", "e-s5"] },
+        { "text": "The trie shard's answer is written back into the Redis cache, so the next request for the same prefix — extremely likely given how skewed real query traffic is — never has to touch the trie at all.", "nodeIds": ["se-trie-shards", "se-suggest-cache"], "edgeIds": ["e-s6"] },
+        { "text": "Every prefix query is also logged asynchronously onto a Kafka topic, feeding the offline pipeline that keeps the trie's popularity rankings current.", "nodeIds": ["se-typeahead-svc", "se-query-log"], "edgeIds": ["e-s8"] }
+      ]
+    },
+    {
+      "id": "rebuild-trie",
+      "title": "Rebuild the suggestion trie offline",
+      "description": "The offline pipeline that keeps typeahead rankings fresh without ever blocking a live query. Scoped entirely to frame 3.",
+      "steps": [
+        { "text": "An Aggregation Job continuously consumes the raw query log from Kafka and tallies how often each search phrase was typed and clicked.", "nodeIds": ["se-query-log", "se-aggregator"], "edgeIds": ["e-s9"] },
+        { "text": "Counts are rolled up into the Query Frequency Store, with low-frequency phrases filtered out and entries past the retention window discarded to bound the trie's size.", "nodeIds": ["se-aggregator", "se-freq-db"], "edgeIds": ["e-s10"] },
+        { "text": "On a fixed cadence — minutes to hours, not real time — the Trie Builder reads the latest frequencies and constructs an entirely fresh, ranked trie in the background.", "nodeIds": ["se-freq-db", "se-trie-builder"], "edgeIds": ["e-s11"] },
+        { "text": "The new trie is atomically swapped onto the serving shards, so live query latency never pays a rebuild cost — the system trades a little staleness for a lookup that's always fast.", "nodeIds": ["se-trie-builder", "se-trie-shards"], "edgeIds": ["e-s12"] }
+      ]
+    },
+    {
+      "id": "deliver-notification",
+      "title": "Deliver a notification",
+      "description": "From an engagement action to a push notification and a readable feed. Scoped entirely to frame 4.",
+      "steps": [
+        { "text": "A like, retweet, reply, or mention is published as an event onto the shared Engagement Events topic, decoupling the action from however many notifications it fans out into.", "nodeIds": ["no-kafka", "no-notif-worker"], "edgeIds": ["e-n5"] },
+        { "text": "The Notification Worker consumes the event, builds the notification payload, and appends it to the recipient's entry in the Notification Store, sharded by user ID.", "nodeIds": ["no-notif-worker", "no-notif-db"], "edgeIds": ["e-n6"] },
+        { "text": "The same event is forwarded to a Push Gateway (APNs/FCM), which delivers it straight to the recipient's device even if the app is closed.", "nodeIds": ["no-notif-worker", "no-push", "no-client"], "edgeIds": ["e-n7", "e-n8"] },
+        { "text": "When the user later opens the app, the Notification & Trends Service reads their notification feed and the current trending topics directly from storage and cache — no recomputation needed.", "nodeIds": ["no-client", "no-gateway", "no-notif-svc", "no-notif-db", "no-trend-cache"], "edgeIds": ["e-n1", "e-n2", "e-n3", "e-n4"] }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Tweet ID generation",
+      "choice": "Snowflake-style distributed ID generator",
+      "alternatives": ["Per-shard database auto-increment"],
+      "rationale": "At ~6,000 writes/sec sustained (and much higher during spikes), a single auto-increment counter becomes a contention point, and per-shard counters can collide across shards. A Snowflake-style generator produces IDs from a timestamp, worker ID, and sequence number, giving global uniqueness and rough time-ordering with zero coordination between nodes."
+    },
+    {
+      "title": "Timeline: hybrid fan-out",
+      "choice": "Push (fan-out-on-write) for most users, pull (fan-out-on-read) for celebrities",
+      "alternatives": ["Fan-out-on-write for everyone", "Fan-out-on-read for everyone"],
+      "rationale": "An account with 50M+ followers would require 50M+ timeline writes per tweet under pure push — the estimates make that write explosion untenable. Pure pull would make every timeline read for every user pay a fan-in join, which is too slow at ~1000:1 read-to-write ratio. The hybrid splits the difference: most users get a precomputed, instant feed, while the rare high-follower accounts are merged in at read time."
+    },
+    {
+      "title": "Search: precompute rankings, don't compute them per query",
+      "choice": "Trie with top-K suggestions cached at every node",
+      "alternatives": ["Rank candidates live from a query-time index"],
+      "rationale": "At a peak of 500K suggest requests/sec, ranking candidates on every keystroke is not viable. Precomputing each prefix's top-K completions ahead of time turns every request into a lookup instead of a computation — the core insight behind both referenced typeahead designs."
+    },
+    {
+      "title": "Search: offline rebuild cadence",
+      "choice": "Batch rebuild (minutes to hours) with atomic swap, plus a lightweight real-time overlay",
+      "alternatives": ["Update the trie in place on every query"],
+      "rationale": "In-place updates to a structure being read 500K times a second would require locking that the hot path can't afford. Rebuilding fresh and swapping atomically keeps every live read lock-free; a small real-time overlay covers the gap for suddenly trending terms without paying for a full rebuild."
+    },
+    {
+      "title": "Notification storage",
+      "choice": "Per-user notification feed in DynamoDB",
+      "alternatives": ["Relational table joined at read time"],
+      "rationale": "Notification reads are always single-item lookups by user ID — exactly DynamoDB's partition-key access pattern. This gives predictable latency even during a viral-tweet spike that floods the write path with mentions and likes for one popular thread."
+    },
+    {
+      "title": "Social graph storage",
+      "choice": "Dedicated adjacency store, separate from tweet content",
+      "alternatives": ["Follower lists as rows in the same store as tweets"],
+      "rationale": "Follower lookups sit on the hot path for every fan-out decision and every timeline push, at a completely different volume and access pattern than tweet writes. Isolating the graph store lets it be sharded and scaled by adjacency-lookup load rather than being coupled to tweet throughput."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Timeline: celebrity write explosion",
+      "problem": "A tweet from an account with 50M+ followers would need 50M+ timeline writes within seconds if fanned out naively, overwhelming the Timeline Store and the Fan-out Worker.",
+      "mitigation": "The Fan-out Dispatcher routes celebrity tweets away from push fan-out entirely. Their tweets are fetched on demand from the Celebrity Tweet Cache and merged into each requester's timeline at read time instead."
+    },
+    {
+      "title": "Search: hot prefix skew",
+      "problem": "A small number of popular prefixes receive a hugely disproportionate share of the 500K/s suggest traffic, which can overload whichever single trie shard happens to own them.",
+      "mitigation": "Skew-aware prefix sharding splits busy prefixes across more shards than rare ones, and the Suggestion Cache absorbs a large fraction of repeat hits before they ever reach a shard."
+    },
+    {
+      "title": "Search: trending term lag",
+      "problem": "With only a periodic offline rebuild (minutes to hours), a breaking-news term can spike in seconds and stay invisible in suggestions until the next rebuild cycle.",
+      "mitigation": "A lightweight real-time overlay is blended into typeahead results at query time, and the separate Trending Aggregator keeps its own short sliding window in Redis independent of the trie rebuild cadence."
+    },
+    {
+      "title": "Notifications: viral tweet thundering herd",
+      "problem": "A single viral tweet can generate millions of mention, like, and reply events within minutes, all needing to fan out through the Notification Worker and Push Gateway simultaneously.",
+      "mitigation": "Kafka buffers the engagement event burst so the Notification Worker drains it at a sustainable rate rather than being hit synchronously, and notification writes are batched per recipient shard."
+    },
+    {
+      "title": "Timeline: cold-follower cache stampede",
+      "problem": "A user who hasn't opened the app in a while has no warm entry in the Timeline Cache; if many dormant users return around the same event, that's a burst of cold reads hitting the Timeline Store at once.",
+      "mitigation": "The durable Timeline Store in Cassandra is sized for this fallback path, and cache repopulation happens lazily on read rather than requiring a full timeline recomputation."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why does Twitter mint tweet IDs with a dedicated ID Generation Service instead of relying on each database shard's own auto-increment counter?",
+      "answer": "A Snowflake-style generator combines a timestamp, worker ID, and sequence number to produce IDs that are globally unique and roughly time-sortable across every shard, with no shared counter to contend on. Per-shard auto-increment would either collide across shards or require coordination that doesn't scale to thousands of writes per second."
+    },
+    {
+      "question": "An account has 50 million followers. What would go wrong if every tweet from that account triggered fan-out-on-write, and how does this design avoid it?",
+      "answer": "Fan-out-on-write would mean 50 million-plus timeline writes within seconds of a single tweet, overwhelming the Fan-out Worker and Timeline Store. The Fan-out Dispatcher instead routes high-follower accounts to a pull model: their tweets sit in a Celebrity Tweet Cache and are merged into each requester's timeline at read time, so the cost is paid once per reader, not once per follower per tweet."
+    },
+    {
+      "question": "Why does the Typeahead Service check Redis before ever touching a trie shard, when the trie lookup is already just an in-memory read?",
+      "answer": "Even an O(prefix length) trie lookup costs CPU at 500K requests/sec, and real query traffic is heavily skewed toward a small set of hot prefixes. Redis absorbs those repeat identical requests entirely, so the trie shards only ever see the long tail of genuinely distinct lookups."
+    },
+    {
+      "question": "The Trie Builder only rebuilds the whole suggestion trie every few minutes to hours. What's the risk, and what covers the gap?",
+      "answer": "A term that suddenly starts trending — breaking news, for example — would be invisible in suggestions until the next scheduled rebuild. This is covered by a lightweight real-time overlay blended into typeahead results at query time, and separately by the Trending Aggregator's own short sliding window that updates the Trending Cache far more frequently than the trie rebuild cycle."
+    },
+    {
+      "question": "Why does the Social Graph Store appear as a separate node in both the Tweet Ingestion diagram and the Home Timeline diagram, instead of one shared node with an edge drawn between the two diagrams?",
+      "answer": "Each diagram in this design is meant to be read independently, so edges never cross between frames. When two diagrams genuinely depend on the same underlying store — here, the follow graph is read by both the Fan-out Dispatcher and the Fan-out Worker — the node is duplicated in each diagram (noted as 'Shared with Write Path') rather than drawing a connection across an otherwise self-contained diagram."
+    },
+    {
+      "question": "Engagement events (likes, retweets, mentions) could have called the Notification Worker directly. Why route them through Kafka instead?",
+      "answer": "Kafka decouples the moment an engagement action happens from however many notifications and trend updates it eventually produces. It buffers bursts — like the millions of interactions a viral tweet generates in minutes — so the Notification Worker and Trending Aggregator can each drain the stream at their own sustainable pace instead of being hit synchronously and falling over."
+    }
+  ],
+  "references": [
+    { "title": "System Design Interview: Autocomplete/Type-ahead System for a Search Box", "url": "https://medium.com/double-pointer/system-design-interview-autocomplete-type-ahead-system-for-a-search-box-1ac968f9f121", "source": "medium.com/double-pointer" },
+    { "title": "SystemDesignSchool — Typeahead Suggestion System Solution", "url": "https://systemdesignschool.io/problems/typeahead/solution", "source": "systemdesignschool.io" },
+    { "title": "Twitter Snowflake — distributed unique ID generator", "url": "https://github.com/twitter/snowflake", "source": "github.com/twitter" },
+    { "title": "Apache Kafka Documentation", "url": "https://kafka.apache.org/", "source": "kafka.apache.org" },
+    { "title": "Apache Cassandra — wide-column store for high-throughput writes", "url": "https://cassandra.apache.org/_/index.html", "source": "cassandra.apache.org" }
+  ],
+  "relatedPatterns": ["design-instagram", "event-driven-architecture", "design-whatsapp-or-messenger"]
+}

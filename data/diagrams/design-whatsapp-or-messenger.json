@@ -1,0 +1,442 @@
+{
+  "version": "1.0",
+  "title": "Design WhatsApp / Facebook Messenger",
+  "description": "A real-time messaging platform supporting 1:1 and group chat, guaranteed delivery to offline recipients via push notifications, end-to-end encryption, and a separate media pipeline for photos, videos, and voice notes.",
+  "theme": "light",
+  "difficulty": "advanced",
+  "requirements": {
+    "functional": [
+      "Users can send and receive 1:1 and group text messages, with delivery to an online recipient typically completing in well under a second",
+      "Messages are never lost when the recipient is offline — they queue until reconnect and additionally trigger a push notification",
+      "Users can send photos, videos, and voice notes; media bytes are uploaded and downloaded independently of the messaging path",
+      "Users see accurate online/last-seen presence for their contacts, subject to privacy settings",
+      "All message content is end-to-end encrypted, so the service operator cannot read message bodies even if its databases are compromised"
+    ],
+    "nonFunctional": [
+      "High availability — sending a message should almost never fail outright, even if delivery to the recipient is momentarily delayed",
+      "At-least-once delivery — a message acknowledged to the sender must never silently disappear, even across server crashes",
+      "Massive scale — billions of daily active users and on the order of 100 billion messages sent per day, the overwhelming majority tiny text payloads",
+      "Low latency — sub-second delivery for the online-to-online path; presence updates should propagate within a few seconds"
+    ]
+  },
+  "estimates": [
+    { "label": "Daily active users", "value": "2B", "note": "collectively sending on the order of 100B messages per day" },
+    { "label": "Messages / second (avg)", "value": "~1.2M", "note": "spikes several times higher around regional evenings and holidays" },
+    { "label": "Read : write ratio", "value": "~1 : 1", "note": "unlike a social feed, every message sent is also received — no fan-out read multiplier" },
+    { "label": "Avg text message size", "value": "~100 B", "note": "tiny compared to media — this is what makes the WebSocket path so cheap at this volume" },
+    { "label": "Online delivery target", "value": "< 250 ms", "note": "end-to-end target for the WebSocket path when both users are connected" },
+    { "label": "Messages with media", "value": "~10%", "note": "small share, but large bytes — justifies keeping media off the messaging path entirely" }
+  ],
+  "nodes": [
+    {
+      "id": "client-sender",
+      "kind": "mobile-app",
+      "x": 80,
+      "y": 200,
+      "name": "Alice's Phone (Sender)",
+      "description": "Sender's mobile client",
+      "details": "### Responsibilities\n\n- Maintain a persistent WebSocket connection to a Chat Server for real-time send/receive\n- Encrypt every outgoing message client-side using the Signal Protocol (X3DH + Double Ratchet)\n- Queue outgoing messages locally when offline and flush on reconnect\n- Upload media (photos/videos/voice notes) directly to blob storage via presigned URLs",
+      "group": "client-devices"
+    },
+    {
+      "id": "client-recipient",
+      "kind": "mobile-app",
+      "x": 80,
+      "y": 560,
+      "name": "Bob's Phone (Recipient)",
+      "description": "Recipient's mobile client",
+      "details": "### Responsibilities\n\n- Receives pushed messages over its own persistent WebSocket connection while online\n- Wakes on an OS push notification and reconnects to pull queued messages when the app was closed or backgrounded\n- Decrypts incoming messages locally — the server never has access to plaintext",
+      "group": "client-devices"
+    },
+    {
+      "id": "dns",
+      "kind": "dns",
+      "x": 440,
+      "y": 380,
+      "name": "DNS",
+      "description": "Geo-routed resolution",
+      "details": "Resolves the client to the nearest regional Load Balancer or CDN edge based on geography, minimizing round-trip latency for both the WebSocket handshake and media downloads.",
+      "group": "edge-network"
+    },
+    {
+      "id": "cdn",
+      "kind": "cdn",
+      "x": 440,
+      "y": 140,
+      "name": "Media CDN",
+      "description": "Edge cache for shared media",
+      "details": "### Responsibilities\n\n- Cache frequently re-requested media (e.g. a photo forwarded across many chats) at edge locations\n- Serve cache hits directly to clients; forward misses to blob storage with request coalescing\n- Absorb load that would otherwise hit origin storage for popular shared media",
+      "group": "edge-network"
+    },
+    {
+      "id": "load-balancer",
+      "kind": "load-balancer",
+      "x": 720,
+      "y": 380,
+      "name": "Load Balancer",
+      "description": "TLS termination & connection routing",
+      "details": "### Responsibilities\n\n- Terminate TLS and distribute incoming WebSocket handshakes and REST calls across the Chat Server and API Gateway fleets\n- Keep a WebSocket connection pinned to a single backend instance for the life of the connection\n- Health-check backend instances and stop routing to unhealthy ones",
+      "group": "edge-network"
+    },
+    {
+      "id": "chat-gateway",
+      "kind": "generic-service",
+      "x": 1080,
+      "y": 140,
+      "name": "Chat Server Fleet",
+      "description": "Persistent WebSocket connections",
+      "details": "### Responsibilities\n\n- Hold one persistent WebSocket connection per online device\n- Register/deregister each connection's location in the Session Store on connect/disconnect\n- Persist every message to the Message Store before acknowledging the sender (at-least-once durability)\n- Forward messages directly over the recipient's socket when they're online, or hand off to the Message Queue when they're not\n- Delegate to the Group Service when the target is a group rather than a single user",
+      "group": "app-services"
+    },
+    {
+      "id": "api-gateway",
+      "kind": "api-gateway",
+      "x": 1080,
+      "y": 460,
+      "name": "API Gateway",
+      "description": "REST for auth, media, groups, keys",
+      "details": "### Responsibilities\n\n- Terminate REST calls for everything outside the real-time message path: auth, media URL issuance, group management, key exchange\n- Authenticate requests via short-lived access tokens issued by the Auth Service\n- Rate-limit per-user request volume",
+      "group": "app-services"
+    },
+    {
+      "id": "auth-service",
+      "kind": "auth-service",
+      "x": 1360,
+      "y": 60,
+      "name": "Auth Service",
+      "description": "Login, tokens, device registration",
+      "details": "### Responsibilities\n\n- Verify phone-number/OTP or credential-based login and issue access + refresh tokens\n- Validate tokens presented by the API Gateway on every REST call\n- Manage device registration, since a single account may have multiple linked devices",
+      "group": "app-services"
+    },
+    {
+      "id": "presence-service",
+      "kind": "generic-service",
+      "x": 1360,
+      "y": 220,
+      "name": "Presence Service",
+      "description": "Online / last-seen tracking",
+      "details": "### Responsibilities\n\n- Track each contact's online/offline/last-seen status using TTL'd keys in the Session Store\n- Notify a user's contacts when their presence changes, subject to privacy settings\n- Expire presence quickly (seconds) so 'online' status stays accurate",
+      "group": "app-services"
+    },
+    {
+      "id": "group-service",
+      "kind": "generic-service",
+      "x": 1360,
+      "y": 380,
+      "name": "Group Service",
+      "description": "Membership & fan-out",
+      "details": "### Responsibilities\n\n- Own group metadata: membership list, admins, group settings\n- Resolve a group ID to its full member list when the Chat Server needs to fan out a message\n- Publish one delivery event per member onto the Message Queue rather than the Chat Server iterating sockets directly",
+      "group": "app-services"
+    },
+    {
+      "id": "media-service",
+      "kind": "rest-api",
+      "x": 1360,
+      "y": 560,
+      "name": "Media Service",
+      "description": "Presigned upload/download URLs",
+      "details": "### Responsibilities\n\n- Issue short-lived presigned upload URLs so clients write media directly to blob storage\n- Issue presigned/CDN-signed download URLs scoped to the requesting user's conversations\n- Record media metadata (size, MIME type, storage key) so it can be referenced by a lightweight message payload",
+      "group": "app-services"
+    },
+    {
+      "id": "session-store",
+      "kind": "redis",
+      "x": 1720,
+      "y": 140,
+      "name": "Session / Routing Store",
+      "description": "userId -> chat server, presence",
+      "details": "### Schema\n\n- Key `userId:deviceId` → value `chatServerId`, TTL refreshed on every heartbeat\n- Key `userId:presence` → value `online` / `last_seen_ts`, short TTL\n\nA cache-tier store, not a system of record — losing an entry just costs one extra push-notification round trip until the client reconnects.",
+      "group": "coordination-tier"
+    },
+    {
+      "id": "message-queue",
+      "kind": "kafka",
+      "x": 1720,
+      "y": 320,
+      "name": "Message Queue",
+      "description": "Per-user durable delivery",
+      "details": "### Topics / Partitioning\n\n- Partitioned by recipient `userId` so a single consumer can own a user's full backlog in order\n- Retains messages long enough to bridge a normal offline period (hours to a few days) before requiring a full client resync\n- Also carries group fan-out events and delivery/read-receipt notifications",
+      "group": "coordination-tier"
+    },
+    {
+      "id": "push-worker",
+      "kind": "worker-service",
+      "x": 1720,
+      "y": 500,
+      "name": "Push Worker",
+      "description": "Drains offline queues",
+      "details": "### Responsibilities\n\n- Continuously consume per-user queue partitions\n- Check the Session Store first — if the user reconnected in the meantime, skip the push and let the normal WebSocket path deliver instead\n- Otherwise call the Push Gateway with a content-free wake-up payload, never the message body",
+      "group": "coordination-tier"
+    },
+    {
+      "id": "push-gateway",
+      "kind": "external-api",
+      "x": 1720,
+      "y": 680,
+      "name": "Push Notification Gateway",
+      "description": "APNs / FCM",
+      "details": "Apple's and Google's push infrastructure, external to this system. Delivers a wake-up notification over a channel that stays alive even after the OS has killed our own WebSocket connection to the device.",
+      "group": "coordination-tier"
+    },
+    {
+      "id": "message-store",
+      "kind": "cassandra",
+      "x": 2080,
+      "y": 140,
+      "name": "Message Store",
+      "description": "Durable message history",
+      "details": "### Schema\n\n- Partition key: `conversationId`\n- Clustering key: `messageTimestamp` (descending), for fast 'most recent N messages' reads\n\nAppend-only writes, no updates — this matches a wide-column store's strengths and avoids the hot-row contention a relational table would see under this write volume.",
+      "group": "data-tier"
+    },
+    {
+      "id": "key-store",
+      "kind": "dynamodb",
+      "x": 2080,
+      "y": 320,
+      "name": "Prekey Store",
+      "description": "Signal Protocol key bundles",
+      "details": "Stores each device's identity key and a batch of one-time prekeys used for Signal Protocol X3DH key agreement. A prekey is deleted the moment it's consumed by a new conversation's first message, so a captured bundle can't be replayed to compromise a future session.",
+      "group": "data-tier"
+    },
+    {
+      "id": "media-storage",
+      "kind": "blob-storage",
+      "x": 2080,
+      "y": 500,
+      "name": "Media Blob Storage",
+      "description": "Photos, videos, voice notes",
+      "details": "### Responsibilities\n\n- Store uploaded photos, videos, and voice notes as immutable blobs, replicated across zones\n- Serve as the CDN's origin on a cache miss\n- Lifecycle-expire very old, never-re-requested media to control storage cost",
+      "group": "data-tier"
+    }
+  ],
+  "edges": [
+    { "id": "e-sender-dns", "source": "client-sender", "target": "dns", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-recipient-dns", "source": "client-recipient", "target": "dns", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-dns-lb", "source": "dns", "target": "load-balancer", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-dns-cdn", "source": "dns", "target": "cdn", "sourceHandle": "top-source", "targetHandle": "bottom-target", "protocol": "https" },
+    { "id": "e-lb-gateway", "source": "load-balancer", "target": "api-gateway", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-lb-chat", "source": "load-balancer", "target": "chat-gateway", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "websocket", "label": "WebSocket", "animated": true },
+    { "id": "e-gateway-auth", "source": "api-gateway", "target": "auth-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-gateway-group", "source": "api-gateway", "target": "group-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-gateway-media", "source": "api-gateway", "target": "media-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-gateway-keystore", "source": "api-gateway", "target": "key-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https" },
+    { "id": "e-chat-presence", "source": "chat-gateway", "target": "presence-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal" },
+    { "id": "e-chat-session", "source": "chat-gateway", "target": "session-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "tcp" },
+    { "id": "e-chat-queue", "source": "chat-gateway", "target": "message-queue", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "event" },
+    { "id": "e-chat-store", "source": "chat-gateway", "target": "message-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database" },
+    { "id": "e-chat-group", "source": "chat-gateway", "target": "group-service", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "internal" },
+    { "id": "e-presence-session", "source": "presence-service", "target": "session-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "tcp" },
+    { "id": "e-group-queue", "source": "group-service", "target": "message-queue", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "event" },
+    { "id": "e-group-store", "source": "group-service", "target": "message-store", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "database", "style": "dashed" },
+    { "id": "e-media-storage", "source": "media-service", "target": "media-storage", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https", "style": "dashed" },
+    { "id": "e-media-queue", "source": "media-service", "target": "message-queue", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "event" },
+    { "id": "e-queue-push", "source": "message-queue", "target": "push-worker", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "message" },
+    { "id": "e-push-gateway", "source": "push-worker", "target": "push-gateway", "sourceHandle": "bottom-source", "targetHandle": "top-target", "protocol": "https" },
+    { "id": "e-pushgw-recipient", "source": "push-gateway", "target": "client-recipient", "sourceHandle": "left-source", "targetHandle": "right-target", "protocol": "https", "style": "dashed" },
+    { "id": "e-cdn-storage", "source": "cdn", "target": "media-storage", "sourceHandle": "right-source", "targetHandle": "left-target", "protocol": "https", "style": "dashed", "animated": true }
+  ],
+  "groups": [
+    { "id": "client-devices", "label": "Client Devices", "color": "#64748b", "style": "dashed" },
+    { "id": "edge-network", "label": "Edge & Network", "color": "#f59e0b", "style": "dashed" },
+    { "id": "app-services", "label": "Real-Time & Application Services", "color": "#6366f1", "style": "dashed" },
+    { "id": "coordination-tier", "label": "Coordination, Queueing & Push", "color": "#ec4899", "style": "dashed" },
+    { "id": "data-tier", "label": "Data & Storage Tier", "color": "#10b981", "style": "dashed" }
+  ],
+  "flows": [
+    {
+      "id": "send-1to1-online",
+      "title": "Send a 1:1 message (recipient online)",
+      "description": "The core real-time path: encrypt, send over a persistent socket, persist, forward.",
+      "steps": [
+        {
+          "text": "Before the very first message to a new contact, Alice's client fetches Bob's public prekey bundle from the Prekey Store via the API Gateway and performs an X3DH key exchange, deriving a Signal Protocol session used to encrypt every future message end-to-end.",
+          "nodeIds": ["client-sender", "api-gateway", "key-store"],
+          "edgeIds": ["e-gateway-keystore"]
+        },
+        {
+          "text": "Alice's client, already holding a persistent WebSocket connection established via DNS and the Load Balancer, sends the encrypted message over that socket to a Chat Server.",
+          "nodeIds": ["client-sender", "load-balancer", "chat-gateway"],
+          "edgeIds": ["e-sender-dns", "e-dns-lb", "e-lb-chat"]
+        },
+        {
+          "text": "The Chat Server checks the Session Store to confirm Bob is online and identify which Chat Server instance holds his socket.",
+          "nodeIds": ["chat-gateway", "session-store"],
+          "edgeIds": ["e-chat-session"]
+        },
+        {
+          "text": "Before acknowledging the sender, the Chat Server persists the still-encrypted message to the Message Store, keyed by conversation and ordered by timestamp — this write is what makes at-least-once delivery a guarantee rather than a best effort.",
+          "nodeIds": ["chat-gateway", "message-store"],
+          "edgeIds": ["e-chat-store"]
+        },
+        {
+          "text": "Since Bob is online, the Chat Server forwards the message directly over his existing WebSocket connection — the same connection used to establish his session, now reused in the opposite direction.",
+          "nodeIds": ["chat-gateway", "load-balancer", "dns", "client-recipient"],
+          "edgeIds": ["e-lb-chat", "e-dns-lb", "e-recipient-dns"]
+        },
+        {
+          "text": "The Chat Server also publishes a lightweight delivery event onto the Message Queue, so Bob's other linked devices and read-receipt tracking stay in sync.",
+          "nodeIds": ["chat-gateway", "message-queue"],
+          "edgeIds": ["e-chat-queue"]
+        }
+      ]
+    },
+    {
+      "id": "deliver-offline-push",
+      "title": "Deliver to an offline recipient",
+      "description": "How the same send path degrades gracefully when the recipient's app isn't running.",
+      "steps": [
+        {
+          "text": "Alice sends her message exactly as before; the Chat Server checks the Session Store but finds no active socket registered for Bob — his entry has expired, meaning his app is closed or backgrounded.",
+          "nodeIds": ["chat-gateway", "session-store"],
+          "edgeIds": ["e-chat-session"]
+        },
+        {
+          "text": "The Chat Server still persists the message durably to the Message Store first — an offline recipient must never mean a lost message.",
+          "nodeIds": ["chat-gateway", "message-store"],
+          "edgeIds": ["e-chat-store"]
+        },
+        {
+          "text": "Instead of a WebSocket push, the Chat Server publishes the message onto Bob's per-user partition in the Message Queue, where it waits safely until he reconnects.",
+          "nodeIds": ["chat-gateway", "message-queue"],
+          "edgeIds": ["e-chat-queue"]
+        },
+        {
+          "text": "A Push Worker continuously drains per-user queue partitions. Seeing Bob has no active session, it doesn't retry the WebSocket — it hands off to the Push Gateway instead, sending only a wake-up payload, never the message content.",
+          "nodeIds": ["message-queue", "push-worker", "push-gateway"],
+          "edgeIds": ["e-queue-push", "e-push-gateway"]
+        },
+        {
+          "text": "Apple's or Google's push infrastructure delivers the notification straight to Bob's device over a channel our servers don't operate. Tapping it wakes the app, which reconnects and pulls the queued message.",
+          "nodeIds": ["push-gateway", "client-recipient"],
+          "edgeIds": ["e-pushgw-recipient"]
+        }
+      ]
+    },
+    {
+      "id": "send-group-photo",
+      "title": "Send a photo to a group",
+      "description": "Combines the media pipeline with group fan-out, then rejoins the ordinary delivery path.",
+      "steps": [
+        {
+          "text": "Alice's client requests a pre-signed upload URL for the photo from the Media Service via the API Gateway.",
+          "nodeIds": ["client-sender", "api-gateway", "media-service"],
+          "edgeIds": ["e-gateway-media"]
+        },
+        {
+          "text": "The client uploads the photo bytes directly to blob storage using that URL — multi-megabyte media never transits the Chat Servers or API Gateway.",
+          "nodeIds": ["client-sender", "media-storage"]
+        },
+        {
+          "text": "The client then sends a normal encrypted message frame over its existing WebSocket connection, containing only the photo's storage key — not the bytes — tagged with the target group's ID.",
+          "nodeIds": ["client-sender", "chat-gateway"],
+          "edgeIds": ["e-lb-chat"]
+        },
+        {
+          "text": "Because the target is a group rather than a single user, the Chat Server delegates to the Group Service, which resolves the full member list and fans the message out as one event per member onto the Message Queue — a single send becomes N queued deliveries.",
+          "nodeIds": ["chat-gateway", "group-service", "message-queue"],
+          "edgeIds": ["e-chat-group", "e-group-queue"]
+        },
+        {
+          "text": "From here, each member's copy is delivered exactly like a 1:1 message: an online member's Chat Server pushes it over their socket, while an offline member's copy waits in the queue for a Push Worker to trigger a notification.",
+          "nodeIds": ["message-queue", "push-worker", "push-gateway"],
+          "edgeIds": ["e-queue-push", "e-push-gateway"]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Real-time transport for message delivery",
+      "choice": "Persistent WebSocket connection per device",
+      "alternatives": ["Client polling every few seconds", "Long-polling / Comet"],
+      "rationale": "At ~1.2M messages/second with a sub-250ms delivery target, polling would multiply request volume by orders of magnitude for mostly-empty responses. A persistent WebSocket lets the Chat Server *push* the moment a message arrives, and lets the connection double as the presence heartbeat — one mechanism serves both needs."
+    },
+    {
+      "title": "Tracking which server holds a user's connection",
+      "choice": "Redis-backed session/routing table (userId → chat server ID)",
+      "alternatives": ["Consistent-hash routing with no lookup table", "Sticky sessions enforced only at the load balancer"],
+      "rationale": "With billions of devices spread across a large Chat Server fleet, some component must know *which* instance holds a given socket before a message can be forwarded. A TTL'd Redis lookup is cheap at this read volume and self-heals: if an entry expires because a server died without deregistering, the user is simply — and safely — treated as offline until they reconnect."
+    },
+    {
+      "title": "Guaranteeing delivery to offline recipients",
+      "choice": "Durable per-user queue plus a separate push-notification hop",
+      "alternatives": ["Drop the message and rely on the sender retrying", "Keep retrying the dead WebSocket server-side"],
+      "rationale": "Mobile OSes kill background network sockets to save battery, so retrying a WebSocket is pointless once the app is backgrounded. Queueing the message durably (already persisted in the Message Store) and using the platform's own push channel (APNs/FCM) is the only path that reliably wakes the device — and it degrades gracefully since the queue, not the push, is what actually guarantees no message is lost."
+    },
+    {
+      "title": "Message storage engine",
+      "choice": "Wide-column store partitioned by conversation, clustered by timestamp",
+      "alternatives": ["Relational database (e.g. Postgres) with a single messages table", "No long-term store — keep messages only in the queue"],
+      "rationale": "Message history is an append-only, write-heavy, time-ordered workload at a scale (100B+ messages/day) where a single relational table's indexes and row-locking become the bottleneck. Partitioning by conversation and clustering by time gives O(1) access to 'most recent N messages' — exactly the read pattern chat history needs — without cross-partition coordination on writes."
+    },
+    {
+      "title": "End-to-end encryption key exchange",
+      "choice": "Server-hosted one-time prekey bundles (Signal Protocol X3DH); server only ever sees ciphertext",
+      "alternatives": ["Server-side encryption at rest only (server can decrypt)", "Pre-shared keys exchanged out of band"],
+      "rationale": "Storing message content unencrypted anywhere in the pipeline means a single database compromise exposes every conversation. Hosting only prekey *bundles* (public, one-time-use) lets clients bootstrap encrypted sessions without the server ever participating in the actual key material exchange — the Message Store and Message Queue only ever carry bytes the server itself cannot read."
+    },
+    {
+      "title": "Media delivery path",
+      "choice": "Presigned direct-to-blob-storage upload and CDN-backed download",
+      "alternatives": ["Proxy media bytes through the Chat Server", "Embed small media as base64 inside the message payload"],
+      "rationale": "Only ~10% of messages carry media, but those bytes are thousands of times larger than a text message. Routing them through the Chat Server would force that tier to scale with media *volume* instead of message *count* — the wrong axis given the 1.2M msgs/sec target. Presigned URLs keep the messaging path's payloads at ~100 bytes regardless of how much media the platform moves."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Reconnect storm after an outage",
+      "problem": "When a Chat Server fleet redeploys or a regional network blip drops connections, millions of devices attempt to reconnect within the same few seconds, hammering the Load Balancer and re-registering in the Session Store all at once.",
+      "mitigation": "Clients reconnect with exponential backoff and jitter rather than immediately. The Session Store is sharded and scaled independently of the Chat Server fleet, and the Load Balancer sheds or queues connection bursts rather than passing them straight through."
+    },
+    {
+      "title": "Hot conversation partitions",
+      "problem": "A very large group (hundreds of members) or an unusually chatty 1:1 conversation concentrates writes onto a single Message Store partition and creates a fan-out burst in the Message Queue when the Group Service resolves that group's membership.",
+      "mitigation": "Message Store partitions are time-bucketed within a conversation so no single partition grows unbounded. The Group Service caps fan-out concurrency and batches per-member queue writes instead of publishing all N events synchronously."
+    },
+    {
+      "title": "Push gateway rate limiting",
+      "problem": "APNs and FCM enforce per-sender rate limits. A burst of offline deliveries — for example right after a regional outage resolves — can get individual push notifications throttled or dropped by the external gateway.",
+      "mitigation": "The Push Worker backs off and retries on throttling, and coalesces multiple pending messages for the same user into a single 'you have new messages' notification instead of one push per message."
+    },
+    {
+      "title": "Message queue backlog growth",
+      "problem": "If Push Workers or Chat Servers fall behind during a deploy, GC pause, or traffic spike, per-user queue backlogs grow unbounded, delaying delivery for every offline user behind the lag.",
+      "mitigation": "Queue consumers autoscale on measured lag. Per-user retention is capped, and a client that reconnects after exceeding it falls back to a full conversation resync from the Message Store instead of replaying an enormous backlog."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why does the Chat Server persist a message to the Message Store *before* forwarding it to the recipient, rather than after?",
+      "answer": "Persisting first is what turns 'at-least-once delivery' into an actual guarantee. If the Chat Server forwarded the message and only then tried to persist it, a crash in between would leave a message the sender believes was sent with no durable record anywhere. Writing to the Message Store first means the message survives even if the very next step — the WebSocket forward or the queue publish — never completes."
+    },
+    {
+      "question": "Why do we need a separate push-notification path instead of just retrying the WebSocket connection until the recipient reconnects?",
+      "answer": "Mobile operating systems aggressively kill background network sockets to save battery, so a backgrounded or closed app simply has no live connection to retry against — no amount of server-side retrying reopens a socket the OS has torn down. APNs/FCM maintain their own always-on, OS-level channel to the device specifically for this purpose, which is why waking the app requires handing off to them instead."
+    },
+    {
+      "question": "Why is the Session Store a fast key-value cache (Redis) rather than the same store used for message history?",
+      "answer": "Session/routing lookups (`userId → chatServerId`) are extremely hot — read on every message send — but small and disposable: losing an entry just costs one extra push-notification round trip. Message history needs the opposite properties: durable, large-scale, append-only storage that's read far less often per byte stored. Using one store for both would force a durability-optimized system to also serve the hottest, most latency-sensitive read path in the design."
+    },
+    {
+      "question": "Why does the client upload photos directly to blob storage instead of routing them through the Chat Server or API Gateway?",
+      "answer": "Media bytes are thousands of times larger than a text message, and only ~10% of messages carry any. Routing that volume through the same tier that handles 1.2M messages/second would force the messaging path to scale with media traffic instead of message count. A presigned URL lets the client write straight to storage, keeping every message the Chat Server touches at roughly the same tiny size."
+    },
+    {
+      "question": "What actually gets encrypted end-to-end, and what does the server still need to see in plaintext to do its job?",
+      "answer": "The message body is encrypted client-side and stays ciphertext through the Message Queue and Message Store — the server can route and store it without ever reading it. Routing metadata (sender, recipient/group ID, and timestamp) has to stay visible to the server, since the Chat Server and Group Service need it to know *where* to deliver a message they can't read."
+    },
+    {
+      "question": "Why does a group message go through the Group Service instead of the Chat Server just broadcasting to a list of sockets directly?",
+      "answer": "Not every group member is online, and the Chat Server holding the sender's socket usually isn't the same instance holding every member's socket. The Group Service resolves membership and publishes one event per member onto the Message Queue — the same durable mechanism used for 1:1 offline delivery — so a group send doesn't need any new delivery machinery, just a fan-out step in front of the existing queue."
+    }
+  ],
+  "references": [
+    { "title": "The X3DH Key Agreement Protocol", "url": "https://signal.org/docs/specifications/x3dh/", "source": "signal.org" },
+    { "title": "The Double Ratchet Algorithm", "url": "https://signal.org/docs/specifications/doubleratchet/", "source": "signal.org" },
+    { "title": "Apache Cassandra Documentation", "url": "https://cassandra.apache.org/_/index.html", "source": "cassandra.apache.org" },
+    { "title": "Apache Kafka Documentation", "url": "https://kafka.apache.org/documentation/", "source": "kafka.apache.org" },
+    { "title": "Firebase Cloud Messaging Documentation", "url": "https://firebase.google.com/docs/cloud-messaging", "source": "Firebase Docs" }
+  ],
+  "relatedPatterns": ["event-driven-architecture", "design-instagram"],
+  "summary": "### Architecture Overview\n\nThis design models a real-time messaging platform (WhatsApp / Facebook Messenger) built around a persistent-connection core, a durable delivery guarantee, and end-to-end encryption — with media handled as a separate, storage-heavy side path rather than flowing through the messaging tier.\n\n### Key Design Principles\n\n**Persistent connections, not polling.** Every online device holds a long-lived WebSocket to a Chat Server. This is what makes sub-second delivery possible at 1.2M+ messages/second — polling at that scale would multiply request volume by orders of magnitude for mostly-empty responses.\n\n**Persist before you forward.** A message is written to the Message Store *before* the Chat Server attempts delivery. This ordering is what turns 'at-least-once' from a slogan into a guarantee: even if the recipient's push fails or the Chat Server crashes mid-delivery, the message already exists durably and can still reach them.\n\n**Two delivery paths, one durability mechanism.** An online recipient gets the message pushed directly over their existing socket. An offline recipient's copy waits in a per-user partition of the Message Queue until they either reconnect or a Push Worker wakes their device via APNs/FCM — the two paths differ only in the last hop, not in whether the message is safe.\n\n**Groups fan out through a service, not a socket loop.** The Chat Server never iterates a group's member list itself. It delegates to the Group Service, which resolves membership and publishes one event per member onto the queue — keeping the group send path identical to the 1:1 path from the queue onward, online or offline.\n\n**Media never touches the messaging tier.** Photos, videos, and voice notes are uploaded and downloaded directly against blob storage via presigned URLs. The message itself only ever carries a storage key — a few bytes — keeping the high-volume messaging path free of multi-megabyte payloads.\n\n**End-to-end encryption is a client-side property.** The server hosts prekey bundles so clients can perform X3DH key agreement, but it only ever stores and routes ciphertext. Compromising the Message Store does not expose message content.\n\n### Fault Tolerance\n\n- **Chat Server crash:** the client's WebSocket drops, it reconnects with backoff through the Load Balancer to a healthy instance and re-registers in the Session Store; any message already persisted before the crash is not lost.\n- **Session Store entry expiry:** treated as 'offline' by default — worst case is one extra push-notification round trip, not a lost message.\n- **Push Gateway throttling:** the Push Worker retries with backoff and coalesces multiple pending messages into a single notification rather than one push per message.\n- **Message queue backlog growth:** consumers autoscale on lag; a client that falls far enough behind falls back to a full conversation resync instead of replaying an enormous backlog."
+}
