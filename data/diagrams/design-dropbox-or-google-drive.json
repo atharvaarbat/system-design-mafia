@@ -1,0 +1,667 @@
+{
+  "version": "1.0",
+  "title": "Design Google Drive / Dropbox",
+  "description": "A cloud-based file storage and sync service supporting multi-device uploads, downloads, sharing, and real-time sync with chunked uploads, CDN delivery, and delta sync.",
+  "theme": "light",
+  "difficulty": "advanced",
+  "requirements": {
+    "functional": [
+      "Users can upload files up to 50GB from any device with resumable chunked uploads and progress tracking",
+      "Users can download files from any device via CDN-signed URLs for low-latency delivery",
+      "Users can share files with other users and view files shared with them via ACL-based permissions",
+      "Clients automatically sync file changes across devices using WebSocket push plus polling fallback"
+    ],
+    "nonFunctional": [
+      "High availability \u2014 prioritize availability over strict consistency; brief staleness is acceptable for file listings",
+      "Low latency \u2014 CDN edge caching for downloads, chunked parallel uploads, and delta sync for file changes",
+      "Reliability \u2014 files replicated across multiple zones; metadata backed up with operation logs",
+      "Scalability \u2014 support millions of users, petabytes of storage, and thousands of concurrent uploads/downloads"
+    ]
+  },
+  "estimates": [
+    {
+      "label": "Daily active users",
+      "value": "100M",
+      "note": "each syncing ~50 files per day across multiple devices"
+    },
+    {
+      "label": "Storage volume",
+      "value": "~10 PB",
+      "note": "average 100GB per active user with deduplication reducing raw storage"
+    },
+    {
+      "label": "Peak upload rate",
+      "value": "50 GB/file",
+      "note": "chunked into 5-10MB parts with multipart upload to object storage"
+    },
+    {
+      "label": "Read : write ratio",
+      "value": "10 : 1",
+      "note": "downloads and sync checks dwarf uploads \u2014 CDN absorbs most read traffic"
+    },
+    {
+      "label": "Sync latency target",
+      "value": "< 5s",
+      "note": "WebSocket push for active clients, polling fallback every few minutes"
+    }
+  ],
+ "nodes": [
+    {
+      "id": "client-web",
+      "kind": "browser",
+      "x": 120,
+      "y": 200,
+      "name": "Web Client",
+      "description": "Browser-based file manager",
+      "details": "### Responsibilities\n\n- Chunk files into 5-10MB parts using Content-Defined Chunking (CDC) for delta sync\n- Compress files client-side before upload (zstd for text, skip for media)\n- Upload chunks directly to object storage via presigned URLs\n- Download files via CDN-signed URLs with Range request support for resumable downloads\n- Monitor local filesystem for changes and sync via WebSocket + polling fallback"
+    },
+    {
+      "id": "client-mobile",
+      "kind": "mobile-app",
+      "x": 120,
+      "y": 360,
+      "name": "Mobile App",
+      "description": "iOS/Android file client",
+      "details": "### Responsibilities\n\n- Same chunking and compression logic as desktop\n- Background sync with OS-constrained network usage\n- Offline mode with local cache and conflict resolution on reconnect"
+    },
+    {
+      "id": "client-desktop",
+      "kind": "desktop-app",
+      "x": 120,
+      "y": 520,
+      "name": "Desktop Client",
+      "description": "Windows/macOS/Linux sync agent",
+      "details": "### Responsibilities\n\n- FileSystemWatcher / FSEvents / inotify for real-time local change detection\n- Delta sync using CDC — only re-upload chunks that changed\n- Conflict resolution with last-write-wins and optional versioning hooks"
+    },
+    {
+      "id": "dns",
+      "kind": "dns",
+      "x": 384,
+      "y": 344,
+      "name": "DNS",
+      "description": "Geo-routed domain resolution",
+      "details": "Routes users to the nearest CDN edge or API gateway based on geographic location."
+    },
+    {
+      "id": "cdn",
+      "kind": "cdn",
+      "x": 624,
+      "y": 120,
+      "name": "CDN (CloudFront)",
+      "description": "Global edge cache for downloads",
+      "details": "### Responsibilities\n\n- Cache frequently accessed files at 400+ edge locations worldwide\n- Validate CDN-signed URLs (signature + expiration + optional IP binding)\n- Serve cache hits directly; forward misses to object storage with request coalescing\n- Support Range requests for partial/resumable downloads"
+    },
+    {
+      "id": "api-gateway",
+      "kind": "api-gateway",
+      "x": 616,
+      "y": 400,
+      "name": "API Gateway",
+      "description": "SSL termination, rate limiting, routing",
+      "details": "### Responsibilities\n\n- Authenticate requests via JWT/session tokens\n- Rate limit uploads/downloads per user\n- Route to File Service, Sync Service, or Auth Service\n- Enforce request size limits (API Gateway max ~10MB; large files bypass via presigned URLs)"
+    },
+    {
+      "id": "auth-service",
+      "kind": "auth-service",
+      "x": 888,
+      "y": 200,
+      "name": "Auth Service",
+      "description": "User authentication & OAuth",
+      "details": "### Responsibilities\n\n- Issue and validate JWT access tokens\n- Handle OAuth 2.0 / SSO login flows\n- Manage refresh token rotation and revocation"
+    },
+    {
+      "id": "file-service",
+      "kind": "rest-api",
+      "x": 880,
+      "y": 360,
+      "name": "File Service",
+      "description": "Metadata & presigned URL generation",
+      "details": "### Responsibilities\n\n- CRUD operations on file metadata (name, size, MIME type, fingerprint, chunk status)\n- Generate S3 presigned URLs for multipart upload parts (purely local crypto operation)\n- Generate CDN-signed URLs for downloads with short expiration (e.g., 5 min)\n- Verify chunk uploads via S3 ListParts API before marking chunks as uploaded\n- Call S3 CompleteMultipartUpload once all chunks are verified\n- Enforce ACLs via SharedFiles table lookups"
+    },
+    {
+      "id": "sync-service",
+      "kind": "rest-api",
+      "x": 816,
+      "y": 568,
+      "name": "Sync Service",
+      "description": "Change notifications & sync state",
+      "details": "### Responsibilities\n\n- Maintain WebSocket connections per device for real-time push\n- Publish change events (create/update/delete) to connected clients\n- Handle GET /files/changes?since={timestamp} for polling fallback\n- Coordinate delta sync by comparing client and server chunk fingerprints"
+    },
+    {
+      "id": "notification-worker",
+      "kind": "worker-service",
+      "x": 1304,
+      "y": 736,
+      "name": "Notification Worker",
+      "description": "Async event processor",
+      "details": "### Responsibilities\n\n- Consume file change events from Kafka\n- Push WebSocket notifications to relevant user devices\n- Update search index and shared file caches asynchronously"
+    },
+    {
+      "id": "metadata-db",
+      "kind": "dynamodb",
+      "x": 1288,
+      "y": 272,
+      "name": "File Metadata DB",
+      "description": "DynamoDB / Cassandra for file records",
+      "details": "### Schema\n\n**FileMetadata table:**\n- Partition Key: `userId`\n- Sort Key: `fileId`\n- Attributes: name, size, mimeType, fingerprint, status (uploading/uploaded), chunks[], createdAt, updatedAt\n\n**SharedFiles table:**\n- Partition Key: `userId` (who the file is shared with)\n- Sort Key: `fileId`\n- Enables fast lookup of all files shared with a given user without full table scans",
+      "group": "data-tier"
+    },
+    {
+      "id": "shared-cache",
+      "kind": "redis",
+      "x": 1280,
+      "y": 424,
+      "name": "Shared Files Cache",
+      "description": "Redis cache for ACL lookups",
+      "details": "### Responsibilities\n\n- Cache userId -> fileId[] mappings for shared files\n- TTL of 5 minutes with cache-aside pattern\n- Reduces DynamoDB read load for frequent share list queries"
+    },
+    {
+      "id": "sync-websocket",
+      "kind": "generic-network",
+      "x": 1336,
+      "y": 552,
+      "name": "WebSocket Manager",
+      "description": "Connection state & pub/sub",
+      "details": "### Responsibilities\n\n- Maintain persistent WebSocket connections per active device\n- Subscribe to per-user Kafka topics for real-time change push\n- Handle connection drops with exponential backoff reconnection"
+    },
+    {
+      "id": "object-storage",
+      "kind": "s3",
+      "x": 1200,
+      "y": 64,
+      "name": "Object Storage (S3)",
+      "description": "Blob storage for file chunks & objects",
+      "details": "### Responsibilities\n\n- Store file chunks and assembled objects with 3x cross-zone replication\n- Support multipart upload API (CreateMultipartUpload, UploadPart, CompleteMultipartUpload, ListParts, AbortMultipartUpload)\n- Server-side encryption (SSE-S3 or SSE-KMS) for data at rest\n- Lifecycle policies to transition old versions to cheaper storage classes\n- Event notifications on CompleteMultipartUpload to trigger metadata updates"
+    },
+    {
+      "id": "message-queue",
+      "kind": "kafka",
+      "x": 1080,
+      "y": 736,
+      "name": "Event Bus (Kafka)",
+      "description": "Async events for sync & indexing",
+      "details": "### Topics\n\n- `file.changes` — file create/update/delete events\n- `sync.notifications` — per-user device notification events\n- `search.index` — search index update events\n- `analytics.events` — usage metrics and billing events"
+    },
+    {
+      "id": "email-provider",
+      "kind": "email-provider",
+      "x": 1496,
+      "y": 736,
+      "name": "Email Provider",
+      "description": "Share invite notifications",
+      "details": "Sends email invitations when users share files with others who don't yet have accounts."
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-client-dns",
+      "source": "client-web",
+      "target": "dns",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-client2-dns",
+      "source": "client-mobile",
+      "target": "dns",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-client3-dns",
+      "source": "client-desktop",
+      "target": "dns",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-dns-cdn",
+      "source": "dns",
+      "target": "cdn",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-dns-gw",
+      "source": "dns",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-cdn-storage",
+      "source": "cdn",
+      "target": "object-storage",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "style": "dashed",
+      "animated": true
+    },
+    {
+      "id": "e-gw-auth",
+      "source": "api-gateway",
+      "target": "auth-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-gw-file",
+      "source": "api-gateway",
+      "target": "file-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-gw-sync",
+      "source": "api-gateway",
+      "target": "sync-service",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "e-file-db",
+      "source": "file-service",
+      "target": "metadata-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "database"
+    },
+    {
+      "id": "e-file-cache",
+      "source": "file-service",
+      "target": "shared-cache",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "tcp"
+    },
+    {
+      "id": "e-file-storage",
+      "source": "file-service",
+      "target": "object-storage",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https",
+      "style": "dashed"
+    },
+    {
+      "id": "e-sync-ws",
+      "source": "sync-service",
+      "target": "sync-websocket",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "tcp"
+    },
+    {
+      "id": "e-file-kafka",
+      "source": "file-service",
+      "target": "message-queue",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "protocol": "event"
+    },
+    {
+      "id": "e-worker-ws",
+      "source": "notification-worker",
+      "target": "sync-websocket",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "protocol": "tcp"
+    },
+    {
+      "id": "xy-edge__auth-serviceright-source-metadata-dbleft-target",
+      "source": "auth-service",
+      "target": "metadata-db",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "database",
+      "style": "dashed"
+    },
+    {
+      "id": "xy-edge__message-queueright-source-notification-workerleft-target",
+      "source": "message-queue",
+      "target": "notification-worker",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "message"
+    },
+    {
+      "id": "xy-edge__notification-workerright-source-email-providerleft-target",
+      "source": "notification-worker",
+      "target": "email-provider",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "protocol": "https"
+    },
+    {
+      "id": "xy-edge__sync-servicebottom-source-message-queueleft-target",
+      "source": "sync-service",
+      "target": "message-queue",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "left-target",
+      "protocol": "event"
+    }
+  ],
+  "groups": [
+    {
+      "id": "data-tier",
+      "label": "Data Tier",
+      "color": "#10b981",
+      "style": "dashed",
+      "width": 280,
+      "height": 164,
+      "x": 1160,
+      "y": 240
+    }
+  ],
+  "flows": [
+    {
+      "id": "upload-file",
+      "title": "Upload a Large File",
+      "description": "From selecting a file to it being available for download, with chunked resumable upload.",
+      "steps": [
+        {
+          "text": "The desktop client detects a new file via FileSystemWatcher, chunks it using Content-Defined Chunking (CDC), and computes SHA-256 fingerprints for deduplication.",
+          "nodeIds": [
+            "client-desktop"
+          ]
+        },
+        {
+          "text": "The client requests a presigned multipart upload URL from the File Service via the API Gateway. The File Service creates a multipart upload in S3 and returns presigned URLs for each chunk.",
+          "nodeIds": [
+            "client-desktop",
+            "api-gateway",
+            "file-service"
+          ],
+          "edgeIds": [
+            "e-client3-dns",
+            "e-dns-gw",
+            "e-gw-file"
+          ]
+        },
+        {
+          "text": "The client uploads chunks directly to S3 using the presigned URLs, bypassing our backend entirely. Multiple chunks are uploaded in parallel to maximize bandwidth.",
+          "nodeIds": [
+            "client-desktop",
+            "object-storage"
+          ]
+        },
+        {
+          "text": "After each chunk upload, the client sends chunk status + ETag to the File Service. The service verifies via S3 ListParts API before updating the metadata DB.",
+          "nodeIds": [
+            "client-desktop",
+            "api-gateway",
+            "file-service",
+            "metadata-db"
+          ],
+          "edgeIds": [
+            "e-client3-dns",
+            "e-dns-gw",
+            "e-gw-file",
+            "e-file-db"
+          ]
+        },
+        {
+          "text": "Once all chunks are verified, the File Service calls S3 CompleteMultipartUpload to assemble the object, then marks the file as 'uploaded' in the metadata DB.",
+          "nodeIds": [
+            "file-service",
+            "object-storage",
+            "metadata-db"
+          ],
+          "edgeIds": [
+            "e-file-storage",
+            "e-file-db"
+          ]
+        },
+        {
+          "text": "The File Service publishes a 'file.changes' event to Kafka. The Notification Worker consumes it and pushes a sync notification via WebSocket to all of the user's other devices.",
+          "nodeIds": [
+            "file-service",
+            "message-queue",
+            "notification-worker",
+            "sync-websocket"
+          ],
+          "edgeIds": [
+            "e-file-kafka",
+            "e-kafka-worker",
+            "e-worker-ws"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "download-file",
+      "title": "Download a Shared File",
+      "description": "From requesting a file to receiving it via the nearest CDN edge.",
+      "steps": [
+        {
+          "text": "The mobile app requests to download a file. The request goes through DNS geo-routing to the API Gateway, which authenticates the user.",
+          "nodeIds": [
+            "client-mobile",
+            "dns",
+            "api-gateway"
+          ],
+          "edgeIds": [
+            "e-client2-dns",
+            "e-dns-gw"
+          ]
+        },
+        {
+          "text": "The File Service checks the SharedFiles table and cache to verify the user has access, then generates a CDN-signed URL with a 5-minute expiration.",
+          "nodeIds": [
+            "api-gateway",
+            "file-service",
+            "metadata-db",
+            "shared-cache"
+          ],
+          "edgeIds": [
+            "e-gw-file",
+            "e-file-db",
+            "e-file-cache"
+          ]
+        },
+        {
+          "text": "The client downloads the file directly from the nearest CDN edge. On a cache hit, the CDN serves immediately. On a miss, it fetches from S3 with request coalescing.",
+          "nodeIds": [
+            "client-mobile",
+            "cdn",
+            "object-storage"
+          ],
+          "edgeIds": [
+            "e-dns-cdn",
+            "e-cdn-storage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sync-across-devices",
+      "title": "Sync File Changes Across Devices",
+      "description": "How a file edit on desktop propagates to mobile in near real-time.",
+      "steps": [
+        {
+          "text": "The desktop client detects a local file change via FSEvents. It re-chunks using CDC, identifies only the changed chunks, and uploads those delta chunks to S3.",
+          "nodeIds": [
+            "client-desktop"
+          ]
+        },
+        {
+          "text": "The File Service updates the metadata DB with new chunk fingerprints and publishes a change event to Kafka.",
+          "nodeIds": [
+            "file-service",
+            "metadata-db",
+            "message-queue"
+          ],
+          "edgeIds": [
+            "e-file-db",
+            "e-file-kafka"
+          ]
+        },
+        {
+          "text": "The Sync Service consumes the event and pushes a real-time notification through the WebSocket Manager to the user's mobile app.",
+          "nodeIds": [
+            "message-queue",
+            "sync-service",
+            "sync-websocket",
+            "client-mobile"
+          ],
+          "edgeIds": [
+            "e-sync-kafka",
+            "e-sync-ws"
+          ]
+        },
+        {
+          "text": "The mobile app receives the push, queries GET /files/changes?since={lastSync}, and downloads only the changed chunks via CDN-signed URLs.",
+          "nodeIds": [
+            "client-mobile",
+            "api-gateway",
+            "file-service",
+            "cdn"
+          ],
+          "edgeIds": [
+            "e-client2-dns",
+            "e-dns-gw",
+            "e-gw-file",
+            "e-dns-cdn"
+          ]
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "title": "Direct client-to-storage upload vs proxy through backend",
+      "choice": "Presigned URLs + multipart upload directly to S3",
+      "alternatives": [
+        "Proxy uploads through File Service servers",
+        "Peer-to-peer sync between clients"
+      ],
+      "rationale": "Video and document ingress is measured in petabytes. If file bytes flowed through our API servers, the compute tier would have to scale with *storage traffic* instead of *request traffic* \u2014 a 1000x difference. Presigned URLs let clients upload directly to S3 while our backend only handles lightweight metadata and URL generation. This pattern also enables resumable chunked uploads: if a 50GB upload fails at 49GB, only the remaining chunks need retrying."
+    },
+    {
+      "title": "Chunk boundary strategy for delta sync",
+      "choice": "Content-Defined Chunking (CDC) with Rabin fingerprinting",
+      "alternatives": [
+        "Fixed-size chunks (e.g., 5MB blocks)",
+        "Whole-file re-upload on any change"
+      ],
+      "rationale": "Fixed-size chunks shift all boundaries when a byte is inserted at the start, causing every subsequent chunk to get a new fingerprint and forcing a full re-upload. CDC uses a rolling hash to find chunk boundaries based on *content*, so a small edit only affects 2-3 surrounding chunks. This is how Dropbox achieves efficient delta sync in practice \u2014 a 1-byte edit in a 1GB file might only re-upload ~10MB instead of 1GB."
+    },
+    {
+      "title": "Real-time sync notification mechanism",
+      "choice": "WebSocket push with periodic polling fallback",
+      "alternatives": [
+        "Pure polling every 30 seconds",
+        "Server-Sent Events (SSE) only",
+        "MQTT broker for all sync"
+      ],
+      "rationale": "WebSockets provide sub-second sync latency when devices are online, which is critical for the 'it just works' Dropbox experience. However, connections drop on mobile networks and sleep modes. A periodic poll every few minutes via GET /files/changes?since={timestamp} acts as a safety net to guarantee eventual consistency. We avoid SSE because we need bidirectional communication for the client to acknowledge sync state."
+    },
+    {
+      "title": "Sharing permission data model",
+      "choice": "Normalized SharedFiles table (userId -> fileId mapping)",
+      "alternatives": [
+        "Embedded sharelist array in FileMetadata",
+        "Graph database for complex ACLs"
+      ],
+      "rationale": "An embedded sharelist requires scanning every file's metadata to find files shared with a given user \u2014 O(N) where N is total files. A normalized SharedFiles table with userId as partition key and fileId as sort key turns this into a single efficient query. We keep a Redis cache in front for hot lookups. This trades a slightly more complex write path (updating two tables in a transaction) for a dramatically faster read path."
+    },
+    {
+      "title": "Download delivery optimization",
+      "choice": "CDN with signed URLs and Range request support",
+      "alternatives": [
+        "Direct S3 presigned URLs without CDN",
+        "Backend proxy for all downloads"
+      ],
+      "rationale": "Users are globally distributed but S3 buckets are regional. A user in Sydney downloading from a US-East bucket faces 200ms+ latency per request. A CDN caches files at 400+ edge locations, reducing latency to <20ms for popular content. Signed URLs enforce that only authorized users can access cached content. Range requests let clients resume interrupted downloads without restarting \u2014 critical for mobile networks with intermittent connectivity."
+    }
+  ],
+  "bottlenecks": [
+    {
+      "title": "Viral file thundering herd",
+      "problem": "A shared folder with a popular file (e.g., a leaked document) receives millions of download requests simultaneously. The CDN origin (S3) and the File Service's metadata DB face a synchronized stampede.",
+      "mitigation": "The CDN absorbs 99%+ of download traffic via edge caching with request coalescing \u2014 concurrent identical cache misses collapse into a single origin fetch. The File Service caches ACL lookups in Redis with a 5-minute TTL. For truly viral events, we can temporarily increase the CDN cache TTL and serve slightly stale metadata."
+    },
+    {
+      "title": "Multipart upload metadata bloat",
+      "problem": "Millions of concurrent large file uploads create enormous metadata state in the FileMetadata DB (chunk arrays with hundreds of entries per file). DynamoDB item size limits (400KB) can be exceeded, and query performance degrades.",
+      "mitigation": "Store chunk manifests in a separate ChunkManifest table with fileId as partition key, or offload to S3 itself via the ListParts API. The FileMetadata table only tracks uploadId and overall status. For files with >1000 chunks, we paginate chunk status and verify in batches via S3 ListParts rather than tracking every chunk in the DB."
+    },
+    {
+      "title": "WebSocket connection exhaustion",
+      "problem": "With 100M DAU and an average of 2.5 devices per user, maintaining 250M persistent WebSocket connections overwhelms the Sync Service and underlying infrastructure.",
+      "mitigation": "Use a dedicated WebSocket gateway cluster (e.g., ElastiCache Redis Pub/Sub or a custom gateway) that maintains connections while the Sync Service remains stateless. Connections are sharded by userId across gateway instances. Idle connections are closed after 30 minutes; clients reconnect via polling until activity resumes."
+    },
+    {
+      "title": "Duplicate storage from deduplication gaps",
+      "problem": "Without global deduplication, the same file uploaded by thousands of users (e.g., a popular PDF, a standard template) is stored thousands of times, wasting petabytes of storage.",
+      "mitigation": "Fingerprint files with SHA-256 at upload time. If a file with the same fingerprint already exists, create a new metadata record pointing to the existing object rather than storing a new copy. Reference counting on objects ensures we only delete when the last reference is removed. This is how Dropbox's 'LanSync' and server-side deduplication work."
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Why do we use Content-Defined Chunking (CDC) instead of fixed-size chunks for delta sync?",
+      "answer": "Fixed-size chunks shift *all* chunk boundaries when a byte is inserted near the start of a file, causing every subsequent chunk to get a new fingerprint. This forces a re-upload of the entire file. CDC uses a rolling hash (like Rabin fingerprinting) to find boundaries based on *content*, so a small edit only affects the 2-3 chunks surrounding the change. A 1-byte edit in a 1GB file might only re-upload ~10MB instead of 1GB."
+    },
+    {
+      "question": "Why does the File Service verify chunk uploads via S3 ListParts instead of trusting the client's PATCH request?",
+      "answer": "Trusting the client to report chunk status is a security risk \u2014 a malicious client could mark all chunks as uploaded without actually sending data, leaving a corrupted file entry. By calling S3 ListParts, the server independently verifies which parts actually exist in S3 with valid ETags. This 'trust but verify' approach ensures metadata state always matches storage state."
+    },
+    {
+      "question": "Why do we need both WebSocket push AND periodic polling for sync? Can't we just use one?",
+      "answer": "WebSockets alone fail when devices sleep, switch networks, or lose connectivity \u2014 mobile apps are especially prone to this. Polling alone introduces 30+ second latency, which feels broken for real-time collaboration. The hybrid approach gives sub-second updates when online (WebSocket) with a safety net (polling every few minutes) that guarantees no changes are missed even after hours of disconnection."
+    },
+    {
+      "question": "Why generate CDN-signed URLs with short expiration (5 minutes) instead of long-lived public URLs?",
+      "answer": "Signed URLs are bearer tokens \u2014 anyone with the URL can download the file. A 5-minute expiration limits the window of exposure if a user accidentally shares a link publicly. For higher security, we can add IP binding or require authentication cookies alongside the signed URL. The tradeoff is that clients must re-request URLs frequently, but this is cheap since URL generation is a purely local cryptographic operation."
+    },
+    {
+      "question": "Why is client-side compression done before chunking, and why skip it for media files?",
+      "answer": "Compression must happen *before* chunking because encryption and many file formats introduce entropy that makes compression ineffective afterward. We skip compression for media files (images, videos, audio) because these formats are already compressed (JPEG, H.264, MP3) \u2014 applying gzip or zstd yields <2% size reduction while consuming significant CPU. Text files and code, however, often compress 5-10x, making the CPU cost worthwhile on slower networks."
+    },
+    {
+      "question": "What happens if the File Service crashes between calling S3 CompleteMultipartUpload and updating the metadata DB to 'uploaded'?",
+      "answer": "The file exists in S3 but the metadata still shows 'uploading'. The next time the client polls or the sync service runs a reconciliation job, it detects the mismatch: S3 confirms the object exists but metadata says incomplete. The reconciliation worker updates the metadata to 'uploaded' and emits the change event. Alternatively, S3 event notifications on object creation can trigger an idempotent metadata update."
+    }
+  ],
+  "references": [
+    {
+      "title": "Amazon S3 Multipart Upload API Documentation",
+      "url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html",
+      "source": "AWS Docs"
+    },
+    {
+      "title": "Dropbox Engineering Blog",
+      "url": "https://dropbox.tech/",
+      "source": "dropbox.tech"
+    },
+    {
+      "title": "Content-Defined Chunking and Delta Sync (Rabin fingerprinting)",
+      "url": "https://en.wikipedia.org/wiki/Rabin_fingerprint",
+      "source": "Wikipedia"
+    },
+    {
+      "title": "CloudFront Signed URLs and Signed Cookies",
+      "url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PrivateContent.html",
+      "source": "AWS Docs"
+    },
+    {
+      "title": "The Google File System (GFS) \u2014 SOSP 2003",
+      "url": "https://static.googleusercontent.com/media/research.google.com/en//archive/gfs-sosp2003.pdf",
+      "source": "Google Research"
+    }
+  ],
+  "relatedPatterns": [
+    "design-instagram",
+    "event-driven-architecture"
+  ],
+  "summary": "### Architecture Overview\n\nThis design models a cloud file storage and sync service (Google Drive / Dropbox) built for scale, reliability, and low latency.\n\n### Key Design Principles\n\n**Separate control plane from data plane.** File bytes never flow through our application servers. Clients upload and download directly to/from object storage (S3) and CDN edges using cryptographically signed URLs. Our backend (File Service, Sync Service) only handles metadata, permissions, and coordination \u2014 operations that are thousands of times lighter than moving multi-gigabyte files.\n\n**Chunked, resumable, deduplicated uploads.** Files are split into content-defined chunks (CDC) on the client. Each chunk is fingerprinted (SHA-256) for global deduplication \u2014 if 1,000 users upload the same PDF, we store it once. Chunking also enables resumable uploads: a 50GB upload interrupted at 49GB only retries the remaining chunks, not the entire file.\n\n**Delta sync for fast synchronization.** When a file changes, CDC ensures only the modified chunks are re-uploaded. A single-byte edit in a 1GB file might only transfer ~10MB. The sync service pushes changes in real-time via WebSocket and falls back to polling for reliability.\n\n**CDN-backed downloads with security.** Downloads are served from 400+ CDN edge locations using signed URLs with short expiration (5 minutes). This minimizes latency for global users while preventing unauthorized link sharing. Range requests enable resumable downloads on flaky mobile networks.\n\n**Normalized permissions model.** Sharing is implemented via a SharedFiles table (userId -> fileId) rather than embedded arrays. This turns 'find files shared with me' from an O(N) table scan into a single efficient query, with Redis caching hot lookups.\n\n### Fault Tolerance\n\n- **Upload crashes:** Metadata reconciliation jobs detect S3 objects that exist but metadata shows 'uploading', and repair the state idempotently.\n- **Chunkserver / S3 zone failure:** S3 provides 3x cross-zone replication by default.\n- **WebSocket drops:** Polling fallback guarantees eventual consistency.\n- **CDN cache corruption:** S3 ETags and checksums validate integrity on every origin fetch."
+}

@@ -273,11 +273,7 @@ export default function PatternsPage() {
                           ))}
                         </div>
 
-                        {/* Stats */}
-                        <div className="mt-2 flex items-center gap-4 text-[10px] tracking-wider text-foreground/35 uppercase">
-                          <span>{diagram.nodeCount} nodes</span>
-                          <span>{diagram.edgeCount} edges</span>
-                        </div>
+                       
                       </div>
 
                       {/* Hover Dot */}

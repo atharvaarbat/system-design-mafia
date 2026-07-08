@@ -19,6 +19,15 @@
       "edgeCount": 15
     },
     {
+      "slug": "design-dropbox-or-google-drive",
+      "title": "Design Dropbox or Google Drive",
+      "description": "A scalable, highly available cloud file storage and synchronization service.",
+      "tags": ["cloud", "distributed", "storage", "sync"],
+      "difficulty": "advanced",
+      "nodeCount": 13,
+      "edgeCount": 15
+    },
+    {
       "slug": "e-commerce-microservices",
       "title": "E-Commerce Microservices",
       "description": "Cloud-native e-commerce platform on AWS",
