@@ -486,6 +486,7 @@ export default function DiagramPageClient({
             <Diagram
               design={design}
               editable={editable}
+              diagramId={slug}
               highlight={highlight}
               overlay={
                 <>

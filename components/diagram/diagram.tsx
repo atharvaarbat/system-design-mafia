@@ -28,6 +28,7 @@ import '@xyflow/react/dist/style.css'
 import ArchitectureNodeComponent from './nodes/ArchitectureNode'
 import GroupNodeComponent from './nodes/GroupNode'
 import ArchitectureEdgeComponent from './edges/ArchitectureEdge'
+import NotesLayer from './notes-layer'
 import { systemDesignToFlow } from '@/lib/diagram/transform'
 import { EdgeHoverContext } from '@/lib/diagram/edge-hover-context'
 import { DiagramHighlightContext, type DiagramHighlight } from '@/lib/diagram/highlight-context'
@@ -36,10 +37,11 @@ import { EditableContext } from '@/lib/diagram/editable-context'
 import { PortalTargetContext } from '@/lib/diagram/portal-target-context'
 import { clampMenuPosition } from '@/lib/diagram/menu-position'
 import { NODE_REGISTRY, CATEGORIES, type NodeKind, type NodeKindDefinition } from '@/lib/diagram/registry'
+import { useDiagramNotes } from '@/lib/diagram/use-diagram-notes'
 import type { SystemDesign } from '@/types/diagram'
 import { flowToSystemDesign } from '@/lib/diagram/flow-to-system-design'
 import { Dock } from '../unlumen-ui/dock'
-import { Link, Minimize2, MoveDiagonal, Pencil, Scan } from 'lucide-react'
+import { Link, Minimize2, MoveDiagonal, Pencil, Scan, StickyNote } from 'lucide-react'
 
 const nodeTypes = {
   architectureNode: ArchitectureNodeComponent,
@@ -58,6 +60,8 @@ interface Props {
   /** Absolutely-positioned chrome (flow player, legend, …) rendered INSIDE the
    *  fullscreen container so it stays visible when the diagram goes fullscreen. */
   overlay?: React.ReactNode
+  /** Stable per-diagram key for persisting reader notes to localStorage. Falls back to a slugified title. */
+  diagramId?: string
 }
 
 /** True when the event target is a text-entry element — keyboard shortcuts must not fire there. */
@@ -106,10 +110,12 @@ function HighlightCamera({ highlight }: { highlight: DiagramHighlight | null }) 
 interface DiagramDockProps {
   isEditable: boolean
   onToggleEditable: () => void
+  noteMode: boolean
+  onToggleNoteMode: () => void
   containerRef: React.RefObject<HTMLDivElement | null>
 }
 
-function DiagramDock({ isEditable, onToggleEditable, containerRef }: DiagramDockProps) {
+function DiagramDock({ isEditable, onToggleEditable, noteMode, onToggleNoteMode, containerRef }: DiagramDockProps) {
   const { fitView } = useReactFlow()
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -147,6 +153,7 @@ function DiagramDock({ isEditable, onToggleEditable, containerRef }: DiagramDock
     { icon: <Scan />, label: 'Fit view', onClick: handleFitView },
     { icon: isFullscreen ? <Minimize2 /> : <MoveDiagonal />, label: isFullscreen ? 'Exit full screen' : 'Full screen', onClick: handleFullscreen },
     { icon: <Link />, label: urlCopied ? 'Link copied!' : 'Copy link', onClick: handleCopyUrl },
+    { icon: <StickyNote />, label: noteMode ? 'Click canvas to place' : 'Add note', onClick: onToggleNoteMode, active: noteMode },
     { icon: <Pencil />, label: isEditable ? 'Editing' : 'Read only', onClick: onToggleEditable, active: isEditable },
   ]
 
@@ -260,7 +267,7 @@ function AddNodeMenu({ x, y, portalTarget, onClose, onAdd }: AddNodeMenuProps) {
   )
 }
 
-export default function Diagram({ design, editable: editableProp = true, highlight = null, overlay = null }: Props) {
+export default function Diagram({ design, editable: editableProp = true, highlight = null, overlay = null, diagramId }: Props) {
   const [isEditable, setIsEditable] = useState(editableProp)
   const isEditableRef = useRef(isEditable)
   useEffect(() => { isEditableRef.current = isEditable }, [isEditable])
@@ -275,6 +282,42 @@ export default function Diagram({ design, editable: editableProp = true, highlig
   const diagram = design
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
+
+  const noteStorageId = diagramId ?? diagram.title.toLowerCase().trim().replace(/\s+/g, '-')
+  const {
+    notes,
+    editingId: editingNoteId,
+    setEditingId: setEditingNoteId,
+    addNote,
+    moveNote,
+    updateNoteText,
+    setNoteColor,
+    deleteNote,
+  } = useDiagramNotes(noteStorageId)
+
+  const [noteMode, setNoteMode] = useState(false)
+  const noteModeRef = useRef(noteMode)
+  useEffect(() => { noteModeRef.current = noteMode }, [noteMode])
+  const toggleNoteMode = useCallback(() => setNoteMode((v) => !v), [])
+
+  useEffect(() => {
+    if (!noteMode) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNoteMode(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [noteMode])
+
+  const notePlacementSeq = useRef(0)
+  const [pendingNotePlacement, setPendingNotePlacement] = useState<{ x: number; y: number; seq: number } | null>(null)
+
+  const onPaneClick = useCallback((event: React.MouseEvent) => {
+    if (!noteModeRef.current) return
+    notePlacementSeq.current += 1
+    setPendingNotePlacement({ x: event.clientX, y: event.clientY, seq: notePlacementSeq.current })
+    setNoteMode(false)
+  }, [])
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () => systemDesignToFlow(diagram),
@@ -615,7 +658,7 @@ export default function Diagram({ design, editable: editableProp = true, highlig
 
   return (
     <ReactFlowProvider>
-        <div ref={containerRef} style={{ width: '100%', height: '100vh' }} className="mx-auto bg-background relative overflow-hidden">
+        <div ref={containerRef} style={{ width: '100%', height: '100vh' }} className={`mx-auto bg-background relative overflow-hidden ${noteMode ? 'cursor-crosshair' : ''}`}>
           <PortalTargetContext.Provider value={portalContainer}>
             <EditableContext.Provider value={isEditable}>
               <SelectionActionsContext.Provider value={selectionActions}>
@@ -630,6 +673,7 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                     onConnect={onConnect}
                     onReconnect={onReconnect}
                     onPaneContextMenu={onPaneContextMenu}
+                    onPaneClick={onPaneClick}
                     edgesReconnectable={isEditable}
                     nodesDraggable={isEditable}
                     nodesConnectable={isEditable}
@@ -672,6 +716,18 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                       </Controls>
                     )}
                   </ReactFlow>
+                  <NotesLayer
+                    notes={notes}
+                    editingId={editingNoteId}
+                    pendingPlacement={pendingNotePlacement}
+                    onStartEdit={setEditingNoteId}
+                    onStopEdit={() => setEditingNoteId(null)}
+                    onTextChange={updateNoteText}
+                    onColorChange={setNoteColor}
+                    onMove={moveNote}
+                    onDelete={deleteNote}
+                    onPlace={addNote}
+                  />
                   </DiagramHighlightContext.Provider>
                   {selectionMenu && createPortal(
                     <div
@@ -709,6 +765,8 @@ export default function Diagram({ design, editable: editableProp = true, highlig
               <DiagramDock
                 isEditable={isEditable}
                 onToggleEditable={toggleEditable}
+                noteMode={noteMode}
+                onToggleNoteMode={toggleNoteMode}
                 containerRef={containerRef}
               />
             </div>
