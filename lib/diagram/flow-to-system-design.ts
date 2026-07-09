@@ -35,6 +35,7 @@ export function flowToSystemDesign(nodes: Node[], edges: Edge[], original?: Syst
       if (nd.description) sn.description = String(nd.description)
       if (nd.details) sn.details = String(nd.details)
       if (nd.status) sn.status = nd.status as SystemDesignNode['status']
+      if (nd.failure) sn.failure = nd.failure as SystemDesignNode['failure']
       if (node.parentId) sn.group = node.parentId
       systemNodes.push(sn)
     } else if (node.type === 'groupNode') {
@@ -80,6 +81,7 @@ export function flowToSystemDesign(nodes: Node[], edges: Edge[], original?: Syst
     title: original?.title ?? 'Exported Architecture',
     ...(original?.description ? { description: original.description } : {}),
     ...(original?.summary ? { summary: original.summary } : {}),
+    ...(original?.stages ? { stages: original.stages } : {}),
     nodes: systemNodes,
     edges: systemEdges,
     ...(systemGroups.length > 0 ? { groups: systemGroups } : {}),

@@ -27,6 +27,39 @@
     { "label": "Peak concurrent streams", "value": "10M+", "note": "virtually all served by the CDN, not origin" },
     { "label": "Metadata QPS (peak)", "value": "~50K", "note": "mostly absorbed by the Redis cache" }
   ],
+  "stages": [
+    {
+      "id": "mvp",
+      "title": "The MVP — one API, one database, one bucket",
+      "narrative": "Every platform starts embarrassingly small. A stateless API issues **pre-signed URLs** so even v1 never proxies video bytes — creators upload straight into one bucket, metadata lands in one database, and viewers simply download the original file to watch it.\n\nThis survives a few thousand users. But every viewer pulls the full-size original: a phone on 3G downloads the same gigabytes as a fiber desktop, startup takes forever, and most of the transfer is wasted.",
+      "nodeIds": ["client-web", "api-gateway", "api-service", "metadata-db", "blob-storage-upload"],
+      "edgeIds": ["e-web-gw", "e-gw-api", "e-api-db", "xy-edge__api-servicebottom-source-blob-storage-uploadtop-target"]
+    },
+    {
+      "id": "transcoding",
+      "title": "Make it watchable — the transcoding pipeline",
+      "trigger": "Raw originals are unwatchable at scale — a phone on hotel Wi-Fi cannot stream a 4K master file",
+      "narrative": "Stop serving what creators upload; start serving what players need. When an upload completes, the bucket emits an **object-created event** into a queue; a handler wakes the orchestrator, which fans one video out into hundreds of parallel encode jobs — every resolution × bitrate, split into few-second segments written to a second bucket.\n\nThe queue is the load-bearing decision here: uploads finish instantly even when every encoder is busy, failed jobs retry from the queue, and queue depth becomes the honest autoscaling signal for the worker fleet.",
+      "nodeIds": ["client-web", "api-gateway", "api-service", "metadata-db", "blob-storage-upload", "blob-storage-transcoded", "upload-completion-queue", "completion-handler", "transcoder-orchestrator", "task-workers"],
+      "edgeIds": ["e-web-gw", "e-gw-api", "e-api-db", "xy-edge__api-servicebottom-source-blob-storage-uploadtop-target", "xy-edge__blob-storage-uploadbottom-source-upload-completion-queuetop-target", "xy-edge__upload-completion-queuebottom-source-completion-handlerright-target", "xy-edge__completion-handlerleft-source-transcoder-orchestratorright-target", "xy-edge__transcoder-orchestratorright-source-blob-storage-uploadbottom-target", "xy-edge__transcoder-orchestratorleft-source-task-workersright-target", "xy-edge__task-workersleft-source-blob-storage-transcodedbottom-target"]
+    },
+    {
+      "id": "global-cdn",
+      "title": "Go global — the CDN and every screen",
+      "trigger": "Viewers far from the origin region wait seconds for startup, and origin egress is billed per gigabyte",
+      "narrative": "Segments are static files, and static files belong at the edge. A **CDN** now fronts transcoded storage: popular segments are cached close to viewers, and a cache miss pulls from origin once, then serves everyone nearby from the edge.\n\nWith sub-second startup available everywhere, the audience multiplies — mobile apps and smart TVs join the web client, all speaking the same manifest-driven ABR protocol. Origin ends up serving only the long tail.",
+      "nodeIds": ["client-web", "client-mobile", "client-tv", "api-gateway", "api-service", "metadata-db", "blob-storage-upload", "blob-storage-transcoded", "upload-completion-queue", "completion-handler", "transcoder-orchestrator", "task-workers", "cdn"],
+      "edgeIds": ["e-web-gw", "e-mobile-gw", "e-tv-gw", "e-gw-api", "e-api-db", "xy-edge__api-servicebottom-source-blob-storage-uploadtop-target", "xy-edge__blob-storage-uploadbottom-source-upload-completion-queuetop-target", "xy-edge__upload-completion-queuebottom-source-completion-handlerright-target", "xy-edge__completion-handlerleft-source-transcoder-orchestratorright-target", "xy-edge__transcoder-orchestratorright-source-blob-storage-uploadbottom-target", "xy-edge__transcoder-orchestratorleft-source-task-workersright-target", "xy-edge__task-workersleft-source-blob-storage-transcodedbottom-target", "xy-edge__blob-storage-transcodedtop-source-cdnbottom-target", "xy-edge__cdnright-source-client-webleft-target", "xy-edge__cdnright-source-client-mobileleft-target", "xy-edge__cdnright-source-client-tvleft-target"]
+    },
+    {
+      "id": "read-cache",
+      "title": "Survive popularity — cache the read path",
+      "trigger": "Views outnumber uploads 200 : 1, and viral traffic concentrates on a handful of videoIds — hot Cassandra partitions saturate",
+      "narrative": "Video bytes scale beautifully now, but every play still begins with a metadata read, and viral traffic hammers the same few rows. A **Redis cache** in front of Cassandra absorbs nearly all reads for hot videos: miss → read Cassandra → back-fill for the next viewer.\n\nThis is the finished architecture: the write path (upload → transcode) and the read path (CDN → player) are fully decoupled, and every tier scales on its own signal.",
+      "nodeIds": ["client-web", "client-mobile", "client-tv", "api-gateway", "api-service", "metadata-db", "metadata-cache", "blob-storage-upload", "blob-storage-transcoded", "upload-completion-queue", "completion-handler", "transcoder-orchestrator", "task-workers", "cdn"],
+      "edgeIds": ["e-web-gw", "e-mobile-gw", "e-tv-gw", "e-gw-api", "e-api-db", "e-api-cache", "xy-edge__api-servicebottom-source-blob-storage-uploadtop-target", "xy-edge__blob-storage-uploadbottom-source-upload-completion-queuetop-target", "xy-edge__upload-completion-queuebottom-source-completion-handlerright-target", "xy-edge__completion-handlerleft-source-transcoder-orchestratorright-target", "xy-edge__transcoder-orchestratorright-source-blob-storage-uploadbottom-target", "xy-edge__transcoder-orchestratorleft-source-task-workersright-target", "xy-edge__task-workersleft-source-blob-storage-transcodedbottom-target", "xy-edge__blob-storage-transcodedtop-source-cdnbottom-target", "xy-edge__cdnright-source-client-webleft-target", "xy-edge__cdnright-source-client-mobileleft-target", "xy-edge__cdnright-source-client-tvleft-target"]
+    }
+  ],
   "flows": [
     {
       "id": "upload-video",
@@ -261,7 +294,14 @@
       "y": 296,
       "name": "API Service (Stateless)",
       "description": "Handles metadata & pre-signed URLs",
-      "details": "Stateless by design — any instance can serve any request, so scaling is just adding instances behind the gateway.\n\n- Issues **pre-signed upload URLs** so video bytes bypass it entirely\n- Reads and writes metadata through Redis and Cassandra\n- Owns zero responsibilities on the video data path"
+      "details": "Stateless by design — any instance can serve any request, so scaling is just adding instances behind the gateway.\n\n- Issues **pre-signed upload URLs** so video bytes bypass it entirely\n- Reads and writes metadata through Redis and Cassandra\n- Owns zero responsibilities on the video data path",
+      "failure": {
+        "userImpact": "The control plane is gone: no browsing, no new uploads, no pressing play on new videos. Anyone already watching keeps watching — the CDN path never calls the API.",
+        "blastRadius": [
+          { "nodeId": "api-gateway", "effect": "degraded", "note": "health checks fail; nothing healthy left to route to" }
+        ],
+        "mitigation": "The tier is **stateless behind the gateway** — health checks eject bad instances and autoscaling replaces them, so the realistic failure is a brief brownout, not a blackout. And the design's key promise holds even in a full outage: streaming is served by the CDN, which never touches the API."
+      }
     },
     {
       "id": "metadata-db",
@@ -271,6 +311,14 @@
       "name": "Metadata Database",
       "description": "Cassandra (Partitioned by videoId)",
       "details": "Partitioned by `videoId` so load spreads evenly across nodes.\n\n- Stores titles, descriptions, processing status, manifest URLs, owner info\n- Tuned for availability and partition tolerance (AP)\n- No cross-video joins needed — a natural fit for wide-column storage",
+      "failure": {
+        "userImpact": "Browsing, search and pressing play fail for anything not already cached — and new uploads cannot register. Streams already playing continue untouched: the player has its manifest.",
+        "blastRadius": [
+          { "nodeId": "api-service", "effect": "degraded", "note": "can serve only what Redis already holds; writes fail outright" },
+          { "nodeId": "metadata-cache", "effect": "degraded", "note": "keeps hot videos alive, but entries expire with nowhere to refill from" }
+        ],
+        "mitigation": "This is why the store is **Cassandra**: data is replicated across nodes and regions, so losing machines is routine, not an outage. Even a full-cluster loss leaves the blast contained — the CDN read path keeps every active stream and cache-hot video playing."
+      },
       "group": "data-tier"
     },
     {
@@ -281,6 +329,14 @@
       "name": "Metadata Cache",
       "description": "Redis (For hot videos)",
       "details": "Read-through cache in front of Cassandra.\n\n- Popular videos are served without touching the database at all\n- Cache miss → read Cassandra → back-fill Redis for the next viewer\n- Because views follow a power law, a small cache absorbs most reads",
+      "failure": {
+        "userImpact": "Nothing visibly breaks for a minute — then every metadata read lands raw on Cassandra and page loads crawl for exactly the videos everyone is watching.",
+        "blastRadius": [
+          { "nodeId": "metadata-db", "effect": "degraded", "note": "takes ~200× its usual read traffic; hot partitions saturate first" },
+          { "nodeId": "api-service", "effect": "degraded", "note": "response times climb with every slow database read" }
+        ],
+        "mitigation": "Redis here is a **read-through cache**, never the source of truth — losing it costs latency, not data. Cassandra keeps serving; replicas and request coalescing blunt the stampede, and the cache re-warms itself key by key as reads back-fill it."
+      },
       "group": "data-tier"
     },
     {
@@ -310,7 +366,17 @@
       "y": 288,
       "name": "Content Delivery Network (CDN)",
       "description": "Edge caching for low-latency streaming",
-      "details": "Serves nearly all viewer bandwidth — the single most important cost lever in the system.\n\n- Edge servers cache few-second segments close to viewers\n- Cache miss → fetch from transcoded storage → cache → serve\n- **Hybrid strategy**: only popular content earns an edge slot; the long tail streams from origin"
+      "details": "Serves nearly all viewer bandwidth — the single most important cost lever in the system.\n\n- Edge servers cache few-second segments close to viewers\n- Cache miss → fetch from transcoded storage → cache → serve\n- **Hybrid strategy**: only popular content earns an edge slot; the long tail streams from origin",
+      "failure": {
+        "userImpact": "Playback does not stop, but startup jumps from milliseconds to seconds and quality drops — every viewer is suddenly streaming from one distant origin.",
+        "blastRadius": [
+          { "nodeId": "blob-storage-transcoded", "effect": "degraded", "note": "absorbs the entire read load the edge used to soak; egress cost explodes" },
+          { "nodeId": "client-web", "effect": "degraded", "note": "slow startup, ABR drops to low bitrates" },
+          { "nodeId": "client-mobile", "effect": "degraded", "note": "slow startup, ABR drops to low bitrates" },
+          { "nodeId": "client-tv", "effect": "degraded", "note": "4K is the first thing to go" }
+        ],
+        "mitigation": "Segments are plain HTTPS files, so players can fall back to origin URLs directly — degraded but alive. Real platforms run **multiple CDNs** with DNS-level failover and shift traffic between them in minutes, while request coalescing at origin keeps the miss storm survivable."
+      }
     },
     {
       "id": "transcoder-orchestrator",
@@ -330,6 +396,14 @@
       "name": "Task Workers (DAG)",
       "description": "Parallel video/audio processing",
       "details": "Stateless encode fleet — the CPU furnace of the system.\n\n- Each task encodes one segment at one resolution/bitrate\n- Workers pass **object references**, never video bytes, between DAG stages\n- Scales horizontally on backlog; a lost worker's task simply reruns",
+      "failure": {
+        "userImpact": "Time-to-publish stretches from minutes toward hours — uploads keep landing, but nothing becomes streamable until encode capacity returns.",
+        "blastRadius": [
+          { "nodeId": "upload-completion-queue", "effect": "degraded", "note": "depth grows — which is exactly the autoscaling alarm" },
+          { "nodeId": "transcoder-orchestrator", "effect": "degraded", "note": "DAGs stall mid-flight, waiting on tasks" }
+        ],
+        "mitigation": "Backlog, not breakage: every task is **idempotent and retryable**, so a dead worker's job simply reruns elsewhere. Queue depth drives autoscaling to refill the fleet, and priority lanes publish a watchable 360p/720p rendition first while it catches up."
+      },
       "group": "processing-tier"
     },
     {
@@ -339,7 +413,16 @@
       "y": 816,
       "name": "Upload Completion Queue",
       "description": "SQS / Message Queue",
-      "details": "The shock absorber between upload and processing.\n\n- Buffers `object-created` events during upload spikes\n- Gives failed processing runs a retry path\n- Queue depth is the autoscaling signal for the encode fleet"
+      "details": "The shock absorber between upload and processing.\n\n- Buffers `object-created` events during upload spikes\n- Gives failed processing runs a retry path\n- Queue depth is the autoscaling signal for the encode fleet",
+      "failure": {
+        "userImpact": "Creators notice nothing — uploads still complete. But new videos silently stay 'processing' forever: the pipeline's trigger is gone.",
+        "blastRadius": [
+          { "nodeId": "completion-handler", "effect": "down", "note": "no events left to consume" },
+          { "nodeId": "transcoder-orchestrator", "effect": "degraded", "note": "idles with no new jobs" },
+          { "nodeId": "task-workers", "effect": "degraded", "note": "fleet scales toward zero on a silent (broken) signal" }
+        ],
+        "mitigation": "Managed queues are replicated, so a real loss is rare and brief — events buffer at the source and delivery retries. The honest backstop is **reconciliation**: a periodic job lists bucket objects with no matching streamable record and re-enqueues them, so nothing is lost, only late."
+      }
     },
     {
       "id": "completion-handler",

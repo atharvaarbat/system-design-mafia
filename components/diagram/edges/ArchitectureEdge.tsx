@@ -6,6 +6,7 @@ import { BaseEdge, EdgeLabelRenderer, useReactFlow, type EdgeProps, type Edge, g
 import { useTheme } from 'next-themes'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useDiagramHighlight } from '@/lib/diagram/highlight-context'
+import { useDiagramChaos } from '@/lib/diagram/chaos-context'
 import { useEditable } from '@/lib/diagram/editable-context'
 import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
 import { usePortalTarget } from '@/lib/diagram/portal-target-context'
@@ -108,7 +109,12 @@ function ArchitectureEdgeComponent({
   const highlightState = highlight ? highlight.edges.get(id) : undefined
   const isDimmed = !!highlight && !highlightState
 
-  const strokeColor = highlightState
+  const { chaos } = useDiagramChaos()
+  const chaosFailed = chaos ? chaos.edges.has(id) : false
+
+  const strokeColor = chaosFailed
+    ? '#ef4444'
+    : highlightState
     ? 'var(--color-primary)'
     : selected ? '#60a5fa' : (data?.color || fallbackColor)
 
@@ -123,13 +129,16 @@ function ArchitectureEdgeComponent({
   })
 
   const strokeDasharray =
-    highlightState === 'active' ? '6,4'
+    chaosFailed ? '5,5'
+    : highlightState === 'active' ? '6,4'
     : data?.lineStyle === 'dashed' ? '6,4'
     : data?.lineStyle === 'dotted' ? '2,3'
     : undefined
 
   const strokeWidth = highlightState === 'active' ? 3 : selected ? 3 : (data?.width || 2.5)
-  const groupOpacity = isDimmed ? 0.08 : highlightState === 'trail' ? 0.65 : 1
+  const groupOpacity = chaos
+    ? (chaosFailed ? 1 : 0.1)
+    : isDimmed ? 0.08 : highlightState === 'trail' ? 0.65 : 1
 
   const updateEdge = useCallback((updates: Partial<EdgeData & { animated?: boolean }>) => {
     setEdges((eds) =>
@@ -177,7 +186,8 @@ function ArchitectureEdgeComponent({
           strokeDasharray,
           cursor: 'pointer',
           // dashdraw keyframes ship with the imported @xyflow/react stylesheet
-          animation: highlightState === 'active' ? 'dashdraw 0.5s linear infinite' : undefined,
+          // 'none' on failed edges also cancels the .animated class — dead links must not look like flowing traffic
+          animation: chaosFailed ? 'none' : highlightState === 'active' ? 'dashdraw 0.5s linear infinite' : undefined,
         }}
         markerEnd={`url(#arrow-${id})`}
         />

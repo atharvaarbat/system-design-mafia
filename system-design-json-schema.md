@@ -18,6 +18,7 @@ This document defines the JSON schema used to describe system architecture diagr
   "difficulty": "advanced",  // "beginner" | "intermediate" | "advanced"
   "requirements": { /* ... */ },   // functional / non-functional requirement lists
   "estimates": [ /* ... */ ],      // back-of-the-envelope stat cards
+  "stages": [ /* ... */ ],         // evolution mode — the system's scale story, stage by stage (§1a.10)
   "flows": [ /* ... */ ],          // interactive request-flow walkthroughs (highlight the diagram!)
   "decisions": [ /* ... */ ],      // design decisions with alternatives + rationale
   "bottlenecks": [ /* ... */ ],    // failure modes + mitigations
@@ -39,20 +40,22 @@ The detail page renders a full learning experience around the diagram. Each sect
 
 Page section order (top to bottom):
 
-1. Diagram (with protocol legend + flow player overlay)
+1. Diagram (with protocol legend, flow player, stage player + chaos mode overlays)
 2. **Requirements** ← `requirements`
 3. **Scale Estimates** ← `estimates`
-4. **Request Flows** ← `flows` (interactive — steps highlight the diagram)
-5. **Key Components** ← auto-generated from `nodes` (no field; quality depends on node `name`/`description`)
-6. **Architecture Breakdown** ← `summary`
-7. **Design Decisions** ← `decisions`
-8. **Bottlenecks & Failure Modes** ← `bottlenecks`
-9. **Test Yourself** ← `quiz`
-10. **Further Reading** ← `references` + `relatedPatterns`
+4. **System Evolution** ← `stages` (interactive — stages replay the system's growth in the diagram)
+5. **Request Flows** ← `flows` (interactive — steps highlight the diagram)
+6. **Key Components** ← auto-generated from `nodes` (no field; quality depends on node `name`/`description`)
+7. **Architecture Breakdown** ← `summary`
+8. **Design Decisions** ← `decisions`
+9. **Bottlenecks & Failure Modes** ← `bottlenecks`
+10. **Failure Lab** ← auto-generated from `nodes[].failure` (interactive — kill components in the diagram, §1a.11)
+11. **Test Yourself** ← `quiz`
+12. **Further Reading** ← `references` + `relatedPatterns`
 
 A "jump-to" index and an estimated reading time are computed automatically — there are no fields for them.
 
-> **⚠️ Markdown vs plain text.** Only these fields render through the rich-text subset (§9a): `summary`, node `details`, `decisions[].rationale`, `bottlenecks[].problem`, `bottlenecks[].mitigation`, `quiz[].answer`. **Every other string is plain text** — flow step `text`, requirement items, estimate `note`s, quiz `question`s, etc. Markdown syntax in plain-text fields shows up as literal `**asterisks**`.
+> **⚠️ Markdown vs plain text.** Only these fields render through the rich-text subset (§9a): `summary`, node `details`, `stages[].narrative`, `nodes[].failure.mitigation`, `decisions[].rationale`, `bottlenecks[].problem`, `bottlenecks[].mitigation`, `quiz[].answer`. **Every other string is plain text** — flow step `text`, stage `trigger`s, failure `userImpact`/blast-radius `note`s, requirement items, estimate `note`s, quiz `question`s, etc. Markdown syntax in plain-text fields shows up as literal `**asterisks**`.
 
 ### 1a.1 `difficulty`
 
@@ -192,6 +195,64 @@ Rendered as a colored chip in the metadata strip. Match the value used for this 
 - 1–3 slugs of **other diagrams that exist in `data/diagrams/index.json`**. Unknown slugs are silently dropped.
 - Rendered as "Patterns used in this design" links — pick genuinely related patterns, not filler.
 
+### 1a.10 `stages` — evolution mode (the system's scale story)
+
+```jsonc
+"stages": [
+  {
+    "id": "mvp",                                        // required, unique
+    "title": "The MVP — one API, one database, one bucket",  // required, short
+    "narrative": "Every platform starts small. A stateless API issues **pre-signed URLs**...\n\nThis survives a few thousand users, but every viewer pulls the full-size original.",  // required, markdown (§9a)
+    "nodeIds": ["client-web", "api-gateway", "api-service", "metadata-db", "blob-storage-upload"],  // required
+    "edgeIds": ["e-web-gw", "e-gw-api", "e-api-db"]     // required
+  },
+  {
+    "id": "transcoding",
+    "title": "Make it watchable — the transcoding pipeline",
+    "trigger": "Raw originals are unwatchable at scale — a phone cannot stream a 4K master file",  // optional, plain text
+    "narrative": "Stop serving what creators upload; start serving what players need...",
+    "nodeIds": [ /* EVERYTHING visible at this stage — previous stage's ids plus the new ones */ ],
+    "edgeIds": [ /* same: cumulative */ ]
+  }
+  // ... more stages, ending with the full system
+]
+```
+
+**How it renders:** a "System Evolution" section lists the stages, and playing one docks a stage player onto the diagram. Only that stage's nodes/edges render — the rest of the system disappears — and the camera fits the visible set. Stepping forward watches the architecture grow; a "new in this stage" chip list calls out what each stage added. This is the single best teaching device for *why* the architecture looks the way it does: every component arrives together with the scale pressure that forced it.
+
+**Rules:**
+
+- **Ids are cumulative, not deltas.** Each stage lists **everything** visible at that stage, and each stage's `nodeIds`/`edgeIds` should be a superset of the previous stage's. The final stage must list the complete system.
+- **Every id must exactly match an existing `nodes[].id` / `edges[].id`** — invalid ids fail silently. Copy edge ids verbatim, including auto-generated ones.
+- **Both endpoints of every listed edge must be in the same stage's `nodeIds`** — an edge with a hidden endpoint is hidden regardless.
+- 3–5 stages. Stage 1 is the naive MVP (client → server → store); each later stage adds one architectural idea (async processing, CDN, cache, sharding…).
+- `trigger` (plain text, one sentence) names the scale pressure that forced this stage: concrete numbers beat adjectives ("Views outnumber uploads 200:1 and hot partitions saturate"). Omit it on the first stage.
+- `narrative` is 2–4 sentences of markdown: what this stage adds, why, and what is about to break next. Tie it to `estimates` and foreshadow the next stage's trigger.
+- Tell one story: requirements → estimates → stages → flows should read as *pressure → shape → behavior*.
+
+### 1a.11 `nodes[].failure` — chaos mode (the Failure Lab)
+
+Defined per node (see §2), documented here because it powers a page section. Any node carrying a `failure` object becomes **killable**: the page renders a "Failure Lab" section and a chaos-mode toggle on the diagram. Killing a component marks it OFFLINE, restyles its authored blast radius (red = down, amber = degraded), fails every edge touching a dead/down node, dims the rest, and docks a panel showing user impact + mitigation.
+
+```jsonc
+"failure": {
+  "userImpact": "Playback does not stop, but startup jumps from milliseconds to seconds.",  // required, plain text
+  "blastRadius": [                                       // optional, other affected components
+    { "nodeId": "blob-storage-transcoded", "effect": "degraded", "note": "absorbs the entire read load the edge used to soak" }
+    // effect: "down" | "degraded"; note: optional plain text, short
+  ],
+  "mitigation": "Real platforms run **multiple CDNs** with DNS-level failover..."  // required, markdown (§9a)
+}
+```
+
+**Rules:**
+
+- Give `failure` to the 4–7 most instructive components — the ones whose death teaches a design decision (the cache, the queue, the CDN, the database, the stateless tier). Not every node needs one.
+- Every `blastRadius[].nodeId` must exactly match an existing `nodes[].id`. Do not list the killed node itself.
+- `userImpact` describes what the *end user* experiences, and the most instructive ones subvert expectations ("creators notice nothing — but new videos silently never publish").
+- `mitigation` must reference mechanisms that exist in the diagram (or explicitly note an extension), and ideally names the design decision that contains the blast.
+- Keep `failure` consistent with `bottlenecks`: bottlenecks describe load-driven failure in prose; `failure` makes component-death explorable. They should reinforce, not contradict, each other.
+
 ---
 
 ## 2. Node (`SystemDesignNode`)
@@ -206,7 +267,8 @@ Rendered as a colored chip in the metadata strip. Match the value used for this 
   "description": "Auth & Profiles", // optional, subtitle shown below name
   "details": "### Responsibilities\n\n- Auth\n- Profiles", // optional, markdown body shown in the expanded card
   "status": "active",       // optional: "active" | "warning" | "error" | "inactive"
-  "group": "aws-cloud"      // optional, ID of the parent SystemDesignGroup
+  "group": "aws-cloud",     // optional, ID of the parent SystemDesignGroup
+  "failure": { /* ... */ }  // optional, chaos-mode simulation — makes the node killable (see §1a.11)
 }
 ```
 
@@ -508,7 +570,7 @@ This enables the "Copy JSON" button to export accurate absolute positions after 
 
 ### 9a. Rich Text Rendering Specification (`RichText`)
 
-The rich-text fields — `summary`, node `details`, `decisions[].rationale`, `bottlenecks[].problem`, `bottlenecks[].mitigation`, and `quiz[].answer` — support a **strict markdown subset** that is parsed in two phases: block-level split → inline tokenization. All other string fields are plain text (§1a).
+The rich-text fields — `summary`, node `details`, `stages[].narrative`, `nodes[].failure.mitigation`, `decisions[].rationale`, `bottlenecks[].problem`, `bottlenecks[].mitigation`, and `quiz[].answer` — support a **strict markdown subset** that is parsed in two phases: block-level split → inline tokenization. All other string fields are plain text (§1a).
 
 #### Block-Level Parsing
 
@@ -640,11 +702,12 @@ The entire block is wrapped in `font-mono text-sm leading-relaxed` with a `space
 10. **Edge `id`s must be unique** across all edges. Use a prefix like `"e-"` or `"edge-"`.
 11. **Include a `summary` field** with a rich-text markdown explanation of the architecture — trade-offs, data flow, scaling decisions, and rationale. This is rendered as an "Architecture Breakdown" section below the diagram. See §9a for the exact rich-text rules.
 12. **When writing any rich-text field, always separate blocks with a blank line.** The single most common bug is a heading immediately followed by a list item with no blank line, which collapses them into one heading block. Always write `### Heading\n\n- item` not `### Heading\n- item` (see §9a).
-13. **Generate the full educational payload** (§1a): `difficulty`, `requirements`, `estimates`, `flows`, `decisions`, `bottlenecks`, `quiz`, `references`, `relatedPatterns`. Sections render only when present — a diagram-only payload produces a much weaker page.
-14. **Write `nodes` and `edges` FIRST, then `flows`.** Flow steps reference node/edge ids; every id in `nodeIds`/`edgeIds` must exactly match an existing element or the highlight silently does nothing. After generating, re-verify each flow id against the final `nodes`/`edges` arrays.
-15. **Respect the plain-text/markdown split** (§1a): markdown only in `summary`, `details`, `rationale`, `problem`, `mitigation`, `answer`. Flow step text, requirements, estimates, questions, titles, and chips are plain text.
-16. **Keep estimate `value`s under ~12 characters** — they render in a very large display font.
-17. **Give every node a `name`, `description`, and `details`** — they power the Key Components section, the expanded node cards, and flow-step chips (§2 note).
-18. **Only use real URLs in `references`** — canonical docs, RFCs, known blog homepages. Never fabricate deep links.
-19. **Only use existing slugs in `relatedPatterns`** — check `data/diagrams/index.json`; unknown slugs are dropped.
-20. **Make the fields reinforce each other**: estimates justify decisions, decisions explain diagram structure, bottlenecks stress the same components the flows traverse, and quiz answers close the loop. A reader should meet each idea at least twice.
+13. **Generate the full educational payload** (§1a): `difficulty`, `requirements`, `estimates`, `stages`, `flows`, `decisions`, `bottlenecks`, node `failure`s, `quiz`, `references`, `relatedPatterns`. Sections render only when present — a diagram-only payload produces a much weaker page.
+14. **Write `nodes` and `edges` FIRST, then `stages` and `flows`.** Both reference node/edge ids; every id in `nodeIds`/`edgeIds` (and every `failure.blastRadius[].nodeId`) must exactly match an existing element or the feature silently does nothing. After generating, re-verify each id against the final `nodes`/`edges` arrays.
+15. **Respect the plain-text/markdown split** (§1a): markdown only in `summary`, `details`, stage `narrative`, failure `mitigation`, `rationale`, `problem`, bottleneck `mitigation`, `answer`. Flow step text, stage triggers, failure `userImpact`/notes, requirements, estimates, questions, titles, and chips are plain text.
+16. **Stage ids are cumulative** (§1a.10): each stage lists everything visible at that stage, each stage is a superset of the previous one, the last stage is the full system, and both endpoints of every listed edge appear in that stage's `nodeIds`.
+17. **Keep estimate `value`s under ~12 characters** — they render in a very large display font.
+18. **Give every node a `name`, `description`, and `details`** — they power the Key Components section, the expanded node cards, and flow-step chips (§2 note).
+19. **Only use real URLs in `references`** — canonical docs, RFCs, known blog homepages. Never fabricate deep links.
+20. **Only use existing slugs in `relatedPatterns`** — check `data/diagrams/index.json`; unknown slugs are dropped.
+21. **Make the fields reinforce each other**: estimates justify decisions, decisions explain diagram structure, stages explain why each component exists, bottlenecks stress the same components the flows traverse, failures make the bottlenecks explorable, and quiz answers close the loop. A reader should meet each idea at least twice.

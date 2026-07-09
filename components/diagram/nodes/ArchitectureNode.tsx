@@ -7,6 +7,7 @@ import type { SystemDesignNode } from '@/types/diagram'
 import { CATEGORY_SHAPE_PATH, resolveNodeKind } from '@/lib/diagram/registry'
 import { useEdgeHover } from '@/lib/diagram/edge-hover-context'
 import { useDiagramHighlight } from '@/lib/diagram/highlight-context'
+import { useDiagramChaos } from '@/lib/diagram/chaos-context'
 import { useSelectionActions } from '@/lib/diagram/selection-actions-context'
 import { useEditable } from '@/lib/diagram/editable-context'
 import { usePortalTarget } from '@/lib/diagram/portal-target-context'
@@ -58,7 +59,10 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
   const { hoveredEdgeIds } = useEdgeHover()
   const { highlight } = useDiagramHighlight()
   const highlightState = highlight ? highlight.nodes.get(data.id) : undefined
-  const isDimmed = !!highlight && !highlightState
+  const { chaos, armed: chaosArmed, killableIds, onKill } = useDiagramChaos()
+  const chaosEffect = chaos ? chaos.nodes.get(data.id) : undefined
+  const isDimmed = (!!highlight && !highlightState) || (!!chaos && !chaosEffect)
+  const isKillable = chaosArmed && killableIds.has(data.id)
   const kindDef = resolveNodeKind(data.kind)
   const Icon = kindDef.icon
   const label = data.name || kindDef.label
@@ -180,6 +184,14 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
     closeMenu()
   }, [deleteElements, data.id, closeMenu])
 
+  // Capture-phase so an armed chaos click kills the node instead of opening the expanded card.
+  const handleChaosClickCapture = useCallback((e: React.MouseEvent) => {
+    if (!chaosArmed || !killableIds.has(data.id)) return
+    e.preventDefault()
+    e.stopPropagation()
+    onKill(data.id)
+  }, [chaosArmed, killableIds, onKill, data.id])
+
   const statusColor =
     data.status === 'active' ? '#22c55e'
       : data.status === 'warning' ? '#f59e0b'
@@ -193,6 +205,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
         trigger={
           <div
             onContextMenu={handleContextMenu}
+            onClickCapture={handleChaosClickCapture}
             className={`group font-poppins relative w-fit rounded-xl transition-[opacity,filter] duration-500 ${selected && editable ? 'bg-primary/20' : ''} ${isDimmed ? 'opacity-20 grayscale' : ''}`}
           >
             {highlightState === 'active' && (
@@ -201,11 +214,31 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
             {highlightState === 'trail' && (
               <div className="pointer-events-none absolute -inset-1.5 rounded-xl border border-dashed border-primary/35" />
             )}
+            {chaosEffect === 'dead' && (
+              <div className="pointer-events-none absolute -inset-1.5 rounded-xl border-2 border-red-500/80 bg-red-500/10 shadow-[0_0_28px_rgba(239,68,68,0.35)]" />
+            )}
+            {chaosEffect === 'down' && (
+              <div className="pointer-events-none absolute -inset-1.5 rounded-xl border-2 border-dashed border-red-400/60 bg-red-500/5" />
+            )}
+            {chaosEffect === 'degraded' && (
+              <div className="pointer-events-none absolute -inset-1.5 rounded-xl border-2 border-dashed border-amber-400/60 bg-amber-400/5" />
+            )}
+            {chaosEffect && (
+              <span className={`pointer-events-none absolute -top-4 left-1/2 z-10 -translate-x-1/2 rounded-sm px-1.5 py-0.5 text-[8px] font-bold tracking-widest text-white uppercase ${chaosEffect === 'degraded' ? 'bg-amber-500' : 'bg-red-500'}`}>
+                {chaosEffect === 'dead' ? 'offline' : chaosEffect}
+              </span>
+            )}
+            {isKillable && !chaosEffect && (
+              <span className="pointer-events-none absolute -top-1 -right-1 z-10 flex h-3 w-3" title="Click to take offline">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+                <span className="relative inline-flex h-3 w-3 rounded-full border-2 border-background bg-red-500" />
+              </span>
+            )}
             <Handle id="left-target" type="target" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
             <Handle id="left-source" type="source" position={Position.Left} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('left') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
             <Handle id="top-target" type="target" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
             <Handle id="top-source" type="source" position={Position.Top} className="h-2 w-2 rounded-full bg-zinc-400! dark:bg-zinc-500! opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: !editable ? 0 : connectedEdgeSides.has('top') ? 1 : undefined, pointerEvents: editable ? undefined : 'none' }} />
-            <div className="flex flex-col items-center gap-1 px-2 py-1">
+            <div className={`flex flex-col items-center gap-1 px-2 py-1 ${chaosEffect === 'dead' ? 'opacity-60 grayscale' : ''}`}>
               <div className="relative h-10 w-10 shrink-0">
                 <div
                   className="absolute inset-0 rounded-lg"

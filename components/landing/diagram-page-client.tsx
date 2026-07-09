@@ -12,7 +12,9 @@ import DiagramPageCreator from '@/components/landing/diagram-page-creator';
 import DiagramPageSuggestions from '@/components/landing/diagram-page-suggestions';
 import RequirementsSection from '@/components/landing/diagram-sections/requirements-section';
 import EstimatesSection from '@/components/landing/diagram-sections/estimates-section';
+import EvolutionSection from '@/components/landing/diagram-sections/evolution-section';
 import FlowsSection from '@/components/landing/diagram-sections/flows-section';
+import ChaosSection from '@/components/landing/diagram-sections/chaos-section';
 import ComponentsSection from '@/components/landing/diagram-sections/components-section';
 import DecisionsSection from '@/components/landing/diagram-sections/decisions-section';
 import BottlenecksSection from '@/components/landing/diagram-sections/bottlenecks-section';
@@ -23,6 +25,7 @@ import diagrams from '@/data/diagrams/index.json';
 import { motion } from 'motion/react';
 import type { SystemDesign } from '@/types/diagram';
 import type { DiagramHighlight, HighlightState } from '@/lib/diagram/highlight-context';
+import { buildChaos } from '@/lib/diagram/chaos-context';
 
 export default function DiagramPageClient({
   slug,
@@ -37,6 +40,9 @@ export default function DiagramPageClient({
 
   const [trace, setTrace] = useState<{ flowIdx: number; stepIdx: number } | null>(null);
   const [focusNodeIds, setFocusNodeIds] = useState<string[] | null>(null);
+  const [stageIdx, setStageIdx] = useState<number | null>(null);
+  const [chaosArmed, setChaosArmed] = useState(false);
+  const [killedNodeId, setKilledNodeId] = useState<string | null>(null);
 
   const nodeNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -55,20 +61,24 @@ export default function DiagramPageClient({
     [design],
   );
 
+  const killableNodes = useMemo(() => design.nodes.filter((n) => n.failure), [design]);
+
   const sectionIndex = useMemo(() => {
     const items: { id: string; label: string }[] = [];
     if (design.requirements?.functional?.length || design.requirements?.nonFunctional?.length)
       items.push({ id: 'requirements', label: 'requirements' });
     if (design.estimates?.length) items.push({ id: 'estimates', label: 'estimates' });
+    if (design.stages?.length) items.push({ id: 'evolution', label: 'evolution' });
     if (design.flows?.length) items.push({ id: 'flows', label: 'request-flows' });
     items.push({ id: 'components', label: 'components' });
     if (design.summary) items.push({ id: 'deep-dive', label: 'deep-dive' });
     if (design.decisions?.length) items.push({ id: 'decisions', label: 'decisions' });
     if (design.bottlenecks?.length) items.push({ id: 'bottlenecks', label: 'bottlenecks' });
+    if (killableNodes.length) items.push({ id: 'failure-lab', label: 'failure-lab' });
     if (design.quiz?.length) items.push({ id: 'quiz', label: 'quiz' });
     if (design.references?.length || related.length) items.push({ id: 'references', label: 'references' });
     return items;
-  }, [design, related]);
+  }, [design, related, killableNodes]);
 
   const highlight = useMemo<DiagramHighlight | null>(() => {
     if (trace && design.flows) {
@@ -99,32 +109,105 @@ export default function DiagramPageClient({
     return null;
   }, [trace, focusNodeIds, design]);
 
+  // Evolution mode: the visible subset of the diagram at the active stage.
+  const visible = useMemo(() => {
+    if (stageIdx === null) return null;
+    const stage = design.stages?.[stageIdx];
+    if (!stage) return null;
+    return { nodes: new Set(stage.nodeIds), edges: new Set(stage.edgeIds) };
+  }, [stageIdx, design]);
+
+  // Chaos mode: the killed node expanded into its authored blast radius.
+  const chaosState = useMemo(
+    () => (killedNodeId ? buildChaos(design, killedNodeId) : null),
+    [killedNodeId, design],
+  );
+
+  const killedNode = useMemo(
+    () => (killedNodeId ? design.nodes.find((n) => n.id === killedNodeId) ?? null : null),
+    [killedNodeId, design],
+  );
+
   const scrollToDiagram = useCallback(() => {
     diagramWrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  // The four modes (trace, focus, evolution, chaos) are mutually exclusive —
+  // entering one always clears the others so the diagram tells a single story.
+  const resetChaos = useCallback(() => {
+    setKilledNodeId(null);
+    setChaosArmed(false);
   }, []);
 
   const handleTrace = useCallback(
     (flowIdx: number, stepIdx: number) => {
       setFocusNodeIds(null);
+      setStageIdx(null);
+      resetChaos();
       setTrace({ flowIdx, stepIdx });
       scrollToDiagram();
     },
-    [scrollToDiagram],
+    [scrollToDiagram, resetChaos],
   );
 
   const handleLocate = useCallback(
     (nodeIds: string[]) => {
       setTrace(null);
+      setStageIdx(null);
+      resetChaos();
       setFocusNodeIds(nodeIds);
       scrollToDiagram();
     },
-    [scrollToDiagram],
+    [scrollToDiagram, resetChaos],
   );
 
   const clearHighlight = useCallback(() => {
     setTrace(null);
     setFocusNodeIds(null);
   }, []);
+
+  const handleStage = useCallback(
+    (idx: number) => {
+      setTrace(null);
+      setFocusNodeIds(null);
+      resetChaos();
+      setStageIdx(idx);
+      scrollToDiagram();
+    },
+    [scrollToDiagram, resetChaos],
+  );
+
+  const handleStageChange = useCallback((idx: number) => setStageIdx(idx), []);
+
+  const handleCloseStage = useCallback(() => setStageIdx(null), []);
+
+  const handleToggleChaos = useCallback(() => {
+    if (chaosArmed || killedNodeId) {
+      resetChaos();
+      return;
+    }
+    setTrace(null);
+    setFocusNodeIds(null);
+    setStageIdx(null);
+    setChaosArmed(true);
+  }, [chaosArmed, killedNodeId, resetChaos]);
+
+  // Kills a node (or restores it when clicked again); arming stays on so the reader can hop between targets.
+  const handleChaosKill = useCallback(
+    (nodeId: string) => {
+      if (killedNodeId === nodeId) {
+        setKilledNodeId(null);
+        return;
+      }
+      setTrace(null);
+      setFocusNodeIds(null);
+      setStageIdx(null);
+      setChaosArmed(true);
+      setKilledNodeId(nodeId);
+      scrollToDiagram();
+    },
+    [killedNodeId, scrollToDiagram],
+  );
 
   const focusLabel = useMemo(() => {
     if (!focusNodeIds || focusNodeIds.length === 0) return '';
@@ -179,6 +262,17 @@ export default function DiagramPageClient({
             nodeNameById={nodeNameById}
             onStepChange={handleStepChange}
             onClearHighlight={clearHighlight}
+            stageIdx={stageIdx}
+            visible={visible}
+            onStageChange={handleStageChange}
+            onCloseStage={handleCloseStage}
+            chaos={chaosState}
+            chaosArmed={chaosArmed}
+            killedNode={killedNode}
+            hasChaosData={killableNodes.length > 0}
+            onToggleChaos={handleToggleChaos}
+            onChaosKill={handleChaosKill}
+            onRestoreChaos={resetChaos}
           />
 
           {design.requirements && (
@@ -187,6 +281,14 @@ export default function DiagramPageClient({
 
           {design.estimates && design.estimates.length > 0 && (
             <EstimatesSection estimates={design.estimates} />
+          )}
+
+          {design.stages && design.stages.length > 0 && (
+            <EvolutionSection
+              stages={design.stages}
+              activeStageIndex={stageIdx}
+              onStage={handleStage}
+            />
           )}
 
           {design.flows && design.flows.length > 0 && (
@@ -219,6 +321,14 @@ export default function DiagramPageClient({
 
           {design.bottlenecks && design.bottlenecks.length > 0 && (
             <BottlenecksSection bottlenecks={design.bottlenecks} />
+          )}
+
+          {killableNodes.length > 0 && (
+            <ChaosSection
+              nodes={killableNodes}
+              killedNodeId={killedNodeId}
+              onKill={handleChaosKill}
+            />
           )}
 
           {design.quiz && design.quiz.length > 0 && (

@@ -32,6 +32,7 @@ import NotesLayer from './notes-layer'
 import { systemDesignToFlow } from '@/lib/diagram/transform'
 import { EdgeHoverContext } from '@/lib/diagram/edge-hover-context'
 import { DiagramHighlightContext, type DiagramHighlight } from '@/lib/diagram/highlight-context'
+import { DiagramChaosContext, type DiagramChaos } from '@/lib/diagram/chaos-context'
 import { SelectionActionsContext } from '@/lib/diagram/selection-actions-context'
 import { EditableContext } from '@/lib/diagram/editable-context'
 import { PortalTargetContext } from '@/lib/diagram/portal-target-context'
@@ -57,6 +58,15 @@ interface Props {
   editable?: boolean
   /** When set, listed nodes/edges glow and everything else dims; the camera follows the active set. */
   highlight?: DiagramHighlight | null
+  /** When set, only listed nodes/edges render (evolution/stage mode); the camera fits the visible set.
+   *  Groups stay visible while any of their member nodes are. */
+  visible?: { nodes: Set<string>; edges: Set<string> } | null
+  /** Chaos-mode state — the killed node and its blast radius. Affected elements restyle, the rest dim. */
+  chaos?: DiagramChaos | null
+  /** True while the reader is choosing a component to kill; killable nodes show a target marker. */
+  chaosArmed?: boolean
+  /** Fired when an armed reader clicks a killable node. */
+  onChaosKill?: (nodeId: string) => void
   /** Absolutely-positioned chrome (flow player, legend, …) rendered INSIDE the
    *  fullscreen container so it stays visible when the diagram goes fullscreen. */
   overlay?: React.ReactNode
@@ -103,6 +113,27 @@ function HighlightCamera({ highlight }: { highlight: DiagramHighlight | null }) 
       fitView({ duration: 650, padding: 0.15 })
     }
   }, [highlight, fitView])
+
+  return null
+}
+
+/** Fits the camera to the visible (stage) set when it changes. Rendered inside ReactFlowProvider. */
+function StageCamera({ visible }: { visible: { nodes: Set<string> } | null }) {
+  const { fitView } = useReactFlow()
+  const hadVisible = useRef(false)
+
+  useEffect(() => {
+    if (visible) {
+      hadVisible.current = true
+      const ids = [...visible.nodes].map((id) => ({ id }))
+      if (ids.length > 0) {
+        fitView({ nodes: ids, duration: 650, padding: 0.25, maxZoom: 1.1 })
+      }
+    } else if (hadVisible.current) {
+      hadVisible.current = false
+      fitView({ duration: 650, padding: 0.15 })
+    }
+  }, [visible, fitView])
 
   return null
 }
@@ -267,7 +298,7 @@ function AddNodeMenu({ x, y, portalTarget, onClose, onAdd }: AddNodeMenuProps) {
   )
 }
 
-export default function Diagram({ design, editable: editableProp = true, highlight = null, overlay = null, diagramId }: Props) {
+export default function Diagram({ design, editable: editableProp = true, highlight = null, visible = null, chaos = null, chaosArmed = false, onChaosKill, overlay = null, diagramId }: Props) {
   const [isEditable, setIsEditable] = useState(editableProp)
   const isEditableRef = useRef(isEditable)
   useEffect(() => { isEditableRef.current = isEditable }, [isEditable])
@@ -381,6 +412,51 @@ export default function Diagram({ design, editable: editableProp = true, highlig
 
   const highlightCtx = useMemo(() => ({ highlight }), [highlight])
   const edgeHoverCtx = useMemo(() => ({ hoveredEdgeIds }), [hoveredEdgeIds])
+
+  const killableIds = useMemo(
+    () => new Set(design.nodes.filter((n) => n.failure).map((n) => n.id)),
+    [design],
+  )
+  const chaosCtx = useMemo(
+    () => ({
+      chaos,
+      armed: chaosArmed && !isEditable,
+      killableIds,
+      onKill: onChaosKill ?? (() => {}),
+    }),
+    [chaos, chaosArmed, isEditable, killableIds, onChaosKill],
+  )
+
+  // Stage/evolution mode: hide everything outside the visible set. Groups stay
+  // visible while any architecture node in their parentId chain is visible.
+  const displayNodes = useMemo(() => {
+    if (!visible) return nodes
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]))
+    const visibleGroupIds = new Set<string>()
+    for (const node of nodes) {
+      if (node.type !== 'architectureNode' || !visible.nodes.has(node.id)) continue
+      const seen = new Set<string>()
+      let cur = node.parentId ? nodeMap.get(node.parentId) : undefined
+      while (cur && !seen.has(cur.id)) {
+        seen.add(cur.id)
+        visibleGroupIds.add(cur.id)
+        cur = cur.parentId ? nodeMap.get(cur.parentId) : undefined
+      }
+    }
+    return nodes.map((node) => {
+      const isVisible = node.type === 'groupNode' ? visibleGroupIds.has(node.id) : visible.nodes.has(node.id)
+      return node.hidden === !isVisible ? node : { ...node, hidden: !isVisible }
+    })
+  }, [nodes, visible])
+
+  const displayEdges = useMemo(() => {
+    if (!visible) return edges
+    return edges.map((edge) => {
+      // Both endpoints must be visible too, so a bad edge list degrades gracefully.
+      const isVisible = visible.edges.has(edge.id) && visible.nodes.has(edge.source) && visible.nodes.has(edge.target)
+      return edge.hidden === !isVisible ? edge : { ...edge, hidden: !isVisible }
+    })
+  }, [edges, visible])
 
   const onEdgeMouseEnter: EdgeMouseHandler = useCallback(
     (_event, edge) => {
@@ -658,16 +734,18 @@ export default function Diagram({ design, editable: editableProp = true, highlig
 
   return (
     <ReactFlowProvider>
-        <div ref={containerRef} style={{ width: '100%', height: '100vh' }} className={`mx-auto bg-background relative overflow-hidden ${noteMode ? 'cursor-crosshair' : ''}`}>
+        <div ref={containerRef} style={{ width: '100%', height: '100vh' }} className={`mx-auto bg-background relative overflow-hidden ${noteMode || (chaosArmed && !isEditable) ? 'cursor-crosshair' : ''}`}>
           <PortalTargetContext.Provider value={portalContainer}>
             <EditableContext.Provider value={isEditable}>
               <SelectionActionsContext.Provider value={selectionActions}>
                 <EdgeHoverContext.Provider value={edgeHoverCtx}>
+                  <DiagramChaosContext.Provider value={chaosCtx}>
                   <DiagramHighlightContext.Provider value={highlightCtx}>
+                  <StageCamera visible={visible} />
                   <HighlightCamera highlight={highlight} />
                   <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
+                    nodes={displayNodes}
+                    edges={displayEdges}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
@@ -729,6 +807,7 @@ export default function Diagram({ design, editable: editableProp = true, highlig
                     onPlace={addNote}
                   />
                   </DiagramHighlightContext.Provider>
+                  </DiagramChaosContext.Provider>
                   {selectionMenu && createPortal(
                     <div
                       data-selection-context-menu

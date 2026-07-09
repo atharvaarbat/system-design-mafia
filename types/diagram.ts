@@ -14,6 +14,26 @@ export type Protocol =
   | 'event'
   | 'internal'
 
+export type FailureEffect = 'down' | 'degraded'
+
+/** One component affected when another node is killed in chaos mode. */
+export interface FailureImpact {
+  nodeId: string
+  effect: FailureEffect
+  /** Plain text, short. What happens to this component during the outage. */
+  note?: string
+}
+
+/** Interactive failure simulation ("chaos mode") for a node. Nodes with this field are killable in the diagram. */
+export interface NodeFailure {
+  /** Plain text. What the end user experiences while this node is down. */
+  userImpact: string
+  /** Components affected by the outage, and how. */
+  blastRadius?: FailureImpact[]
+  /** Markdown. How the design survives (or degrades through) this failure. */
+  mitigation: string
+}
+
 export interface SystemDesignNode {
   id: string
   kind: NodeKind
@@ -27,6 +47,7 @@ export interface SystemDesignNode {
   height?: number
   status?: NodeStatus
   group?: string
+  failure?: NodeFailure
 }
 
 export interface SystemDesignEdge {
@@ -68,6 +89,21 @@ export interface RequestFlow {
   title: string
   description?: string
   steps: FlowStep[]
+}
+
+/** One chapter of the system's scale story ("evolution mode"). Ids are cumulative —
+ *  each stage lists EVERYTHING visible at that stage, not just what it adds. */
+export interface SystemDesignStage {
+  id: string
+  title: string
+  /** Plain text. The scale pressure that forced this stage into existence. Omit on the first stage. */
+  trigger?: string
+  /** Markdown. What this stage adds, why, and what is about to break next. */
+  narrative: string
+  /** All nodes visible at this stage — usually a superset of the previous stage's list. */
+  nodeIds: string[]
+  /** All edges visible at this stage. Both endpoints must be listed in nodeIds. */
+  edgeIds: string[]
 }
 
 export interface DesignDecision {
@@ -120,6 +156,7 @@ export interface SystemDesign {
   difficulty?: 'beginner' | 'intermediate' | 'advanced'
   requirements?: Requirements
   estimates?: Estimate[]
+  stages?: SystemDesignStage[]
   flows?: RequestFlow[]
   decisions?: DesignDecision[]
   bottlenecks?: Bottleneck[]
