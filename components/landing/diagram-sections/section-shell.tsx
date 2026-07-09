@@ -2,7 +2,6 @@
 
 import { motion, type Variants } from 'motion/react';
 import Heading from '@/components/landing/heading';
-import { Scales } from '@/components/ui/scales';
 
 export const fadeUp: Variants = {
   hidden: { opacity: 0, y: 20 },
@@ -24,7 +23,7 @@ export const staggerContainer: Variants = {
 export function Section({
   id,
   children,
-  className = 'pb-8',
+  className = '',
 }: {
   id?: string;
   children: React.ReactNode;
@@ -47,26 +46,30 @@ export function Section({
 export function SectionHeader({
   label,
   title,
-  index,
+  description,
 }: {
   label: string;
   title: string;
-  index?: string;
+  description?: string;
 }) {
   return (
-    <motion.div variants={fadeUp} className="mb-8">
-      <div className="mb-1 flex items-center gap-3 text-xs tracking-widest text-foreground/30 uppercase px-2">
+    <motion.div variants={fadeUp} className="mb-8 max-w-3xl">
+      <div className="mb-3 flex items-center gap-2 font-mono text-[11px] tracking-[0.18em] text-foreground/45 uppercase">
         <span className="text-primary">{'//'}</span>
         <span>{label}</span>
-        {index && <span className="text-foreground/20">{index}</span>}
       </div>
-      <Heading as="h2" variant="medium" className="text-foreground relative px-2">
+      <Heading
+        as="h2"
+        variant="medium"
+        className="font-semibold tracking-tight text-foreground text-balance"
+      >
         {title}
-       
-        <div className="absolute inset-x-0 -top-7 h-17 w-[100%] mask-r-from-40% mask-l-from-100%">
-          <Scales size={8} className="" />
-        </div>
       </Heading>
+      {description && (
+        <p className="mt-3 max-w-[65ch] text-[15px] leading-7 text-foreground/60 text-pretty">
+          {description}
+        </p>
+      )}
     </motion.div>
   );
 }

@@ -63,7 +63,7 @@ export default function ChaosPanel({
           <p className="mb-1.5 text-[9px] font-bold tracking-widest text-foreground/35 uppercase">
             What users feel
           </p>
-          <p className="text-sm leading-relaxed text-foreground/85 font-poppins">
+          <p className="font-sans text-sm leading-relaxed text-foreground/85">
             {failure.userImpact}
           </p>
         </div>
@@ -81,9 +81,9 @@ export default function ChaosPanel({
                   >
                     {impact.effect}
                   </span>
-                  <span className="text-xs leading-relaxed text-foreground/70 font-poppins">
+                  <span className="font-sans text-xs leading-relaxed text-foreground/75">
                     <span className="text-foreground/90">{nodeNameById.get(impact.nodeId) ?? impact.nodeId}</span>
-                    {impact.note && <> — {impact.note}</>}
+                    {impact.note && <>: {impact.note}</>}
                   </span>
                 </li>
               ))}

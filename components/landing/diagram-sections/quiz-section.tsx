@@ -6,11 +6,9 @@ import { Plus, Minus } from 'lucide-react';
 import type { QuizItem } from '@/types/diagram';
 import RichText from '@/components/ui/rich-text';
 import { Section, SectionHeader, fadeUp } from './section-shell';
-import { WigglingCards } from './wiggling-cards';
 
 export default function QuizSection({ quiz }: { quiz: QuizItem[] }) {
   const [open, setOpen] = useState<Set<number>>(new Set());
-  const cardItems = quiz.map((item, i) => ({ id: i, question: item.question, answer: item.answer }));
   const toggle = (i: number) => {
     setOpen((prev) => {
       const next = new Set(prev);
@@ -24,16 +22,13 @@ export default function QuizSection({ quiz }: { quiz: QuizItem[] }) {
 
   return (
     <Section id="quiz">
-      <SectionHeader label="Active Recall" title="Test Yourself" />
-      <motion.p
-        variants={fadeUp}
-        className="-mt-4 mb-8 max-w-2xl text-sm leading-relaxed text-foreground/50"
-      >
-        If you can answer these without scrolling back up, the architecture
-        is yours. Try each one out loud before revealing.
-      </motion.p>
+      <SectionHeader
+        label="Active Recall"
+        title="Test Yourself"
+        description="If you can answer these without scrolling back up, the architecture is yours. Try each one out loud before revealing."
+      />
 
-      <motion.div variants={fadeUp} className="divide-y divide-foreground/5 border border-foreground/5 bg-foreground/1.5">
+      <motion.div variants={fadeUp} className="divide-y divide-foreground/8 border border-foreground/8 bg-foreground/2">
         {quiz.map((item, i) => {
           const isOpen = open.has(i);
           return (
@@ -44,13 +39,13 @@ export default function QuizSection({ quiz }: { quiz: QuizItem[] }) {
                 aria-expanded={isOpen}
                 className="flex w-full cursor-pointer items-start gap-4 px-6 py-4 text-left transition-colors hover:bg-foreground/2"
               >
-                <span className={`mt-0.5 shrink-0 font-doto text-sm font-black ${isOpen ? 'text-primary' : 'text-foreground/25'}`}>
+                <span className={`mt-0.5 shrink-0 font-mono text-xs font-semibold tabular-nums ${isOpen ? 'text-primary' : 'text-foreground/45'}`}>
                   Q{i + 1}
                 </span>
-                <span className="flex-1 font-poppins text-sm leading-relaxed text-foreground/80">
+                <span className="flex-1 font-sans text-[15px] leading-relaxed text-foreground/90">
                   {item.question}
                 </span>
-                <span className="mt-0.5 shrink-0 text-foreground/30">
+                <span className="mt-0.5 shrink-0 text-foreground/40">
                   {isOpen ? <Minus className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                 </span>
               </button>
@@ -64,13 +59,10 @@ export default function QuizSection({ quiz }: { quiz: QuizItem[] }) {
                     className="overflow-hidden"
                   >
                     <div className="mx-6 mb-4 border-l-2 border-primary/40 py-1 pl-4">
-                      <div className="mb-1.5 text-[10px] font-bold tracking-widest text-primary uppercase">
+                      <div className="mb-1.5 font-mono text-[11px] font-semibold tracking-[0.15em] text-primary uppercase">
                         Answer
                       </div>
-                      <RichText
-                        content={item.answer}
-                        className="text-xs dark:text-foreground/55 text-foreground/70"
-                      />
+                      <RichText content={item.answer} className="text-sm leading-relaxed" />
                     </div>
                   </motion.div>
                 )}
@@ -78,8 +70,6 @@ export default function QuizSection({ quiz }: { quiz: QuizItem[] }) {
             </div>
           );
         })}
-
-        {/* <WigglingCards cards={cardItems} /> */}
       </motion.div>
     </Section>
   );

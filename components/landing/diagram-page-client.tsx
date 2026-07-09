@@ -66,17 +66,17 @@ export default function DiagramPageClient({
   const sectionIndex = useMemo(() => {
     const items: { id: string; label: string }[] = [];
     if (design.requirements?.functional?.length || design.requirements?.nonFunctional?.length)
-      items.push({ id: 'requirements', label: 'requirements' });
-    if (design.estimates?.length) items.push({ id: 'estimates', label: 'estimates' });
-    if (design.stages?.length) items.push({ id: 'evolution', label: 'evolution' });
-    if (design.flows?.length) items.push({ id: 'flows', label: 'request-flows' });
-    items.push({ id: 'components', label: 'components' });
-    if (design.summary) items.push({ id: 'deep-dive', label: 'deep-dive' });
-    if (design.decisions?.length) items.push({ id: 'decisions', label: 'decisions' });
-    if (design.bottlenecks?.length) items.push({ id: 'bottlenecks', label: 'bottlenecks' });
-    if (killableNodes.length) items.push({ id: 'failure-lab', label: 'failure-lab' });
-    if (design.quiz?.length) items.push({ id: 'quiz', label: 'quiz' });
-    if (design.references?.length || related.length) items.push({ id: 'references', label: 'references' });
+      items.push({ id: 'requirements', label: 'Requirements' });
+    if (design.estimates?.length) items.push({ id: 'estimates', label: 'Estimates' });
+    if (design.stages?.length) items.push({ id: 'evolution', label: 'Evolution' });
+    if (design.flows?.length) items.push({ id: 'flows', label: 'Request flows' });
+    items.push({ id: 'components', label: 'Components' });
+    if (design.summary) items.push({ id: 'deep-dive', label: 'Deep dive' });
+    if (design.decisions?.length) items.push({ id: 'decisions', label: 'Decisions' });
+    if (design.bottlenecks?.length) items.push({ id: 'bottlenecks', label: 'Bottlenecks' });
+    if (killableNodes.length) items.push({ id: 'failure-lab', label: 'Failure lab' });
+    if (design.quiz?.length) items.push({ id: 'quiz', label: 'Quiz' });
+    if (design.references?.length || related.length) items.push({ id: 'references', label: 'References' });
     return items;
   }, [design, related, killableNodes]);
 
@@ -235,14 +235,14 @@ export default function DiagramPageClient({
       <Navbar />
       <section
         id="main-content"
-        className="relative flex min-h-screen w-full flex-col overflow-x-hidden pt-24 pb-24 font-mono"
+        className="relative flex min-h-screen w-full flex-col overflow-x-hidden pt-24 pb-24"
         aria-label="Diagram detail"
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px)] bg-size-[24px_24px]" />
 
         <DiagramPageBackground />
 
-        <Container className="relative z-10 flex flex-1 flex-col gap-10">
+        <Container className="relative z-10 flex flex-1 flex-col gap-14 md:gap-20">
           <DiagramPageHero
             title={design.title}
             description={design.description}
@@ -308,7 +308,7 @@ export default function DiagramPageClient({
               <SectionHeader label="Deep Dive" title="Architecture Breakdown" />
               <motion.div
                 variants={fadeUp}
-                className="border border-foreground/5 bg-foreground/1 p-8"
+                className="border border-foreground/8 bg-foreground/2 p-6 md:p-10"
               >
                 <RichText content={design.summary} />
               </motion.div>

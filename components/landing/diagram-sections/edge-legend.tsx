@@ -33,7 +33,7 @@ export default function EdgeLegend() {
               <line x1="1" y1="4" x2="31" y2="4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-foreground/50" />
             </svg>
             <span className="text-[10px] text-foreground/65">
-              <span className="text-foreground/90">synchronous</span> — caller waits
+              <span className="text-foreground/90">synchronous</span>: caller waits
             </span>
           </div>
 
@@ -45,12 +45,12 @@ export default function EdgeLegend() {
               </circle>
             </svg>
             <span className="text-[10px] text-foreground/65">
-              <span className="text-foreground/90">asynchronous</span> — fire &amp; forget
+              <span className="text-foreground/90">asynchronous</span>: fire &amp; forget
             </span>
           </div>
 
-          <p className="pt-0.5 text-[9px] leading-snug text-foreground/35">
-            denser dots = higher throughput. Hover any edge for its full contract.
+          <p className="pt-0.5 text-[9px] leading-snug text-foreground/45">
+            Denser dots = higher throughput. Hover any edge for its full contract.
           </p>
         </div>
       )}

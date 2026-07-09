@@ -20,16 +20,11 @@ export default function ChaosSection({
 
   return (
     <Section id="failure-lab">
-      <SectionHeader label="Break Things on Purpose" title="Failure Lab" />
-      <motion.p
-        variants={fadeUp}
-        className="-mt-4 mb-8 max-w-2xl text-sm leading-relaxed text-foreground/50 font-poppins"
-      >
-        Most of this architecture exists because of fear — of one box dying.
-        Take a component offline and the diagram above shows the blast radius:
-        what goes down, what degrades, what the user feels, and which design
-        decision saves the day.
-      </motion.p>
+      <SectionHeader
+        label="Break Things on Purpose"
+        title="Failure Lab"
+        description="Most of this architecture exists because any one box can die. Take a component offline and the diagram above shows the blast radius: what goes down, what degrades, and what the user feels."
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {nodes.map((node) => {
@@ -39,32 +34,32 @@ export default function ChaosSection({
             <motion.div
               key={node.id}
               variants={fadeUp}
-              className={`flex flex-col border bg-foreground/1.5 transition-colors ${isKilled ? 'border-red-500/40' : 'border-foreground/5'}`}
+              className={`flex flex-col border bg-foreground/2 transition-colors ${isKilled ? 'border-red-500/40' : 'border-foreground/8'}`}
             >
-              <div className="flex items-center gap-2.5 border-b border-foreground/5 px-5 py-3.5">
+              <div className="flex items-center gap-2.5 border-b border-foreground/8 px-5 py-3.5">
                 <span className={`inline-block h-1.5 w-1.5 rounded-full ${isKilled ? 'animate-pulse bg-red-500' : 'bg-emerald-500'}`} />
-                <h3 className="truncate text-sm font-bold tracking-wide text-foreground">
+                <h3 className="truncate font-sans text-sm font-semibold text-foreground">
                   {node.name ?? node.id}
                 </h3>
-                <span className="ml-auto shrink-0 text-[9px] tracking-widest text-foreground/30 uppercase">
+                <span className="ml-auto shrink-0 font-mono text-[10px] tracking-wider text-foreground/45 uppercase">
                   {kindDef.label}
                 </span>
               </div>
 
               {node.failure && (
-                <p className="flex-1 px-5 py-3.5 text-xs leading-relaxed text-foreground/55 font-poppins">
+                <p className="flex-1 px-5 py-3.5 font-sans text-[13px] leading-relaxed text-foreground/75">
                   {node.failure.userImpact}
                 </p>
               )}
 
-              <div className="border-t border-foreground/5 px-5 py-3">
+              <div className="border-t border-foreground/8 px-5 py-3">
                 <button
                   type="button"
                   onClick={() => onKill(node.id)}
-                  className={`inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border px-3 py-1.5 text-[10px] font-bold tracking-widest uppercase transition-all ${
+                  className={`inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border px-3 py-1.5 font-mono text-[11px] font-semibold tracking-[0.15em] uppercase transition-[color,background-color,border-color,transform] active:scale-[0.98] ${
                     isKilled
-                      ? 'border-foreground/10 text-foreground/60 hover:border-primary/40 hover:text-primary'
-                      : 'border-red-500/25 text-red-500/80 hover:border-red-500/60 hover:bg-red-500/5 hover:text-red-500'
+                      ? 'border-foreground/15 text-foreground/70 hover:border-primary/40 hover:text-primary'
+                      : 'border-red-500/25 text-red-500/90 hover:border-red-500/60 hover:bg-red-500/5 hover:text-red-500'
                   }`}
                 >
                   {isKilled ? (

@@ -22,7 +22,7 @@ export default function ReferencesSection({
       {references.length > 0 && (
         <motion.ul
           variants={fadeUp}
-          className="divide-y divide-foreground/5 border border-foreground/5 bg-foreground/1.5"
+          className="divide-y divide-foreground/8 border border-foreground/8 bg-foreground/2"
         >
           {references.map((ref) => (
             <li key={ref.url}>
@@ -32,12 +32,12 @@ export default function ReferencesSection({
                 rel="noreferrer"
                 className="group flex items-center gap-4 px-6 py-4 transition-colors hover:bg-foreground/2"
               >
-                <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-foreground/25 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
-                <span className="flex-1 text-sm text-foreground/70 transition-colors group-hover:text-primary">
+                <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-foreground/30 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
+                <span className="flex-1 font-sans text-[15px] text-foreground/85 transition-colors group-hover:text-primary">
                   {ref.title}
                 </span>
                 {ref.source && (
-                  <span className="hidden shrink-0 text-[10px] tracking-wider text-foreground/30 sm:block">
+                  <span className="hidden shrink-0 font-mono text-[11px] tracking-wider text-foreground/45 sm:block">
                     {ref.source}
                   </span>
                 )}
@@ -48,8 +48,8 @@ export default function ReferencesSection({
       )}
 
       {related.length > 0 && (
-        <motion.div variants={fadeUp} className={references.length > 0 ? 'mt-6' : ''}>
-          <div className="mb-3 flex items-center gap-2 text-[10px] font-bold tracking-widest text-foreground/30 uppercase">
+        <motion.div variants={fadeUp} className={references.length > 0 ? 'mt-8' : ''}>
+          <div className="mb-3 flex items-center gap-2 font-mono text-[11px] font-semibold tracking-[0.15em] text-foreground/45 uppercase">
             <GitBranch className="h-3 w-3" />
             Patterns used in this design
           </div>
@@ -58,7 +58,7 @@ export default function ReferencesSection({
               <Link
                 key={r.slug}
                 href={`/d/${r.slug}`}
-                className="border border-foreground/10 px-3 py-1.5 text-xs text-foreground/60 transition-all hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                className="border border-foreground/12 px-3 py-1.5 font-sans text-[13px] text-foreground/70 transition-[color,background-color,border-color,transform] hover:border-primary/40 hover:bg-primary/5 hover:text-primary active:scale-[0.98]"
               >
                 {r.title}
               </Link>

@@ -139,8 +139,8 @@ export default function FlowPlayer({
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-3.5"
           >
-            <p className="text-sm leading-relaxed text-foreground/85 font-poppins">
-              <span className="mr-2 font-doto font-black text-primary">
+            <p className="font-sans text-sm leading-relaxed text-foreground/85">
+              <span className="mr-2 font-mono text-xs font-semibold text-primary tabular-nums">
                 {String(stepIndex + 1).padStart(2, '0')}
               </span>
               {step.text}
@@ -173,7 +173,7 @@ export default function FlowPlayer({
                       <span className="mt-0.5 shrink-0 border border-primary/25 px-1.5 py-0.5 text-[9px] tracking-wider text-primary/90">
                         {nodeNameById.get(change.nodeId) ?? change.nodeId}
                       </span>
-                      <span className="text-xs leading-relaxed text-foreground/70 font-poppins">
+                      <span className="font-sans text-xs leading-relaxed text-foreground/75">
                         {change.note}
                       </span>
                     </li>

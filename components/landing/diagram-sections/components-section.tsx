@@ -72,37 +72,34 @@ export default function ComponentsSection({
 
   return (
     <Section id="components">
-      <SectionHeader label="Component Breakdown" title="Key Components" />
-      <motion.p
-        variants={fadeUp}
-        className="-mt-4 mb-8 max-w-2xl text-sm leading-relaxed text-foreground/50 font-poppins"
-      >
-        Every box on the canvas, and the job it does. Click a card to locate
-        it in the diagram — click the node itself for the full deep dive.
-      </motion.p>
+      <SectionHeader
+        label="Component Breakdown"
+        title="Key Components"
+        description="Every box on the canvas, and the job it does. Click a card to locate it in the diagram; click the node itself for the full deep dive."
+      />
 
       <div className="space-y-8">
         {byCategory.map(([category, entries]) => (
           <motion.div key={category} variants={fadeUp}>
-            <div className="mb-3 flex items-center gap-3">
-              <span className={`text-xs font-bold tracking-widest uppercase ${CATEGORY_ACCENT[category]}`}>
+            <div className="mb-3 flex items-baseline gap-3">
+              <span className={`font-mono text-[11px] font-semibold tracking-[0.15em] uppercase ${CATEGORY_ACCENT[category]}`}>
                 {category}
               </span>
-              <span className="text-[10px] text-foreground/25">
+              <span className="font-mono text-[11px] text-foreground/45 tabular-nums">
                 ×{entries.reduce((acc, e) => acc + e.nodeIds.length, 0)}
               </span>
-              <span className="h-px flex-1 bg-foreground/5" />
+              <span className="h-px flex-1 self-center bg-foreground/8" />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 font-poppins">
+            <div className="grid gap-3 font-sans sm:grid-cols-2 lg:grid-cols-3">
               {entries.map((entry) => (
                 <button
                   key={entry.key}
                   type="button"
                   onClick={() => onLocate(entry.nodeIds)}
-                  className="group flex cursor-pointer items-start gap-3 border border-foreground/5 bg-foreground/1.5 p-4 text-left transition-all hover:border-primary/25 hover:bg-foreground/3"
+                  className="group flex cursor-pointer items-start gap-3 border border-foreground/8 bg-foreground/2 p-4 text-left transition-[color,background-color,border-color,transform] hover:border-primary/25 hover:bg-foreground/3 active:scale-[0.98]"
                   aria-label={`Locate ${entry.name} in the diagram`}
                 >
-                  <span className="relative flex h-9 w-9 shrink-0 items-center justify-center border border-foreground/8 bg-foreground/3">
+                  <span className="relative flex h-9 w-9 shrink-0 items-center justify-center border border-foreground/10 bg-foreground/3">
                     {entry.brandLogo ? (
                       <img src={entry.brandLogo} alt="" className="h-5 w-5 object-contain" />
                     ) : (
@@ -111,25 +108,25 @@ export default function ComponentsSection({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline gap-2">
-                      <span className="truncate text-xs font-bold tracking-wide text-foreground">
+                      <span className="truncate text-sm font-semibold text-foreground">
                         {entry.name}
                       </span>
                       {entry.nodeIds.length > 1 && (
-                        <span className="shrink-0 text-[10px] text-foreground/30">
+                        <span className="shrink-0 font-mono text-[11px] text-foreground/45 tabular-nums">
                           ×{entry.nodeIds.length}
                         </span>
                       )}
                     </span>
-                    <span className="mt-0.5 block text-[10px] tracking-wider text-foreground/35 uppercase">
+                    <span className="mt-0.5 block font-mono text-[10px] tracking-wider text-foreground/45 uppercase">
                       {entry.kindLabel}
                     </span>
                     {entry.description && (
-                      <span className="mt-1.5 block text-xs leading-relaxed text-foreground/45">
+                      <span className="mt-1.5 block text-[13px] leading-relaxed text-foreground/65">
                         {entry.description}
                       </span>
                     )}
                   </span>
-                  <Crosshair className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/15 transition-colors group-hover:text-primary" />
+                  <Crosshair className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/20 transition-colors group-hover:text-primary" />
                 </button>
               ))}
             </div>

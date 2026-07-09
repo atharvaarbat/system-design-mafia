@@ -144,8 +144,8 @@ export default function DiagramPageCanvas({
                   className="absolute top-4 left-4 z-30 flex items-center gap-2.5 border border-red-500/25 bg-background/90 px-3.5 py-2 backdrop-blur-md"
                 >
                   <Skull className="h-3.5 w-3.5 text-red-500" />
-                  <span className="text-xs text-foreground/75">
-                    Chaos mode — click a marked component to take it offline
+                  <span className="font-sans text-xs text-foreground/80">
+                    Chaos mode: click a marked component to take it offline
                   </span>
                   <button
                     type="button"

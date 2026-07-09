@@ -108,7 +108,7 @@ export default function StagePlayer({
             {stage.trigger && (
               <div className="flex items-start gap-2 border border-amber-500/25 bg-amber-500/8 px-2.5 py-1.5">
                 <TrendingUp className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
-                <p className="text-[11px] leading-relaxed text-foreground/70 font-poppins">
+                <p className="font-sans text-xs leading-relaxed text-foreground/75">
                   {stage.trigger}
                 </p>
               </div>

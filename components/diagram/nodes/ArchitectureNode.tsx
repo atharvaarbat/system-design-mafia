@@ -206,7 +206,7 @@ function ArchitectureNodeComponent({ data, selected }: NodeProps<ArchitectureFlo
           <div
             onContextMenu={handleContextMenu}
             onClickCapture={handleChaosClickCapture}
-            className={`group font-poppins relative w-fit rounded-xl transition-[opacity,filter] duration-500 ${selected && editable ? 'bg-primary/20' : ''} ${isDimmed ? 'opacity-20 grayscale' : ''}`}
+            className={`group font-sans relative w-fit rounded-xl transition-[opacity,filter] duration-500 ${selected && editable ? 'bg-primary/20' : ''} ${isDimmed ? 'opacity-20 grayscale' : ''}`}
           >
             {highlightState === 'active' && (
               <div className="pointer-events-none absolute -inset-1.5 rounded-xl border-2 border-primary/70 bg-primary/8 shadow-[0_0_28px_color-mix(in_oklab,var(--color-primary)_35%,transparent)]" />

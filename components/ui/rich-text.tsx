@@ -49,13 +49,13 @@ function renderInline(tokens: InlineToken[]) {
     switch (t.type) {
       case 'bold':
         return (
-          <strong key={i} className="font-bold text-foreground/80">
+          <strong key={i} className="font-semibold text-foreground">
             {t.content}
           </strong>
         );
       case 'italic':
         return (
-          <em key={i} className="italic text-foreground/70">
+          <em key={i} className="italic">
             {t.content}
           </em>
         );
@@ -69,7 +69,7 @@ function renderInline(tokens: InlineToken[]) {
         return (
           <code
             key={i}
-            className="rounded-sm border border-foreground/5 bg-foreground/4 px-1 py-0.5 text-xs text-primary"
+            className="rounded-sm border border-foreground/8 bg-foreground/5 px-1 py-0.5 font-mono text-[0.85em] text-primary"
           >
             {t.content}
           </code>
@@ -101,7 +101,12 @@ export default function RichText({ content, className }: RichTextProps) {
   const blocks = content.split(/\n\n+/);
 
   return (
-    <div className={cn('space-y-5 font-mono text-sm leading-relaxed dark:text-foreground/60 text-foreground font-poppins', className)}>
+    <div
+      className={cn(
+        'max-w-[72ch] space-y-4 font-sans text-[15px] leading-7 text-foreground/85 text-pretty',
+        className,
+      )}
+    >
       {blocks.map((block, i) => {
         const trimmed = block.trim();
         if (!trimmed) return null;
@@ -110,7 +115,7 @@ export default function RichText({ content, className }: RichTextProps) {
           return (
             <h3
               key={i}
-              className="text-foreground pt-2 text-base  tracking-tight font-mono font-bold bg-primary/10 px-2 pb-1 "
+              className="pt-4 text-lg font-semibold tracking-tight text-foreground text-balance first:pt-0"
             >
               {renderInline(parseInline(trimmed.slice(4)))}
             </h3>
@@ -121,7 +126,7 @@ export default function RichText({ content, className }: RichTextProps) {
           return (
             <h4
               key={i}
-              className="text-foreground text-sm font-bold tracking-wide"
+              className="pt-2 text-[15px] font-semibold text-foreground first:pt-0"
             >
               {renderInline(parseInline(trimmed.slice(5)))}
             </h4>
@@ -131,10 +136,10 @@ export default function RichText({ content, className }: RichTextProps) {
         if (trimmed.startsWith('- ')) {
           const items = trimmed.split('\n').filter((l) => l.startsWith('- '));
           return (
-            <ul key={i} className="list-none space-y-1.5 pl-0">
+            <ul key={i} className="list-none space-y-2 pl-0">
               {items.map((item, j) => (
-                <li key={j} className="flex items-baseline gap-2">
-                  <span className="mt-[5px] inline-block h-1 w-1 flex-shrink-0 rounded-full bg-foreground/20" />
+                <li key={j} className="flex items-start gap-2.5">
+                  <span className="mt-3 inline-block h-1 w-1 flex-shrink-0 rounded-full bg-primary/60" />
                   <span>{renderInline(parseInline(item.slice(2)))}</span>
                 </li>
               ))}

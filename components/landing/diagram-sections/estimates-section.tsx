@@ -13,36 +13,32 @@ export default function EstimatesSection({
 
   return (
     <Section id="estimates">
-      <SectionHeader label="Back of the Envelope" title="Scale Estimates" />
+      <SectionHeader
+        label="Back of the Envelope"
+        title="Scale Estimates"
+        description="Rough, order-of-magnitude numbers. The point is to justify the architecture, not to be exact."
+      />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {estimates.map((est) => (
           <motion.div
             key={est.label}
             variants={fadeUp}
-            className="group relative border border-foreground/5 bg-foreground/1.5 p-5 transition-colors hover:border-primary/20 hover:bg-foreground/3"
+            className="group border border-foreground/8 bg-foreground/2 p-5 transition-colors hover:border-primary/25"
           >
-            <span className="pointer-events-none absolute top-0 left-0 h-3 w-3 border-t border-l border-foreground/15 transition-colors group-hover:border-primary/50" />
-            <div className="mb-2 text-[10px] font-bold tracking-widest text-foreground/40 uppercase">
+            <div className="mb-2 font-mono text-[11px] tracking-[0.15em] text-foreground/50 uppercase">
               {est.label}
             </div>
-            <div className="font-doto text-3xl font-black text-foreground">
+            <div className="font-doto text-3xl font-black text-foreground tabular-nums">
               {est.value}
             </div>
             {est.note && (
-              <div className="mt-2 text-xs leading-relaxed text-foreground/40">
+              <div className="mt-2 font-sans text-[13px] leading-relaxed text-foreground/60">
                 {est.note}
               </div>
             )}
           </motion.div>
         ))}
       </div>
-      <motion.p
-        variants={fadeUp}
-        className="mt-4 text-xs tracking-wider text-foreground/25"
-      >
-        Rough, order-of-magnitude numbers — the point is to justify the
-        architecture, not to be exact.
-      </motion.p>
     </Section>
   );
 }
