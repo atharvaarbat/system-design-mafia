@@ -157,6 +157,11 @@ export function systemDesignToFlow(design: SystemDesign): { nodes: Node[]; edges
         lineStyle: archEdge.style,
         color: archEdge.color,
         width: archEdge.width,
+        sync: archEdge.sync,
+        guarantees: archEdge.guarantees,
+        qps: archEdge.qps,
+        p99: archEdge.p99,
+        payloadSize: archEdge.payloadSize,
       },
     })
   }

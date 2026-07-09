@@ -16,6 +16,9 @@ export type Protocol =
 
 export type FailureEffect = 'down' | 'degraded'
 
+/** Delivery / ordering contract an edge promises. Shown as chips on hover. */
+export type EdgeGuarantee = 'at-least-once' | 'exactly-once' | 'ordered' | 'idempotent'
+
 /** One component affected when another node is killed in chaos mode. */
 export interface FailureImpact {
   nodeId: string
@@ -62,6 +65,17 @@ export interface SystemDesignEdge {
   animated?: boolean
   width?: number
   color?: string
+  /** Sync/async contract. true = caller blocks (rendered solid); false = fire-and-forget
+   *  (rendered dashed with travelling particles). Undefined leaves rendering to `style`. */
+  sync?: boolean
+  /** Delivery / ordering guarantees this edge promises. */
+  guarantees?: EdgeGuarantee[]
+  /** Peak throughput, e.g. "~100K peak". Also scales async particle density. */
+  qps?: string
+  /** Tail latency, e.g. "8ms". */
+  p99?: string
+  /** Typical message size, e.g. "~2KB". */
+  payloadSize?: string
 }
 
 export interface SystemDesignGroup {
@@ -77,11 +91,32 @@ export interface SystemDesignGroup {
   height?: number
 }
 
+/** The literal data travelling on a hop — shown in the flow player's payload inspector. */
+export interface FlowStepPayload {
+  /** Short label for the payload, e.g. "POST /videos/initiate" or "S3 ObjectCreated event". Plain text. */
+  title: string
+  /** The actual data at this hop — a JSON / code block rendered verbatim in a monospace box. Plain text. */
+  body: string
+}
+
+/** A state mutation a flow step causes at a node ("row inserted", "cache warmed"). */
+export interface FlowStepStateChange {
+  nodeId: string
+  /** Plain text, short. What changed at this node during the step. */
+  note: string
+}
+
 /** One step of a request-flow walkthrough. nodeIds/edgeIds are highlighted in the diagram while the step is active. */
 export interface FlowStep {
   text: string
   nodeIds?: string[]
   edgeIds?: string[]
+  /** The data on the wire at this hop — rendered in the payload inspector. */
+  payload?: FlowStepPayload
+  /** Node state mutations this step triggers. */
+  stateChanges?: FlowStepStateChange[]
+  /** This hop's latency contribution in ms — the player shows a cumulative clock + waterfall. */
+  latencyMs?: number
 }
 
 export interface RequestFlow {

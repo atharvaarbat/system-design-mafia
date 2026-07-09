@@ -5,6 +5,7 @@ import Diagram from '@/components/diagram/diagram';
 import FlowPlayer from '@/components/landing/diagram-sections/flow-player';
 import StagePlayer from '@/components/landing/diagram-sections/stage-player';
 import ChaosPanel from '@/components/landing/diagram-sections/chaos-panel';
+import EdgeLegend from '@/components/landing/diagram-sections/edge-legend';
 import { Crosshair, Skull, X } from 'lucide-react';
 import type { SystemDesign, RequestFlow, SystemDesignNode } from '@/types/diagram';
 import type { DiagramHighlight } from '@/lib/diagram/highlight-context';
@@ -63,6 +64,8 @@ export default function DiagramPageCanvas({
   onChaosKill,
   onRestoreChaos,
 }: DiagramPageCanvasProps) {
+  const hasEdgeContracts = design.edges.some((e) => e.sync !== undefined);
+
   return (
     <motion.div
       ref={diagramWrapRef}
@@ -167,6 +170,9 @@ export default function DiagramPageCanvas({
                 Chaos mode
               </button>
             )}
+
+            {/* Edge-contract legend — sync vs async language, bottom-left */}
+            {hasEdgeContracts && !editable && <EdgeLegend />}
 
             {/* Component focus chip */}
             <AnimatePresence>

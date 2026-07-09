@@ -73,6 +73,12 @@ export function flowToSystemDesign(nodes: Node[], edges: Edge[], original?: Syst
     if (edge.animated) se.animated = true
     if (ed?.width) se.width = Number(ed.width)
     if (ed?.color) se.color = String(ed.color)
+    if (typeof ed?.sync === 'boolean') se.sync = ed.sync
+    if (Array.isArray(ed?.guarantees) && ed.guarantees.length > 0)
+      se.guarantees = ed.guarantees as SystemDesignEdge['guarantees']
+    if (ed?.qps) se.qps = String(ed.qps)
+    if (ed?.p99) se.p99 = String(ed.p99)
+    if (ed?.payloadSize) se.payloadSize = String(ed.payloadSize)
     systemEdges.push(se)
   }
 

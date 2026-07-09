@@ -69,37 +69,88 @@
         {
           "text": "The client asks the API service for a pre-signed upload URL. The API authenticates the creator, opens a multipart upload session in blob storage, and prepares initial metadata (title, visibility, status = uploading).",
           "nodeIds": ["client-web", "api-gateway", "api-service"],
-          "edgeIds": ["e-web-gw", "e-gw-api"]
+          "edgeIds": ["e-web-gw", "e-gw-api"],
+          "latencyMs": 40,
+          "payload": {
+            "title": "POST /api/videos:initiate",
+            "body": "{\n  \"title\": \"Ship It — a build vlog\",\n  \"sizeBytes\": 10737418240,\n  \"contentType\": \"video/mp4\",\n  \"parts\": 512\n}\n\n→ 200 { uploadId, presignedUrls[] }"
+          }
         },
         {
           "text": "Initial metadata is written to the metadata database, partitioned by videoId. Processing status starts as 'pending' — the video exists before a single byte of it has arrived.",
           "nodeIds": ["api-service", "metadata-db"],
-          "edgeIds": ["e-api-db"]
+          "edgeIds": ["e-api-db"],
+          "latencyMs": 15,
+          "payload": {
+            "title": "INSERT videos (partition = videoId)",
+            "body": "{\n  \"videoId\": \"vid_9f2a…\",\n  \"status\": \"uploading\",\n  \"visibility\": \"private\",\n  \"createdAt\": \"2026-07-10T12:00:00Z\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "metadata-db", "note": "row written — status = uploading" }
+          ]
         },
         {
           "text": "The client splits the video into chunks and uploads them straight to blob storage using the pre-signed URL. A failed chunk is retried alone — a 10 GB upload never restarts from zero.",
           "nodeIds": ["client-web", "api-service", "blob-storage-upload"],
-          "edgeIds": ["xy-edge__api-servicebottom-source-blob-storage-uploadtop-target"]
+          "edgeIds": ["xy-edge__api-servicebottom-source-blob-storage-uploadtop-target"],
+          "latencyMs": 900,
+          "payload": {
+            "title": "PUT {presigned-url}  ·  part 312 / 512",
+            "body": "Content-Length: 20971520\nx-amz-part-number: 312\n\n‹ 20 MB of raw H.264 bytes ›"
+          },
+          "stateChanges": [
+            { "nodeId": "blob-storage-upload", "note": "311/512 parts landed; a failed part retries alone, not the whole file" }
+          ]
         },
         {
           "text": "When the multipart upload completes, blob storage assembles the final object and emits an object-created event into the queue. Upload and processing are now fully decoupled.",
           "nodeIds": ["blob-storage-upload", "upload-completion-queue"],
-          "edgeIds": ["xy-edge__blob-storage-uploadbottom-source-upload-completion-queuetop-target"]
+          "edgeIds": ["xy-edge__blob-storage-uploadbottom-source-upload-completion-queuetop-target"],
+          "latencyMs": 25,
+          "payload": {
+            "title": "S3 → ObjectCreated:CompleteMultipartUpload",
+            "body": "{\n  \"eventName\": \"ObjectCreated:CompleteMultipartUpload\",\n  \"bucket\": \"vid-originals\",\n  \"key\": \"vid_9f2a/original.mp4\",\n  \"size\": 10737418240\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "upload-completion-queue", "note": "event buffered — the reply to the creator no longer waits on transcoding" }
+          ]
         },
         {
           "text": "The completion handler pulls the event and starts the transcoding orchestrator, which builds a DAG of every processing task and the dependencies between them.",
           "nodeIds": ["upload-completion-queue", "completion-handler", "transcoder-orchestrator"],
-          "edgeIds": ["xy-edge__upload-completion-queuebottom-source-completion-handlerright-target", "xy-edge__completion-handlerleft-source-transcoder-orchestratorright-target"]
+          "edgeIds": ["xy-edge__upload-completion-queuebottom-source-completion-handlerright-target", "xy-edge__completion-handlerleft-source-transcoder-orchestratorright-target"],
+          "latencyMs": 30,
+          "payload": {
+            "title": "StartTranscode(videoId)",
+            "body": "{\n  \"videoId\": \"vid_9f2a…\",\n  \"sourceKey\": \"vid_9f2a/original.mp4\",\n  \"renditions\": [\"240p\",\"360p\",\"480p\",\"720p\",\"1080p\",\"4K\"]\n}"
+          }
         },
         {
           "text": "The orchestrator fetches the original, splits it into GOP-aligned segments, and schedules hundreds of parallel encode jobs — one per segment per resolution × bitrate — across stateless workers.",
           "nodeIds": ["transcoder-orchestrator", "blob-storage-upload", "task-workers"],
-          "edgeIds": ["xy-edge__transcoder-orchestratorright-source-blob-storage-uploadbottom-target", "xy-edge__transcoder-orchestratorleft-source-task-workersright-target"]
+          "edgeIds": ["xy-edge__transcoder-orchestratorright-source-blob-storage-uploadbottom-target", "xy-edge__transcoder-orchestratorleft-source-task-workersright-target"],
+          "latencyMs": 60,
+          "payload": {
+            "title": "DAG fan-out → encode jobs",
+            "body": "512 segments × 6 renditions = 3,072 tasks\n\n{ \"jobId\": \"job_1a…\", \"segment\": 128, \"res\": \"1080p\", \"bitrate\": \"8Mbps\" }"
+          },
+          "stateChanges": [
+            { "nodeId": "task-workers", "note": "3,072 stateless encode jobs dispatched in parallel" }
+          ]
         },
         {
           "text": "Workers write encoded segments, thumbnails and HLS/DASH manifests to transcoded storage. The orchestrator marks the video streamable — it now exists in every quality a player could ask for.",
           "nodeIds": ["task-workers", "blob-storage-transcoded"],
-          "edgeIds": ["xy-edge__task-workersleft-source-blob-storage-transcodedbottom-target"]
+          "edgeIds": ["xy-edge__task-workersleft-source-blob-storage-transcodedbottom-target"],
+          "latencyMs": 180000,
+          "payload": {
+            "title": "master.m3u8 (HLS manifest)",
+            "body": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080\n1080p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=1280x720\n720p/index.m3u8"
+          },
+          "stateChanges": [
+            { "nodeId": "blob-storage-transcoded", "note": "segments, thumbnails + manifests written" },
+            { "nodeId": "metadata-db", "note": "status = streamable — the video is now playable in every quality" }
+          ]
         }
       ]
     },
@@ -111,32 +162,71 @@
         {
           "text": "The player requests video metadata through the API gateway — title, duration, thumbnails and, crucially, the URL of the streaming manifest.",
           "nodeIds": ["client-mobile", "api-gateway", "api-service"],
-          "edgeIds": ["e-mobile-gw", "e-gw-api"]
+          "edgeIds": ["e-mobile-gw", "e-gw-api"],
+          "latencyMs": 30,
+          "payload": {
+            "title": "GET /api/videos/vid_9f2a",
+            "body": "→ 200 OK\n{\n  \"title\": \"Ship It — a build vlog\",\n  \"durationSec\": 742,\n  \"manifestUrl\": \"https://cdn…/vid_9f2a/master.m3u8\"\n}"
+          }
         },
         {
           "text": "The API checks Redis first. For popular videos this is almost always a hit; on a miss it reads Cassandra and back-fills the cache for the next viewer.",
           "nodeIds": ["api-service", "metadata-cache", "metadata-db"],
-          "edgeIds": ["e-api-cache", "e-api-db"]
+          "edgeIds": ["e-api-cache", "e-api-db"],
+          "latencyMs": 1,
+          "payload": {
+            "title": "Redis GET video:vid_9f2a",
+            "body": "→ HIT\nmetadata served straight from cache — Cassandra never touched"
+          },
+          "stateChanges": [
+            { "nodeId": "metadata-cache", "note": "hot key served in ~1ms; the database read is skipped entirely" }
+          ]
         },
         {
           "text": "The player downloads the manifest — an index of every available quality level and the URL of every few-second segment. No video data yet.",
           "nodeIds": ["client-mobile", "cdn"],
-          "edgeIds": ["xy-edge__cdnright-source-client-mobileleft-target"]
+          "edgeIds": ["xy-edge__cdnright-source-client-mobileleft-target"],
+          "latencyMs": 15,
+          "payload": {
+            "title": "GET /vid_9f2a/master.m3u8",
+            "body": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080 → 1080p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=1280x720  → 720p/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=600000,RESOLUTION=640x360    → 360p/index.m3u8"
+          }
         },
         {
           "text": "The player estimates its bandwidth, picks a starting quality, and requests only the first segment from the CDN. Playback begins while later segments download in the background.",
           "nodeIds": ["client-mobile", "cdn"],
-          "edgeIds": ["xy-edge__cdnright-source-client-mobileleft-target"]
+          "edgeIds": ["xy-edge__cdnright-source-client-mobileleft-target"],
+          "latencyMs": 20,
+          "payload": {
+            "title": "GET /vid_9f2a/720p/seg-00001.ts",
+            "body": "→ 200 OK  ·  x-cache: HIT (edge)\nContent-Length: 2.1 MB  ·  ~4s of video"
+          }
         },
         {
           "text": "On an edge cache miss, the CDN pulls the segment from transcoded storage and keeps a copy for the next nearby viewer. Origin ends up serving only a tiny fraction of total traffic.",
           "nodeIds": ["cdn", "blob-storage-transcoded"],
-          "edgeIds": ["xy-edge__blob-storage-transcodedtop-source-cdnbottom-target"]
+          "edgeIds": ["xy-edge__blob-storage-transcodedtop-source-cdnbottom-target"],
+          "latencyMs": 80,
+          "payload": {
+            "title": "Edge MISS → origin GET",
+            "body": "cdn → transcoded-storage/vid_9f2a/720p/seg-00042.ts\n→ 200 OK, cached at edge (TTL 24h)"
+          },
+          "stateChanges": [
+            { "nodeId": "cdn", "note": "segment now cached at the edge — every later nearby viewer gets the ~20ms hit path" }
+          ]
         },
         {
           "text": "After every segment the player re-measures throughput and buffer health, switching quality up or down at segment boundaries. This is adaptive bitrate streaming — the whole reason segments exist.",
           "nodeIds": ["client-mobile", "cdn"],
-          "edgeIds": ["xy-edge__cdnright-source-client-mobileleft-target"]
+          "edgeIds": ["xy-edge__cdnright-source-client-mobileleft-target"],
+          "latencyMs": 2,
+          "payload": {
+            "title": "ABR decision (client-side)",
+            "body": "{\n  \"throughputMbps\": 12.4,\n  \"bufferSec\": 18,\n  \"next\": \"1080p\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "client-mobile", "note": "bandwidth recovered — switches up to 1080p at the next segment boundary" }
+          ]
         }
       ]
     }
@@ -442,7 +532,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~50K peak",
+      "p99": "40ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-web-gw",
@@ -451,7 +545,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~50K peak",
+      "p99": "40ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-tv-gw",
@@ -460,7 +558,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~50K peak",
+      "p99": "40ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-gw-api",
@@ -469,7 +571,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "HTTP",
-      "protocol": "http"
+      "protocol": "http",
+      "sync": true,
+      "qps": "~50K peak",
+      "p99": "20ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-api-db",
@@ -479,7 +585,10 @@
       "targetHandle": "left-target",
       "label": "Read/Write",
       "protocol": "database",
-      "style": "dashed"
+      "sync": true,
+      "qps": "~2K (misses)",
+      "p99": "12ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-api-cache",
@@ -489,7 +598,10 @@
       "targetHandle": "left-target",
       "label": "Read/Write",
       "protocol": "database",
-      "style": "dashed"
+      "sync": true,
+      "qps": "~48K",
+      "p99": "1ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "xy-edge__api-servicebottom-source-blob-storage-uploadtop-target",
@@ -518,7 +630,11 @@
       "targetHandle": "left-target",
       "label": "Stream Segments",
       "protocol": "https",
-      "animated": true
+      "animated": true,
+      "sync": true,
+      "qps": "10M+ peak",
+      "p99": "20ms",
+      "payloadSize": "~2–6MB"
     },
     {
       "id": "xy-edge__cdnright-source-client-webleft-target",
@@ -528,7 +644,11 @@
       "targetHandle": "left-target",
       "label": "Stream Segments",
       "protocol": "https",
-      "animated": true
+      "animated": true,
+      "sync": true,
+      "qps": "10M+ peak",
+      "p99": "20ms",
+      "payloadSize": "~2–6MB"
     },
     {
       "id": "xy-edge__cdnright-source-client-tvleft-target",
@@ -538,7 +658,11 @@
       "targetHandle": "left-target",
       "label": "Stream Segments",
       "protocol": "https",
-      "animated": true
+      "animated": true,
+      "sync": true,
+      "qps": "10M+ peak",
+      "p99": "20ms",
+      "payloadSize": "~2–6MB"
     },
     {
       "id": "xy-edge__task-workersleft-source-blob-storage-transcodedbottom-target",
@@ -567,7 +691,9 @@
       "targetHandle": "right-target",
       "label": "Schedule Tasks",
       "protocol": "internal",
-      "style": "dashed"
+      "sync": false,
+      "guarantees": ["at-least-once", "idempotent"],
+      "qps": "~3K/video"
     },
     {
       "id": "xy-edge__completion-handlerleft-source-transcoder-orchestratorright-target",
@@ -585,7 +711,10 @@
       "sourceHandle": "bottom-source",
       "targetHandle": "right-target",
       "label": "Pull Event",
-      "protocol": "message"
+      "protocol": "message",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~500/min"
     },
     {
       "id": "xy-edge__blob-storage-uploadbottom-source-upload-completion-queuetop-target",
@@ -595,7 +724,9 @@
       "targetHandle": "top-target",
       "label": "Object Created",
       "protocol": "event",
-      "style": "dotted"
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~500/min"
     }
   ],
   "groups": [

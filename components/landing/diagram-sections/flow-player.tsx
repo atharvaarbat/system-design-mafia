@@ -2,8 +2,17 @@
 
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Timer, X } from 'lucide-react';
 import type { RequestFlow } from '@/types/diagram';
+
+/** Compact ms → human clock: "8ms", "1.2s", "3m 5s". */
+function fmtMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
+  const m = Math.floor(ms / 60000);
+  const s = Math.round((ms % 60000) / 1000);
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
 
 /** Docked on top of the diagram while a flow is being traced. */
 export default function FlowPlayer({
@@ -45,9 +54,12 @@ export default function FlowPlayer({
 
   if (!step) return null;
 
-  const nodeNames = (step.nodeIds ?? [])
-    .map((id) => nodeNameById.get(id))
-    .filter((n): n is string => !!n);
+  // Cumulative "elapsed" clock + waterfall — only when the flow carries latency data.
+  const totalMs = flow.steps.reduce((sum, s) => sum + (s.latencyMs ?? 0), 0);
+  const elapsedMs = flow.steps
+    .slice(0, stepIndex + 1)
+    .reduce((sum, s) => sum + (s.latencyMs ?? 0), 0);
+  const hasLatency = totalMs > 0;
 
   return (
     <motion.div
@@ -55,7 +67,7 @@ export default function FlowPlayer({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="absolute top-4 left-4 z-30 w-[360px] max-w-[calc(100%-2rem)] bg-background/90 font-mono shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-md"
+      className="absolute top-4 left-4 z-30 w-[380px] max-w-[calc(100%-2rem)] bg-background/90 font-mono shadow-[0_8px_40px_rgba(0,0,0,0.35)] backdrop-blur-md"
     >
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-foreground/8 px-4 py-2.5">
@@ -89,8 +101,35 @@ export default function FlowPlayer({
         ))}
       </div>
 
+      {/* Latency waterfall — where the time goes across the whole flow */}
+      {hasLatency && (
+        <div className="px-4 pt-3">
+          <div className="mb-1.5 flex items-center gap-1.5 text-[10px]">
+            <Timer className="h-3 w-3 text-primary" />
+            <span className="text-foreground/70">elapsed {fmtMs(elapsedMs)}</span>
+            {step.latencyMs != null && (
+              <span className="text-foreground/35">· +{fmtMs(step.latencyMs)} this hop</span>
+            )}
+            <span className="ml-auto text-foreground/30">total {fmtMs(totalMs)}</span>
+          </div>
+          <div className="flex h-1.5 gap-px">
+            {flow.steps.map((s, i) => {
+              const pct = ((s.latencyMs ?? 0) / totalMs) * 100;
+              const state = i < stepIndex ? 'past' : i === stepIndex ? 'current' : 'future';
+              return (
+                <div
+                  key={i}
+                  style={{ width: `${pct}%` }}
+                  className={`h-full min-w-[2px] transition-colors duration-300 ${state === 'current' ? 'bg-primary' : state === 'past' ? 'bg-primary/40' : 'bg-foreground/10'}`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Step body */}
-      <div className="px-4 py-3">
+      <div className="max-h-[46vh] overflow-y-auto px-4 py-3">
         <AnimatePresence mode="wait">
           <motion.div
             key={stepIndex}
@@ -98,6 +137,7 @@ export default function FlowPlayer({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -8 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-3.5"
           >
             <p className="text-sm leading-relaxed text-foreground/85 font-poppins">
               <span className="mr-2 font-doto font-black text-primary">
@@ -105,6 +145,42 @@ export default function FlowPlayer({
               </span>
               {step.text}
             </p>
+
+            {step.payload && (
+              <div>
+                <p className="mb-1.5 text-[9px] font-bold tracking-widest text-foreground/35 uppercase">
+                  On the wire
+                </p>
+                <div className="border border-foreground/10 bg-foreground/2">
+                  <div className="border-b border-foreground/8 px-3 py-1.5 text-[10px] tracking-wider text-primary/90">
+                    {step.payload.title}
+                  </div>
+                  <pre className="overflow-x-auto px-3 py-2 text-[11px] leading-relaxed whitespace-pre-wrap break-words text-foreground/75">
+                    {step.payload.body}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {step.stateChanges && step.stateChanges.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-[9px] font-bold tracking-widest text-foreground/35 uppercase">
+                  State changes
+                </p>
+                <ul className="space-y-1.5">
+                  {step.stateChanges.map((change, i) => (
+                    <li key={`${change.nodeId}-${i}`} className="flex items-start gap-2">
+                      <span className="mt-0.5 shrink-0 border border-primary/25 px-1.5 py-0.5 text-[9px] tracking-wider text-primary/90">
+                        {nodeNameById.get(change.nodeId) ?? change.nodeId}
+                      </span>
+                      <span className="text-xs leading-relaxed text-foreground/70 font-poppins">
+                        {change.note}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>

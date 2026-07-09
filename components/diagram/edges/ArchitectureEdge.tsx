@@ -18,9 +18,30 @@ interface EdgeData {
   lineStyle?: 'solid' | 'dashed' | 'dotted'
   color?: string
   width?: number
+  sync?: boolean
+  guarantees?: string[]
+  qps?: string
+  p99?: string
+  payloadSize?: string
 }
 
 type ArchitectureFlowEdge = Edge<EdgeData & Record<string, unknown>>
+
+/** Maps a throughput string ("~100K peak", "10M+") to travelling-particle density.
+ *  Bigger pipes get more, faster dots so a firehose reads as a firehose. */
+function particleConfig(qps?: string): { count: number; dur: number } {
+  const m = qps?.match(/([\d.]+)\s*([kmb])?/i)
+  if (!m) return { count: 1, dur: 2.8 }
+  let n = parseFloat(m[1])
+  const unit = m[2]?.toLowerCase()
+  if (unit === 'k') n *= 1e3
+  else if (unit === 'm') n *= 1e6
+  else if (unit === 'b') n *= 1e9
+  if (n >= 1e6) return { count: 4, dur: 1.5 }
+  if (n >= 1e4) return { count: 3, dur: 2.0 }
+  if (n >= 1e2) return { count: 2, dur: 2.4 }
+  return { count: 1, dur: 2.8 }
+}
 
 function ArchitectureEdgeComponent({
   id,
@@ -128,12 +149,33 @@ function ArchitectureEdgeComponent({
     // borderRadius: 12,
   })
 
+  // Sync contract drives the resting look: async (sync === false) reads as dashed
+  // with travelling particles; sync stays solid. An explicit `lineStyle` still wins.
+  const contractDash =
+    data?.lineStyle === 'dashed' ? '6,4'
+    : data?.lineStyle === 'dotted' ? '2,3'
+    : data?.sync === false ? '6,4'
+    : undefined
+
   const strokeDasharray =
     chaosFailed ? '5,5'
     : highlightState === 'active' ? '6,4'
-    : data?.lineStyle === 'dashed' ? '6,4'
-    : data?.lineStyle === 'dotted' ? '2,3'
-    : undefined
+    : contractDash
+
+  const particles = particleConfig(data?.qps)
+  const showParticles =
+    data?.sync === false &&
+    !chaosFailed &&
+    !isDimmed &&
+    !chaos &&
+    highlightState !== 'active'
+
+  const hasContract =
+    data?.sync !== undefined ||
+    !!data?.qps ||
+    !!data?.p99 ||
+    !!data?.payloadSize ||
+    (data?.guarantees?.length ?? 0) > 0
 
   const strokeWidth = highlightState === 'active' ? 3 : selected ? 3 : (data?.width || 2.5)
   const groupOpacity = chaos
@@ -191,7 +233,23 @@ function ArchitectureEdgeComponent({
         }}
         markerEnd={`url(#arrow-${id})`}
         />
-      {(data?.label || editing || (data?.protocol && isHovered)) && (
+      {showParticles && (
+        <g style={{ pointerEvents: 'none' }}>
+          {Array.from({ length: particles.count }).map((_, i) => (
+            <circle key={i} r={2.4} fill={strokeColor}>
+              {/* Negative begin pre-distributes the dots evenly along the pipe. */}
+              <animateMotion
+                dur={`${particles.dur}s`}
+                repeatCount="indefinite"
+                begin={`${(-i * particles.dur) / particles.count}s`}
+                path={edgePath}
+                rotate="auto"
+              />
+            </circle>
+          ))}
+        </g>
+      )}
+      {(data?.label || editing || (data?.protocol && isHovered) || (hasContract && isHovered)) && (
         <EdgeLabelRenderer>
           <div
             style={{
@@ -213,10 +271,45 @@ function ArchitectureEdgeComponent({
                 className="rounded border border-input bg-background px-2 py-0.5 text-xs font-medium text-foreground shadow-sm outline-hidden ring-1 ring-ring/50"
               />
             ) : (
-              <div className={`flex items-center gap-1.5 rounded bg-background px-2 py-0.5 text-xs font-medium shadow-sm ${highlightState === 'active' ? 'text-foreground ring-1 ring-primary/50' : 'text-zinc-600 dark:text-zinc-300'}`}>
-                {data?.label && <span>{data.label}</span>}
-                {data?.protocol && isHovered && (
-                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground">{data.protocol}</span>
+              <div className="flex flex-col items-center gap-1">
+                {(data?.label || (data?.protocol && isHovered)) && (
+                  <div className={`flex items-center gap-1.5 rounded bg-background px-2 py-0.5 text-xs font-medium shadow-sm ${highlightState === 'active' ? 'text-foreground ring-1 ring-primary/50' : 'text-zinc-600 dark:text-zinc-300'}`}>
+                    {data?.label && <span>{data.label}</span>}
+                    {data?.protocol && isHovered && (
+                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground">{data.protocol}</span>
+                    )}
+                  </div>
+                )}
+                {hasContract && isHovered && (
+                  <div className="flex w-max max-w-[220px] flex-col gap-1.5 rounded-md border border-foreground/10 bg-background/95 px-2.5 py-2 font-mono shadow-lg backdrop-blur-sm">
+                    {data?.sync !== undefined && (
+                      <span className={`inline-flex w-fit items-center gap-1 px-1.5 py-0.5 text-[9px] font-bold tracking-widest uppercase ${data.sync ? 'bg-sky-500/15 text-sky-500' : 'bg-violet-500/15 text-violet-500'}`}>
+                        {data.sync ? 'sync · caller waits' : 'async · fire & forget'}
+                      </span>
+                    )}
+                    {(data?.qps || data?.p99 || data?.payloadSize) && (
+                      <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] text-foreground/70">
+                        {data?.qps && (
+                          <span><span className="text-foreground/40">qps</span> {data.qps}</span>
+                        )}
+                        {data?.p99 && (
+                          <span><span className="text-foreground/40">p99</span> {data.p99}</span>
+                        )}
+                        {data?.payloadSize && (
+                          <span><span className="text-foreground/40">size</span> {data.payloadSize}</span>
+                        )}
+                      </div>
+                    )}
+                    {(data?.guarantees?.length ?? 0) > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {data!.guarantees!.map((g) => (
+                          <span key={g} className="border border-foreground/10 px-1 py-0.5 text-[8px] tracking-wider text-foreground/55 lowercase">
+                            {g}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}

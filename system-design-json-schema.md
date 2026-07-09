@@ -40,7 +40,7 @@ The detail page renders a full learning experience around the diagram. Each sect
 
 Page section order (top to bottom):
 
-1. Diagram (with protocol legend, flow player, stage player + chaos mode overlays)
+1. Diagram (with protocol legend, edge-contract legend, flow player + payload inspector, stage player + chaos mode overlays)
 2. **Requirements** ← `requirements`
 3. **Scale Estimates** ← `estimates`
 4. **System Evolution** ← `stages` (interactive — stages replay the system's growth in the diagram)
@@ -55,7 +55,7 @@ Page section order (top to bottom):
 
 A "jump-to" index and an estimated reading time are computed automatically — there are no fields for them.
 
-> **⚠️ Markdown vs plain text.** Only these fields render through the rich-text subset (§9a): `summary`, node `details`, `stages[].narrative`, `nodes[].failure.mitigation`, `decisions[].rationale`, `bottlenecks[].problem`, `bottlenecks[].mitigation`, `quiz[].answer`. **Every other string is plain text** — flow step `text`, stage `trigger`s, failure `userImpact`/blast-radius `note`s, requirement items, estimate `note`s, quiz `question`s, etc. Markdown syntax in plain-text fields shows up as literal `**asterisks**`.
+> **⚠️ Markdown vs plain text.** Only these fields render through the rich-text subset (§9a): `summary`, node `details`, `stages[].narrative`, `nodes[].failure.mitigation`, `decisions[].rationale`, `bottlenecks[].problem`, `bottlenecks[].mitigation`, `quiz[].answer`. **Every other string is plain text** — flow step `text`, flow step `payload.title`/`payload.body`/`stateChanges[].note`, edge `qps`/`p99`/`payloadSize`, stage `trigger`s, failure `userImpact`/blast-radius `note`s, requirement items, estimate `note`s, quiz `question`s, etc. Markdown syntax in plain-text fields shows up as literal `**asterisks**`. (Payload bodies are rendered verbatim in a monospace box — put JSON/code there, not markdown.)
 
 ### 1a.1 `difficulty`
 
@@ -109,7 +109,15 @@ Rendered as a colored chip in the metadata strip. Match the value used for this 
       {
         "text": "The client asks the API service for a pre-signed upload URL. The API authenticates the creator and opens a multipart session.",  // required, plain text
         "nodeIds": ["client-web", "api-gateway", "api-service"],  // optional, nodes involved in THIS step
-        "edgeIds": ["e-web-gw", "e-gw-api"]                        // optional, edges traversed in THIS step
+        "edgeIds": ["e-web-gw", "e-gw-api"],                       // optional, edges traversed in THIS step
+        "payload": {                                               // optional — the data on the wire at this hop (payload inspector)
+          "title": "POST /api/videos:initiate",                   // short label, plain text
+          "body": "{\n  \"title\": \"…\",\n  \"parts\": 512\n}"    // verbatim JSON/code, rendered monospace
+        },
+        "stateChanges": [                                          // optional — node state this step mutates
+          { "nodeId": "metadata-db", "note": "row written — status = uploading" }
+        ],
+        "latencyMs": 40                                            // optional — this hop's latency; the player shows a cumulative clock + waterfall
       }
       // ... more steps
     ]
@@ -119,14 +127,19 @@ Rendered as a colored chip in the metadata strip. Match the value used for this 
 
 **How it renders:** each step is clickable (and a player docks onto the diagram). The active step's nodes/edges **glow** in the diagram, earlier steps in the flow stay visible as a dimmed "trail", everything else fades out, and the camera automatically flies to the active step's nodes. This is what turns the diagram from a picture into a lesson — treat flows as mandatory for any non-trivial design.
 
+When steps carry `payload` / `stateChanges` / `latencyMs`, the docked player becomes a **payload inspector**: it shows the actual data at the hop ("On the wire"), the node state the step mutates ("State changes"), and a running **elapsed clock + latency waterfall** across the whole flow — so a beginner *sees* that a cache hit is 1ms while an origin miss is 80ms.
+
 **Rules:**
 
-- **Every id in `nodeIds`/`edgeIds` must exactly match an existing `nodes[].id` / `edges[].id`.** Invalid ids fail silently (nothing highlights). Copy edge ids verbatim — including ugly auto-generated ones like `"xy-edge__api-servicebottom-source-blob-storage-uploadtop-target"`.
+- **Every id in `nodeIds`/`edgeIds` must exactly match an existing `nodes[].id` / `edges[].id`.** Invalid ids fail silently (nothing highlights). Copy edge ids verbatim — including ugly auto-generated ones like `"xy-edge__api-servicebottom-source-blob-storage-uploadtop-target"`. `stateChanges[].nodeId` must match too.
 - 1–3 flows per design. The classic pair is **write path** + **read path** (e.g. "Upload & process a video" / "Stream a video"). A failure-handling flow is a good third.
 - 4–8 steps per flow. One logical hop or action per step. Consecutive steps should chain — share a node with the previous step so the camera pans naturally.
 - `nodeIds`: the 1–3 nodes participating in the step. `edgeIds`: only the edges actually traversed in the step (usually 1–2).
 - Step `text` is 1–3 plain-text sentences. Teach the *why*, not just the *what*: "A failed chunk is retried alone — a 10 GB upload never restarts from zero" beats "The client uploads chunks".
 - Every node referenced in a step should have a `name` — step chips display node names.
+- **`payload`** (optional) is the literal data travelling on this hop. `title` is a short label (e.g. `"POST /videos:initiate"`, `"S3 ObjectCreated event"`, `"Redis GET video:{id}"`). `body` is rendered **verbatim in a monospace box** — put a small JSON object, an event, an HTTP line, or a manifest snippet there. Keep it under ~8 lines; use `\n` for newlines. Show how data *morphs* hop by hop (request → row → event → job → manifest).
+- **`stateChanges`** (optional) lists node mutations the step causes — `{ nodeId, note }`, note is short plain text ("row inserted", "cache warmed", "segment cached at edge"). This makes side effects visible, not just the message in flight.
+- **`latencyMs`** (optional) is this hop's latency contribution in milliseconds. If any step in a flow has it, the player shows a cumulative *elapsed* clock and a proportional waterfall bar. Use honest orders of magnitude (cache hit `1`, same-region call `20`, origin/cross-region `80`, async encode `180000`) — the whole point is teaching latency intuition. Either annotate most steps of a flow or none.
 
 ### 1a.5 `decisions`
 
@@ -373,7 +386,14 @@ Each node must have a `kind` from the `NODE_REGISTRY`. Every kind maps to a **ca
   "style": "solid",          // optional: "solid" | "dashed" | "dotted"
   "animated": true,          // optional, animated dashed flow
   "width": 2.5,              // optional, stroke width in px
-  "color": "#ef4444"         // optional, stroke color (any CSS color string)
+  "color": "#ef4444",        // optional, stroke color (any CSS color string)
+
+  // Edge contract (all optional — see §3b):
+  "sync": true,              // true = caller blocks (solid); false = fire-and-forget (dashed + particles)
+  "guarantees": ["ordered", "at-least-once"], // delivery/ordering promises, shown on hover
+  "qps": "~100K peak",       // throughput — also scales async particle density
+  "p99": "8ms",              // tail latency
+  "payloadSize": "~2KB"      // typical message size
 }
 ```
 
@@ -393,6 +413,32 @@ Each node must have a `kind` from the `NODE_REGISTRY`. Every kind maps to a **ca
 | `internal` | Internal / private network |
 
 The `protocol` field is only displayed as a visual hint on the edge. It does not change edge rendering beyond being accessible as metadata.
+
+### 3b. Edge Contracts (sync vs async)
+
+The hardest concept for beginners is *where the synchronous world ends*. These optional fields make an edge's contract visible: the single most teachable distinction is **who waits**.
+
+```jsonc
+{
+  "sync": false,                                 // false → async / fire-and-forget
+  "guarantees": ["at-least-once", "idempotent"], // 0+ of: at-least-once | exactly-once | ordered | idempotent
+  "qps": "~500/min",                             // free-form throughput string
+  "p99": "12ms",                                 // free-form tail-latency string
+  "payloadSize": "~2KB"                          // free-form size string
+}
+```
+
+**How it renders:**
+
+- **`sync: true`** → a **solid** line: the caller blocks until it gets a response (an HTTP request, a DB query, a cache read).
+- **`sync: false`** → a **dashed** line with **travelling particle dots**: fire-and-forget (an event onto a queue, a job fan-out). The particles' density and speed scale with `qps`, so a firehose *looks* like a firehose. An explicit `style` still overrides the line dash; `sync` only sets the default.
+- **`guarantees` / `qps` / `p99` / `payloadSize`** surface in a small **contract card on edge hover**, and a **legend** (bottom-left of the diagram) explains the sync/async language. The legend and particles appear only when at least one edge defines `sync`.
+
+**Rules:**
+
+- Annotate the edges that *teach the seam* — the request path as `sync`, the queue / event / fan-out edges as `async`. Not every edge needs a contract; leave plumbing edges bare (they keep their `style`).
+- `qps`, `p99`, `payloadSize` are **plain-text, free-form** — write them for humans (`"~50K peak"`, `"10M+ peak"`, `"1ms"`, `"~2–6MB"`). `qps` is parsed loosely (leading number + optional `k`/`m`/`b`) only to pick particle density; the string is shown verbatim.
+- Keep contracts consistent with the story: a `sync` edge with `p99: "1ms"` should be your cache; the `async` edges should be exactly the decoupling points your `decisions` and `bottlenecks` talk about.
 
 ---
 
@@ -711,3 +757,5 @@ The entire block is wrapped in `font-mono text-sm leading-relaxed` with a `space
 19. **Only use real URLs in `references`** — canonical docs, RFCs, known blog homepages. Never fabricate deep links.
 20. **Only use existing slugs in `relatedPatterns`** — check `data/diagrams/index.json`; unknown slugs are dropped.
 21. **Make the fields reinforce each other**: estimates justify decisions, decisions explain diagram structure, stages explain why each component exists, bottlenecks stress the same components the flows traverse, failures make the bottlenecks explorable, and quiz answers close the loop. A reader should meet each idea at least twice.
+22. **Use edge contracts to teach the sync/async seam** (§3b): mark the request path `sync: true` and the queue / event / fan-out edges `sync: false`; the async edges should be exactly the decoupling points your `decisions` and `bottlenecks` discuss. Give the load-bearing edges `qps` / `p99` / `payloadSize`, and `guarantees` on the async ones.
+23. **Enrich flow steps with `payload`, `stateChanges`, and `latencyMs`** (§1a.4): show the real data morphing hop by hop (request → row → event → job → manifest), the node state each step mutates, and honest per-hop latencies so the player's elapsed clock + waterfall build latency intuition.
