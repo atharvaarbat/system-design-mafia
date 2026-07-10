@@ -66,6 +66,7 @@ export default function DiagramPageClient({
 
   const sectionIndex = useMemo(() => {
     const items: { id: string; label: string }[] = [];
+    if(design.nodes?.length) items.push({ id: 'diagram-wrap', label: 'Diagram' });
     if (design.requirements?.functional?.length || design.requirements?.nonFunctional?.length)
       items.push({ id: 'requirements', label: 'Requirements' });
     if (design.estimates?.length) items.push({ id: 'estimates', label: 'Estimates' });
@@ -230,6 +231,7 @@ export default function DiagramPageClient({
     const start = others.length > 0 ? seed % others.length : 0;
     return [...others.slice(start), ...others.slice(0, start)].slice(0, 3);
   }, [slug]);
+
   const handleIndexClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
       e.preventDefault();
@@ -264,7 +266,8 @@ export default function DiagramPageClient({
               <LineNav
                 className=''
                 onItemClick={(item, e) => handleIndexClick(e, item.href.slice(1))}
-                items={sectionIndex.map((s) => ({
+                items={
+                  sectionIndex.map((s) => ({
                   href: `#${s.id}`,
                   title: s.label,
                 }))}

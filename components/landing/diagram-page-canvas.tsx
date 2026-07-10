@@ -68,6 +68,7 @@ export default function DiagramPageCanvas({
 
   return (
     <motion.div
+      id="diagram-wrap"
       ref={diagramWrapRef}
       className="relative scroll-mt-24 overflow-hidden bg-foreground/3"
       initial={{ opacity: 0, y: 24 }}

@@ -497,7 +497,7 @@ export default function Diagram({ design, editable: editableProp = true, highlig
   const translateExtent = useMemo((): [[number, number], [number, number]] | undefined => {
     if (isEditable) return undefined
 
-    const PADDING = 300
+    const PADDING = 800
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
 
     const nodeMap = new Map(nodes.map((n) => [n.id, n]))
