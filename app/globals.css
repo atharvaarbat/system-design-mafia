@@ -11,6 +11,11 @@
   --font-poppins: var(--font-poppins);
   --font-doto: var(--font-doto);
   --font-mono: var(--font-geist-mono);
+   --font-geist-pixel-square: var(--font-geist-pixel-square);
+  --font-geist-pixel-circle: var(--font-geist-pixel-circle);
+  --font-geist-pixel-triangle: var(--font-geist-pixel-triangle);
+  --font-geist-pixel-grid: var(--font-geist-pixel-grid);
+  --font-geist-pixel-line: var(--font-geist-pixel-line);
   --font-heading: var(--font-poppins);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);

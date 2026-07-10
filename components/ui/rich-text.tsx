@@ -103,7 +103,7 @@ export default function RichText({ content, className }: RichTextProps) {
   return (
     <div
       className={cn(
-        'max-w-[72ch] space-y-4 font-sans text-[15px] leading-7 text-foreground/85 text-pretty',
+        ' space-y-4 font-sans text-[15px] leading-7 text-foreground/85 text-pretty',
         className,
       )}
     >

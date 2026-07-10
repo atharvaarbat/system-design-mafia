@@ -25,30 +25,32 @@ export default function EvolutionSection({
         description="No system is born with queues and caches. Every box was added because something was about to break. Play a stage and the diagram above shrinks to what existed at that point in the story."
       />
 
-      <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {stages.map((stage, stageIdx) => {
           const isActive = activeStageIndex === stageIdx;
           return (
             <motion.div
               key={stage.id}
               variants={fadeUp}
-              className={`border bg-foreground/2 transition-colors ${isActive ? 'border-primary/30' : 'border-foreground/8'}`}
+              className={`relative border bg-foreground/2 transition-colors ${isActive ? 'border-primary/30' : 'border-foreground/8'}`}
             >
               {/* Stage header */}
-              <div className="flex flex-wrap items-center gap-3 border-b border-foreground/8 px-6 py-4">
-                <span className="font-mono text-[11px] font-semibold tracking-[0.15em] text-primary uppercase tabular-nums">
-                  Stage {String(stageIdx + 1).padStart(2, '0')}
+              <div className="flex  items-center gap-3 border-b border-foreground/8 px-6 py-4">
+                <span className="pointer-events-none absolute bottom-0 left-4 font-poppins font-black text-[8vw] leading-none font- tracking-tight whitespace-nowrap text-foreground/10 uppercase select-none"
+                 
+                >
+                  {String(stageIdx + 1).padStart(2, '0')}
                 </span>
-                <h3 className="font-sans text-base font-semibold text-foreground">
+                <h3 className="font-sans text-base font-semibold text-foreground truncate">
                   {stage.title}
                 </h3>
                 <button
                   type="button"
                   onClick={() => onStage(stageIdx)}
-                  className="ml-auto inline-flex cursor-pointer items-center gap-1.5 border border-foreground/15 px-3 py-1.5 font-mono text-[11px] font-semibold tracking-[0.15em] text-foreground/70 uppercase transition-[color,background-color,border-color,transform] hover:border-primary/40 hover:bg-primary/5 hover:text-primary active:scale-[0.96]"
+                  className="ml-auto inline-flex cursor-pointer bg-primary items-center gap-1.5 border border-foreground/15 px-3 py-1.5 font-mono text-[11px] font-semibold tracking-[0.15em] text-background uppercase transition-[color,background-color,border-color,transform] hover:border-primary/40 hover:bg-primary/5 hover:text-primary active:scale-[0.96]"
                 >
                   <Play className="h-3 w-3" />
-                  View this stage
+                  View
                 </button>
               </div>
 

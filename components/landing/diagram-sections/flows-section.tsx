@@ -28,7 +28,7 @@ export default function FlowsSection({
         description="A diagram shows what exists; a trace shows what happens. Press play on a flow, or click any step, and the diagram above lights up the exact path that request takes."
       />
 
-      <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {flows.map((flow, flowIdx) => {
           const isActive = activeFlowIndex === flowIdx;
           return (
@@ -48,10 +48,10 @@ export default function FlowsSection({
                 <button
                   type="button"
                   onClick={() => onTrace(flowIdx, 0)}
-                  className="ml-auto inline-flex cursor-pointer items-center gap-1.5 border border-foreground/15 px-3 py-1.5 font-mono text-[11px] font-semibold tracking-[0.15em] text-foreground/70 uppercase transition-[color,background-color,border-color,transform] hover:border-primary/40 hover:bg-primary/5 hover:text-primary active:scale-[0.96]"
+                  className="ml-auto inline-flex cursor-pointer items-center gap-1.5 border border-foreground/15 px-3 py-1.5 font-mono text-[11px] font-semibold tracking-[0.15em] text-background bg-primary uppercase transition-[color,background-color,border-color,transform] hover:border-primary/40 hover:bg-primary/5 hover:text-primary active:scale-[0.96]"
                 >
                   <Play className="h-3 w-3" />
-                  Trace in diagram
+                  Trace
                 </button>
               </div>
 

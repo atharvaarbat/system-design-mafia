@@ -3,11 +3,12 @@ import { Geist, Geist_Mono, Inter, Doto, Poppins } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ui/theme-provider";
+import { GeistPixelSquare, GeistPixelCircle, GeistPixelTriangle, GeistPixelGrid, GeistPixelLine } from "geist/font/pixel";
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 const doto = Doto({ subsets: ['latin'], variable: '--font-doto' });
 
-const poppins = Poppins({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-poppins' });
+const poppins = Poppins({ subsets: ['latin'], weight: ['400','100', '200', '300', '500','600', '800', '700', '900'], variable: '--font-poppins' });
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -97,7 +98,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", inter.variable, poppins.variable, doto.variable)}
+      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", 
+        inter.variable, poppins.variable, doto.variable, GeistPixelSquare.variable, GeistPixelCircle.variable, GeistPixelTriangle.variable, GeistPixelGrid.variable, GeistPixelLine.variable)}
     >
       <head>
         <link rel="icon" type="image/x-icon" href="/favicon-light.ico" media="(prefers-color-scheme: dark)" />

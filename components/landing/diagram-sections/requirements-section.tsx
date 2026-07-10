@@ -31,7 +31,7 @@ export default function RequirementsSection({
   if (columns.length === 0) return null;
 
   return (
-    <Section id="requirements">
+    <Section id="requirements" >
       <SectionHeader label="The Contract" title="Requirements" />
       <div className="grid gap-4 lg:grid-cols-2">
         {columns.map((col) => (
@@ -41,7 +41,7 @@ export default function RequirementsSection({
             className="border border-foreground/8 bg-foreground/2 p-6"
           >
             <div className="mb-5 flex items-baseline gap-3">
-              <span className="font-mono text-[11px] font-semibold tracking-[0.15em] text-foreground/70 uppercase">
+              <span className="font-sans text-[11px] font-semibold tracking-[0.15em] text-foreground/70 uppercase">
                 {col.title}
               </span>
               <span className="font-sans text-xs text-foreground/50">

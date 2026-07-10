@@ -18,7 +18,7 @@ export default function EstimatesSection({
         title="Scale Estimates"
         description="Rough, order-of-magnitude numbers. The point is to justify the architecture, not to be exact."
       />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {estimates.map((est) => (
           <motion.div
             key={est.label}

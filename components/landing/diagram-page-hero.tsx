@@ -43,19 +43,19 @@ export default function DiagramPageHero({ title, description, sectionIndex }: Di
           <ArrowLeft className="h-3 w-3" />
           Back to patterns
         </Link>
-        <div className="mt-4 flex items-center gap-2 text-xs tracking-widest uppercase">
+        {/* <div className="mt-4 flex items-center gap-2 text-xs tracking-widest uppercase">
           <span className="text-foreground/45">~/patterns</span>
           <span className="text-foreground/45">/</span>
           <span className="text-primary">
             {title.toLowerCase().replace(/\s+/g, '-')}
           </span>
-        </div>
+        </div> */}
       </motion.div>
 
       {/* Title + description: the reading layer */}
       <motion.div variants={staggerContainer} initial="hidden" animate="visible">
         <motion.div variants={fadeUp} className="max-w-4xl">
-          <Heading as="h1" variant="big" className="text-foreground font-doto font-black text-balance">
+          <Heading as="h1" variant="big" className="text-foreground font-poppins font-semibold text-balance">
             {title}
           </Heading>
         </motion.div>
@@ -77,7 +77,7 @@ export default function DiagramPageHero({ title, description, sectionIndex }: Di
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.6 }}
           aria-label="Page sections"
-          className="mt-8 flex flex-wrap items-baseline gap-x-5 gap-y-2.5 font-mono text-xs tracking-wider"
+          className="mt-8 md:hidden flex flex-wrap items-baseline gap-x-5 gap-y-2.5 font-mono text-xs tracking-wider"
         >
           <span className="text-foreground/45 uppercase text-[11px] tracking-[0.18em]">On this page</span>
           {sectionIndex.map((s) => (

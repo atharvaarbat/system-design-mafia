@@ -26,6 +26,7 @@ import { motion } from 'motion/react';
 import type { SystemDesign } from '@/types/diagram';
 import type { DiagramHighlight, HighlightState } from '@/lib/diagram/highlight-context';
 import { buildChaos } from '@/lib/diagram/chaos-context';
+import { LineNav } from '../ui/line-nav';
 
 export default function DiagramPageClient({
   slug,
@@ -229,18 +230,26 @@ export default function DiagramPageClient({
     const start = others.length > 0 ? seed % others.length : 0;
     return [...others.slice(start), ...others.slice(0, start)].slice(0, 3);
   }, [slug]);
-
+  const handleIndexClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+      e.preventDefault();
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [],
+  );
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
       <section
         id="main-content"
-        className="relative flex min-h-screen w-full flex-col overflow-x-hidden pt-24 pb-24"
+        className="relative flex min-h-screen w-full flex-col pt-24 pb-24"
         aria-label="Diagram detail"
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px)] bg-size-[24px_24px]" />
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--foreground)_4%,transparent)_1px,transparent_1px)] bg-size-[24px_24px]" />
 
-        <DiagramPageBackground />
+          <DiagramPageBackground />
+        </div>
 
         <Container className="relative z-10 flex flex-1 flex-col gap-14 md:gap-20">
           <DiagramPageHero
@@ -249,97 +258,113 @@ export default function DiagramPageClient({
             sectionIndex={sectionIndex}
           />
 
-          <DiagramPageCanvas
-            diagramWrapRef={diagramWrapRef}
-            design={design}
-            editable={editable}
-            slug={slug}
-            highlight={highlight}
-            trace={trace}
-            activeFlow={activeFlow}
-            focusNodeIds={focusNodeIds}
-            focusLabel={focusLabel}
-            nodeNameById={nodeNameById}
-            onStepChange={handleStepChange}
-            onClearHighlight={clearHighlight}
-            stageIdx={stageIdx}
-            visible={visible}
-            onStageChange={handleStageChange}
-            onCloseStage={handleCloseStage}
-            chaos={chaosState}
-            chaosArmed={chaosArmed}
-            killedNode={killedNode}
-            hasChaosData={killableNodes.length > 0}
-            onToggleChaos={handleToggleChaos}
-            onChaosKill={handleChaosKill}
-            onRestoreChaos={resetChaos}
-          />
+          <div className='flex flex-col md:flex-row gap-8'>
+            <div className='sticky top-20 self-start hidden md:block'>
+              <p className='font-poppins'>Content</p>
+              <LineNav
+                className=''
+                onItemClick={(item, e) => handleIndexClick(e, item.href.slice(1))}
+                items={sectionIndex.map((s) => ({
+                  href: `#${s.id}`,
+                  title: s.label,
+                }))}
+              />
+            </div>
+            <div className='flex flex-1 flex-col gap-14 md:gap-20 max-w-6xl ml-auto'>
 
-          {design.requirements && (
-            <RequirementsSection requirements={design.requirements} />
-          )}
+              <DiagramPageCanvas
+                diagramWrapRef={diagramWrapRef}
+                design={design}
+                editable={editable}
+                slug={slug}
+                highlight={highlight}
+                trace={trace}
+                activeFlow={activeFlow}
+                focusNodeIds={focusNodeIds}
+                focusLabel={focusLabel}
+                nodeNameById={nodeNameById}
+                onStepChange={handleStepChange}
+                onClearHighlight={clearHighlight}
+                stageIdx={stageIdx}
+                visible={visible}
+                onStageChange={handleStageChange}
+                onCloseStage={handleCloseStage}
+                chaos={chaosState}
+                chaosArmed={chaosArmed}
+                killedNode={killedNode}
+                hasChaosData={killableNodes.length > 0}
+                onToggleChaos={handleToggleChaos}
+                onChaosKill={handleChaosKill}
+                onRestoreChaos={resetChaos}
+              />
+              {design.requirements && (
+                <RequirementsSection requirements={design.requirements} />
+              )}
 
-          {design.estimates && design.estimates.length > 0 && (
-            <EstimatesSection estimates={design.estimates} />
-          )}
+              {design.estimates && design.estimates.length > 0 && (
+                <EstimatesSection estimates={design.estimates} />
+              )}
 
-          {design.stages && design.stages.length > 0 && (
-            <EvolutionSection
-              stages={design.stages}
-              activeStageIndex={stageIdx}
-              onStage={handleStage}
-            />
-          )}
+              {design.stages && design.stages.length > 0 && (
+                <EvolutionSection
+                  stages={design.stages}
+                  activeStageIndex={stageIdx}
+                  onStage={handleStage}
+                />
+              )}
 
-          {design.flows && design.flows.length > 0 && (
-            <FlowsSection
-              flows={design.flows}
-              nodeNameById={nodeNameById}
-              activeFlowIndex={trace?.flowIdx ?? null}
-              activeStepIndex={trace?.stepIdx ?? 0}
-              onTrace={handleTrace}
-            />
-          )}
+              {design.flows && design.flows.length > 0 && (
+                <FlowsSection
+                  flows={design.flows}
+                  nodeNameById={nodeNameById}
+                  activeFlowIndex={trace?.flowIdx ?? null}
+                  activeStepIndex={trace?.stepIdx ?? 0}
+                  onTrace={handleTrace}
+                />
+              )}
 
-          <ComponentsSection nodes={design.nodes} onLocate={handleLocate} />
+              <ComponentsSection nodes={design.nodes} onLocate={handleLocate} />
 
-          {design.summary && (
-            <Section id="deep-dive">
-              <SectionHeader label="Deep Dive" title="Architecture Breakdown" />
-              <motion.div
-                variants={fadeUp}
-                className="border border-foreground/8 bg-foreground/2 p-6 md:p-10"
-              >
-                <RichText content={design.summary} />
-              </motion.div>
-            </Section>
-          )}
+              {design.summary && (
+                <Section id="deep-dive">
+                  <SectionHeader label="Deep Dive" title="Architecture Breakdown" />
+                  <motion.div
+                    variants={fadeUp}
+                    className="border border-foreground/8 bg-foreground/2 p-6 md:p-10"
+                  >
+                    <RichText content={design.summary} />
+                  </motion.div>
+                </Section>
+              )}
 
-          {design.decisions && design.decisions.length > 0 && (
-            <DecisionsSection decisions={design.decisions} />
-          )}
+              {design.decisions && design.decisions.length > 0 && (
+                <DecisionsSection decisions={design.decisions} />
+              )}
 
-          {design.bottlenecks && design.bottlenecks.length > 0 && (
-            <BottlenecksSection bottlenecks={design.bottlenecks} />
-          )}
+              {design.bottlenecks && design.bottlenecks.length > 0 && (
+                <BottlenecksSection bottlenecks={design.bottlenecks} />
+              )}
 
-          {killableNodes.length > 0 && (
-            <ChaosSection
-              nodes={killableNodes}
-              killedNodeId={killedNodeId}
-              onKill={handleChaosKill}
-            />
-          )}
+              {killableNodes.length > 0 && (
+                <ChaosSection
+                  nodes={killableNodes}
+                  killedNodeId={killedNodeId}
+                  onKill={handleChaosKill}
+                />
+              )}
 
-          {design.quiz && design.quiz.length > 0 && (
-            <QuizSection quiz={design.quiz} />
-          )}
+              {design.quiz && design.quiz.length > 0 && (
+                <QuizSection quiz={design.quiz} />
+              )}
 
-          <ReferencesSection references={design.references ?? []} related={related} />
+              <ReferencesSection references={design.references ?? []} related={related} />
 
-          <DiagramPageCreator />
+              <DiagramPageCreator />
 
-          <DiagramPageSuggestions suggested={suggested} />
+              <DiagramPageSuggestions suggested={suggested} />
+            </div>
+          </div>
+
         </Container>
       </section>
       <Footer />
