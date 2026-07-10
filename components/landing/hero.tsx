@@ -4,17 +4,8 @@ import { useRef } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import Container from './container';
-import HeroVisual from './hero-visual';
+import HeroVisual, { SYSTEMS } from './hero-visual';
 import { gsap, useGSAP, ScrollSmoother, SplitText, SCRAMBLE_CHARS } from '@/lib/gsap';
-
-const TOPICS = [
-  'microservices',
-  'event-driven systems',
-  'video streaming',
-  'url shorteners',
-  'cqrs + sharding',
-  'load balancing',
-];
 
 const HEX_POINTS = '190,100 145,177.9 55,177.9 10,100 55,22.1 145,22.1';
 
@@ -73,15 +64,6 @@ export default function Hero() {
           )
           .from('.hero-stage-in', { x: 70, autoAlpha: 0, duration: 1.3 }, 0.8)
           .from('.hero-scroll-hint', { autoAlpha: 0, duration: 0.8 }, 1.6);
-
-        // -- Terminal line: scramble through topics forever ----------------
-        const cycle = gsap.timeline({ repeat: -1, delay: 1.8 });
-        TOPICS.forEach((topic) => {
-          cycle.to(termRef.current, {
-            duration: 0.9,
-            scrambleText: { text: topic, chars: SCRAMBLE_CHARS, speed: 0.35 },
-          }, '+=1.7');
-        });
 
         // -- Ambient rotation: survey rings + hexagon ----------------------
         gsap.to('.hero-rings', {
@@ -205,7 +187,7 @@ export default function Hero() {
         aria-hidden
       >
         <div className="hero-stage-in">
-          <HeroVisual />
+          <HeroVisual tickerRef={termRef} />
         </div>
       </div>
 
@@ -238,10 +220,10 @@ export default function Hero() {
             architectures apart — piece by piece, decision by decision.
           </p>
 
-          {/* Terminal line */}
+          {/* Terminal line — driven by the blueprint's master timeline */}
           <p className="hero-sub mb-10 text-xs tracking-widest text-foreground/40 uppercase">
             <span className="text-primary/70">&gt;</span> exploring:{' '}
-            <span ref={termRef} className="text-foreground/70">distributed systems</span>
+            <span ref={termRef} className="text-foreground/70">{SYSTEMS[0].ticker}</span>
             <span className="animate-pulse text-primary">_</span>
           </p>
 

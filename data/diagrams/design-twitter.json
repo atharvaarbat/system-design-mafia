@@ -33,6 +33,14 @@
       "name": "Tweet Service",
       "description": "Validates & persists tweets",
       "details": "### Responsibilities\n\n- Validates tweet length and content\n- Requests a unique ID from the ID Generation Service\n- Writes the tweet row and publishes the 'tweet_created' event\n\nThis service never touches media bytes or follower lists directly — both are delegated so it stays fast under sustained write load.",
+      "failure": {
+        "userImpact": "Tweeting fails — users cannot post new content. But timelines, search, and notifications keep working from cached data.",
+        "blastRadius": [
+          { "nodeId": "write-gateway", "effect": "degraded", "note": "health checks fail; no healthy upstream to route to" },
+          { "nodeId": "write-kafka", "effect": "degraded", "note": "no new events to publish — fan-out pipeline idles" }
+        ],
+        "mitigation": "The service is **stateless behind the gateway** — health checks eject bad instances and autoscaling replaces them. The write path is the only casualty; the read path (timelines, search) is fully independent."
+      },
       "group": "frame-write"
     },
     {
@@ -63,6 +71,14 @@
       "name": "Tweet Store (Cassandra)",
       "description": "Sharded by tweet ID",
       "details": "The system of record for tweet content, partitioned by tweet ID for even write distribution. Optimized for high-throughput sequential writes and point reads by ID.",
+      "failure": {
+        "userImpact": "New tweets cannot be persisted — tweeting fails. Existing tweets remain readable from the cache and CDN. Timeline hydration for old tweets is lost.",
+        "blastRadius": [
+          { "nodeId": "write-tweet-svc", "effect": "degraded", "note": "can neither write new tweets nor hydrate existing ones at read time" },
+          { "nodeId": "tl-tweet-db", "effect": "down", "note": "the same Cassandra cluster serves both write and timeline paths" }
+        ],
+        "mitigation": "Cassandra's **replication factor and cross-region replicas** tolerate node loss as routine. The Redis timeline cache keeps precomputed feeds serving even if the backing store is briefly offline."
+      },
       "group": "frame-write"
     },
     {
@@ -83,6 +99,14 @@
       "name": "Tweet Events (Kafka)",
       "description": "'tweet_created' topic",
       "details": "Every successful tweet write ends with one event here. Everything downstream — timeline fan-out, search indexing, notifications — consumes from this topic independently, so the write path never blocks on any of them.",
+      "failure": {
+        "userImpact": "Tweeting itself still works — the Tweet Service writes to Cassandra first. But timelines freeze, search indexing stops, and notifications halt until Kafka recovers.",
+        "blastRadius": [
+          { "nodeId": "write-fanout-dispatcher", "effect": "down", "note": "no events to consume — fan-out pipeline stalls" },
+          { "nodeId": "tl-fanout-worker", "effect": "degraded", "note": "drains backlog once available but goes idle during outage" }
+        ],
+        "mitigation": "Kafka is replicated and survives broker failures. Producers buffer events in-memory during brief outages; a reconciliation job can re-enqueue missed events by scanning tweet creation timestamps."
+      },
       "group": "frame-write"
     },
     {
@@ -93,6 +117,14 @@
       "name": "Fan-out Dispatcher",
       "description": "Push vs. pull decision",
       "details": "Consumes 'tweet_created' events and reads the author's follower count from the Social Graph Store. Below the celebrity threshold it triggers push fan-out (see diagram 2); above it, the tweet is left for pull-based fan-in at read time.",
+      "failure": {
+        "userImpact": "Users notice nothing immediately — tweets still persist. But the fan-out pipeline stalls: non-celebrity tweets never reach followers' timelines until the dispatcher recovers.",
+        "blastRadius": [
+          { "nodeId": "tl-fanout-worker", "effect": "degraded", "note": "no events forwarded — no timeline updates to process" },
+          { "nodeId": "write-kafka", "effect": "degraded", "note": "events accumulate; offset lag grows" }
+        ],
+        "mitigation": "The dispatcher is **stateless** — it can restart and resume from its last Kafka offset. A reconciliation worker periodically scans recent tweets and re-dispatches any that were never fanned out."
+      },
       "group": "frame-write"
     },
     {
@@ -143,6 +175,14 @@
       "name": "Timeline Store (Cassandra)",
       "description": "Durable per-user timelines",
       "details": "Partitioned by user ID, clustered by tweet time. The durable record of each user's fanned-out timeline, rebuilt into Redis on a cache miss.",
+      "failure": {
+        "userImpact": "Timeline reads for users not in the Redis cache fail — cold starts, dormant users returning, and cache evictions all turn into errors. Already cached feeds keep working.",
+        "blastRadius": [
+          { "nodeId": "tl-timeline-cache", "effect": "degraded", "note": "cache miss → fallback to database fails; nothing to warm from" },
+          { "nodeId": "tl-timeline-svc", "effect": "degraded", "note": "cache-only mode; only users with warm caches get feeds" }
+        ],
+        "mitigation": "Cassandra replication tolerates node loss. The Fan-out Worker continues writing to surviving replicas, and once recovered, the cache re-warms naturally through read-backfill."
+      },
       "group": "frame-timeline"
     },
     {
@@ -153,6 +193,14 @@
       "name": "Timeline Cache (Redis)",
       "description": "Precomputed, ~800 tweet IDs",
       "details": "Holds the top ~800 precomputed tweet IDs per active user. This is the fast path — most timeline reads never touch Cassandra at all.",
+      "failure": {
+        "userImpact": "Timeline reads slow down dramatically but don't break — every request now falls through to the durable Timeline Store (Cassandra). Page load times jump from ~3ms to ~15ms.",
+        "blastRadius": [
+          { "nodeId": "tl-timeline-db", "effect": "degraded", "note": "takes 100× its usual read traffic; hot partitions may saturate" },
+          { "nodeId": "tl-timeline-svc", "effect": "degraded", "note": "response times climb with every slow database read" }
+        ],
+        "mitigation": "Redis here is a **read-through cache**, never the source of truth — losing it costs latency, not data. Cassandra keeps serving and re-warms the cache key by key as reads back-fill it."
+      },
       "group": "frame-timeline"
     },
     {
@@ -213,6 +261,15 @@
       "name": "Typeahead Service",
       "description": "Prefix suggestions per keystroke",
       "details": "Serves ranked completions for a partial query. Checks Redis first, falls back to the trie shard cluster, and asynchronously logs every query for the offline ranking pipeline.",
+      "failure": {
+        "userImpact": "Typeahead suggestions stop working entirely — users see no autocomplete dropdown. Full-text search (an independent service) is unaffected.",
+        "blastRadius": [
+          { "nodeId": "se-gateway", "effect": "degraded", "note": "prefix routes return errors; search routes still work" },
+          { "nodeId": "se-query-log", "effect": "degraded", "note": "no queries to log — offline pipeline idles" },
+          { "nodeId": "se-suggest-cache", "effect": "degraded", "note": "no lookups reaching it — cache entries expire unused" }
+        ],
+        "mitigation": "The Typeahead Service is **stateless** and can restart under the gateway's health check. The Redis cache survives the outage and will warm back up as requests resume."
+      },
       "group": "frame-search"
     },
     {
@@ -243,6 +300,14 @@
       "name": "Trie Shard Cluster",
       "description": "In-memory ranked prefix tries",
       "details": "### Design\n\n- Each node caches its top-K completions pre-sorted by popularity — a keystroke is a lookup, not a ranking computation\n- Radix compression collapses single-child chains to shrink memory footprint\n- Busy prefixes are split across more shards than rare ones (skew-aware sharding)\n\nThe whole ranked trie is small enough (single-digit GB) to live fully in memory across the shard fleet.",
+      "failure": {
+        "userImpact": "Typeahead degrades noticeably — the Redis cache still serves hot prefixes from its 5-minute TTL, but any miss that would fall through to the trie fails. After the cache drains, all suggestions disappear.",
+        "blastRadius": [
+          { "nodeId": "se-suggest-cache", "effect": "degraded", "note": "entries expire with nowhere to refill from; cold prefix lookups fail" },
+          { "nodeId": "se-typeahead-svc", "effect": "degraded", "note": "every prefix miss becomes an error; only cached hits survive" }
+        ],
+        "mitigation": "Trie shards are **replicated and sharded** — losing one node only drops a fraction of prefixes. The Trie Builder can quickly re-deploy a fresh trie to replacement shards, and the Redis cache bridges the gap with warm prefixes."
+      },
       "group": "frame-search"
     },
     {
@@ -343,6 +408,15 @@
       "name": "Notification Worker",
       "description": "Fans out per-recipient notifications",
       "details": "Consumes engagement events, builds a notification payload per recipient, appends it to their entry in the Notification Store, and forwards eligible events to the Push Gateway for immediate delivery.",
+      "failure": {
+        "userImpact": "Notifications stop arriving entirely — no in-app feed updates and no push notifications. The engagement actions (likes, retweets) themselves succeed without issue.",
+        "blastRadius": [
+          { "nodeId": "no-kafka", "effect": "degraded", "note": "events accumulate; consumer lag grows unbounded" },
+          { "nodeId": "no-notif-db", "effect": "degraded", "note": "no new writes; reads still serve stale data" },
+          { "nodeId": "no-push", "effect": "degraded", "note": "no events forwarded for mobile delivery" }
+        ],
+        "mitigation": "The worker is **stateless** — it resumes from its last Kafka offset on restart. Kafka buffers engagement events during the outage, so no notifications are lost, only delayed."
+      },
       "group": "frame-notif"
     },
     {
@@ -353,6 +427,14 @@
       "name": "Notification Store (DynamoDB)",
       "description": "Per-user feed, sharded by user ID",
       "details": "Notification reads are always single-item lookups by user ID, which is exactly DynamoDB's partition-key access pattern — predictable latency even during a viral-tweet write spike.",
+      "failure": {
+        "userImpact": "The notification feed in the app goes blank — users see no historical notifications. Push notifications that were already delivered remain on the device, and new likes/retweets still complete.",
+        "blastRadius": [
+          { "nodeId": "no-notif-svc", "effect": "degraded", "note": "feed queries fail; trending topics still serve from Redis" },
+          { "nodeId": "no-notif-worker", "effect": "degraded", "note": "writes fail; events stay queued in Kafka" }
+        ],
+        "mitigation": "DynamoDB is a **managed, replicated store** — individual partition failures are rare. Writes buffer in Kafka during the outage and drain on recovery, so no notifications are permanently lost."
+      },
       "group": "frame-notif"
     },
     {
@@ -394,7 +476,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~6K/s write peak",
+      "p99": "30ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-w2",
@@ -403,7 +489,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "gRPC",
-      "protocol": "grpc"
+      "protocol": "grpc",
+      "sync": true,
+      "qps": "~6K/s write peak",
+      "p99": "20ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-w3",
@@ -412,7 +502,11 @@
       "sourceHandle": "top-source",
       "targetHandle": "bottom-target",
       "label": "Get ID",
-      "protocol": "grpc"
+      "protocol": "grpc",
+      "sync": true,
+      "qps": "~6K/s",
+      "p99": "5ms",
+      "payloadSize": "~64B"
     },
     {
       "id": "e-w4",
@@ -421,7 +515,11 @@
       "sourceHandle": "bottom-source",
       "targetHandle": "right-target",
       "label": "Pre-signed URL",
-      "protocol": "internal"
+      "protocol": "internal",
+      "sync": true,
+      "qps": "~1K/s",
+      "p99": "10ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-w5",
@@ -431,7 +529,10 @@
       "targetHandle": "left-target",
       "label": "Direct Upload",
       "protocol": "https",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": false,
+      "qps": "~1K/s",
+      "payloadSize": "~2–10MB"
     },
     {
       "id": "e-w6",
@@ -440,7 +541,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Write",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~6K/s",
+      "p99": "12ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-w7",
@@ -449,7 +554,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Publish",
-      "protocol": "message"
+      "protocol": "message",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~6K/s",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-w8",
@@ -460,7 +569,11 @@
       "label": "Consume",
       "protocol": "message",
       "style": "dashed",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "guarantees": ["at-least-once", "ordered"],
+      "qps": "~6K/s",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-w9",
@@ -469,7 +582,11 @@
       "sourceHandle": "left-source",
       "targetHandle": "right-target",
       "label": "Read Followers",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~6K/s",
+      "p99": "8ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-t1",
@@ -478,7 +595,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~100K/s read peak",
+      "p99": "30ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-t2",
@@ -487,7 +608,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "gRPC",
-      "protocol": "grpc"
+      "protocol": "grpc",
+      "sync": true,
+      "qps": "~100K/s",
+      "p99": "15ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-t3",
@@ -496,7 +621,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Read Timeline",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~100K/s",
+      "p99": "1ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-t4",
@@ -505,7 +634,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Hydrate",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~2K/s (cache misses)",
+      "p99": "15ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-t6",
@@ -515,7 +648,10 @@
       "targetHandle": "left-target",
       "label": "Write (Fan-out)",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": false,
+      "qps": "~500K/s peak",
+      "payloadSize": "~100B"
     },
     {
       "id": "e-s1",
@@ -524,7 +660,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~500K/s peak",
+      "p99": "25ms",
+      "payloadSize": "~200B"
     },
     {
       "id": "e-s2",
@@ -533,7 +673,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "bottom-target",
       "label": "Prefix Query",
-      "protocol": "grpc"
+      "protocol": "grpc",
+      "sync": true,
+      "qps": "~500K/s",
+      "p99": "15ms",
+      "payloadSize": "~200B"
     },
     {
       "id": "e-s5",
@@ -542,7 +686,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Trie Lookup",
-      "protocol": "internal"
+      "protocol": "internal",
+      "sync": true,
+      "qps": "~100K/s (cache misses)",
+      "p99": "2ms",
+      "payloadSize": "~200B"
     },
     {
       "id": "e-s7",
@@ -551,7 +699,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Query",
-      "protocol": "internal"
+      "protocol": "internal",
+      "sync": true,
+      "qps": "~2K/s",
+      "p99": "50ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-s8",
@@ -561,7 +713,11 @@
       "targetHandle": "bottom-target",
       "label": "Log Query",
       "protocol": "message",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~500K/s",
+      "payloadSize": "~200B"
     },
     {
       "id": "e-s9",
@@ -571,7 +727,11 @@
       "targetHandle": "left-target",
       "label": "Consume",
       "protocol": "message",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~500K/s",
+      "payloadSize": "~200B"
     },
     {
       "id": "e-s10",
@@ -580,7 +740,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Write Counts",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~100/s",
+      "p99": "10ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-s11",
@@ -590,7 +754,11 @@
       "targetHandle": "top-target",
       "label": "Read Frequencies",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "qps": "~1/s (periodic)",
+      "p99": "500ms",
+      "payloadSize": "~10MB"
     },
     {
       "id": "e-s12",
@@ -601,7 +769,10 @@
       "label": "Atomic Swap",
       "protocol": "internal",
       "style": "dashed",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "qps": "~1/5min",
+      "payloadSize": "~12GB"
     },
     {
       "id": "e-n1",
@@ -610,7 +781,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~50K/s",
+      "p99": "25ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-n2",
@@ -619,7 +794,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "gRPC",
-      "protocol": "grpc"
+      "protocol": "grpc",
+      "sync": true,
+      "qps": "~50K/s",
+      "p99": "15ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "xy-edge__no-notif-svcright-source-no-notif-dbleft-target",
@@ -628,7 +807,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Read Feed",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~50K/s",
+      "p99": "8ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "xy-edge__no-notif-workertop-source-no-notif-dbbottom-target",
@@ -637,7 +820,11 @@
       "sourceHandle": "top-source",
       "targetHandle": "bottom-target",
       "label": "Write",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~10K/s",
+      "p99": "10ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "xy-edge__no-notif-workerleft-source-no-pushright-target",
@@ -648,7 +835,11 @@
       "label": "Forward",
       "protocol": "message",
       "style": "dashed",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~10K/s",
+      "payloadSize": "~1KB"
     },
     {
       "id": "xy-edge__no-kafkaleft-source-no-trend-workerright-target",
@@ -658,7 +849,11 @@
       "targetHandle": "right-target",
       "label": "Consume",
       "protocol": "message",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~10K/s",
+      "payloadSize": "~500B"
     },
     {
       "id": "xy-edge__no-pushtop-source-no-clientbottom-target",
@@ -669,7 +864,10 @@
       "label": "Push",
       "protocol": "https",
       "style": "dashed",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "qps": "~10K/s",
+      "payloadSize": "~1KB"
     },
     {
       "id": "xy-edge__no-trend-workerleft-source-no-trend-cacheright-target",
@@ -678,7 +876,11 @@
       "sourceHandle": "left-source",
       "targetHandle": "right-target",
       "label": "Write Counts",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~100/s",
+      "p99": "5ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "xy-edge__no-notif-svcbottom-source-no-trend-cacheright-target",
@@ -687,7 +889,11 @@
       "sourceHandle": "bottom-source",
       "targetHandle": "right-target",
       "label": "Read Trends",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~50K/s",
+      "p99": "1ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "xy-edge__no-kafkaright-source-no-notif-workertop-target",
@@ -698,7 +904,11 @@
       "label": "Consume",
       "protocol": "message",
       "style": "dashed",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~10K/s",
+      "payloadSize": "~500B"
     },
     {
       "id": "xy-edge__tl-timeline-svcbottom-source-tl-celeb-cacheleft-target",
@@ -708,7 +918,11 @@
       "targetHandle": "left-target",
       "label": "Merge (Pull)",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "qps": "~50K/s",
+      "p99": "2ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "xy-edge__tl-fanout-workerleft-source-tl-graph-dbright-target",
@@ -717,7 +931,11 @@
       "sourceHandle": "left-source",
       "targetHandle": "right-target",
       "label": "Read Followers",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~6K/s",
+      "p99": "8ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "xy-edge__tl-fanout-workerright-source-tl-timeline-cacheleft-target",
@@ -727,7 +945,10 @@
       "targetHandle": "left-target",
       "label": "Cache Push",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": false,
+      "qps": "~500K/s peak",
+      "payloadSize": "~100B"
     },
     {
       "id": "xy-edge__se-typeahead-svcright-source-se-suggest-cacheleft-target",
@@ -736,7 +957,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Cache Check",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~500K/s",
+      "p99": "1ms",
+      "payloadSize": "~200B"
     },
     {
       "id": "xy-edge__se-trie-shardstop-source-se-suggest-cachebottom-target",
@@ -746,7 +971,11 @@
       "targetHandle": "bottom-target",
       "label": "Populate Cache",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "qps": "~100K/s (miss backfill)",
+      "p99": "1ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "xy-edge__se-gatewayright-source-se-search-svcleft-target",
@@ -755,7 +984,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "label": "Search Query",
-      "protocol": "grpc"
+      "protocol": "grpc",
+      "sync": true,
+      "qps": "~2K/s",
+      "p99": "50ms",
+      "payloadSize": "~500B"
     }
   ],
   "groups": [
@@ -824,16 +1057,98 @@
     { "label": "Suggestion Trie Size", "value": "~12 GB", "note": "small enough to fully shard and replicate in memory" },
     { "label": "Celebrity Fan-out", "value": "50M+", "note": "one tweet can mean 50M+ timeline writes if pushed naively" }
   ],
+  "stages": [
+    {
+      "id": "mvp",
+      "title": "The MVP — tweet ingestion only",
+      "narrative": "The simplest version of the system: a client submits a tweet through an API gateway to a Tweet Service, which mints a globally unique ID via a Snowflake-style generator, persists the tweet in Cassandra, and issues pre-signed URLs so media uploads bypass the API tier entirely.\n\nThere are **no timelines, no search, no notifications** — just the core write path. Every tweet is written synchronously, and users read by scanning the database directly. This works for a few thousand users but collapses under millions.",
+      "nodeIds": ["write-client", "write-gateway", "write-tweet-svc", "write-id-gen", "write-media-s3", "write-tweet-db", "write-graph-db"],
+      "edgeIds": ["e-w1", "e-w2", "e-w3", "e-w4", "e-w5", "e-w6"]
+    },
+    {
+      "id": "timeline",
+      "title": "Add precomputed timelines — fan-out-on-write",
+      "trigger": "With millions of users, scanning every tweet to find those from followed accounts is thousands of times too slow — we need precomputed feeds",
+      "narrative": "A Kafka event bus decouples the write path from the read path. After persisting a tweet, the Tweet Service publishes a **tweet_created** event. A Fan-out Dispatcher reads the author's follower count from the Social Graph Store and decides between push (most users) and pull (celebrities with 50M+ followers).\n\nThe Fan-out Worker continuously drains the stream and pushes tweet IDs onto every follower's precomputed timeline in both the durable Cassandra store and the Redis cache. The Timeline Service now assembles feeds by reading precomputed ID lists from Redis, hydrating full tweet content from the Tweet Store, and merging in celebrity tweets from a dedicated pull cache — all in well under a second.",
+      "nodeIds": ["write-client", "write-gateway", "write-tweet-svc", "write-id-gen", "write-media-s3", "write-tweet-db", "write-graph-db", "write-kafka", "write-fanout-dispatcher", "tl-client", "tl-gateway", "tl-timeline-svc", "tl-fanout-worker", "tl-timeline-db", "tl-timeline-cache", "tl-graph-db", "tl-tweet-db", "tl-celeb-cache"],
+      "edgeIds": ["e-w1", "e-w2", "e-w3", "e-w4", "e-w5", "e-w6", "e-w7", "e-w8", "e-w9", "e-t1", "e-t2", "e-t3", "e-t4", "e-t6", "xy-edge__tl-timeline-svcbottom-source-tl-celeb-cacheleft-target", "xy-edge__tl-fanout-workerleft-source-tl-graph-dbright-target", "xy-edge__tl-fanout-workerright-source-tl-timeline-cacheleft-target"]
+    },
+    {
+      "id": "notifications",
+      "title": "Add notifications and trending topics",
+      "trigger": "With engagement growing, users need real-time alerts when their content is liked or mentioned, and the platform must surface what is trending right now",
+      "narrative": "Engagement events — likes, retweets, replies, mentions — flow through a shared Kafka topic decoupled from the action that caused them. A Notification Worker consumes each event, builds a per-recipient payload, appends it to a DynamoDB Notification Store sharded by user ID, and forwards eligible events to the Push Gateway (APNs/FCM) for immediate mobile delivery.\n\nIndependently, the Trending Aggregator maintains a sliding-window count of hashtag and topic mentions from the same engagement stream, refreshing a Redis cache with the top-N topics per region. The Notification & Trends Service serves both feeds as a read-only API — it never computes anything itself.",
+      "nodeIds": ["write-client", "write-gateway", "write-tweet-svc", "write-id-gen", "write-media-s3", "write-tweet-db", "write-graph-db", "write-kafka", "write-fanout-dispatcher", "tl-client", "tl-gateway", "tl-timeline-svc", "tl-fanout-worker", "tl-timeline-db", "tl-timeline-cache", "tl-graph-db", "tl-tweet-db", "tl-celeb-cache", "no-client", "no-gateway", "no-notif-svc", "no-kafka", "no-notif-worker", "no-notif-db", "no-push", "no-trend-worker", "no-trend-cache"],
+      "edgeIds": ["e-w1", "e-w2", "e-w3", "e-w4", "e-w5", "e-w6", "e-w7", "e-w8", "e-w9", "e-t1", "e-t2", "e-t3", "e-t4", "e-t6", "xy-edge__tl-timeline-svcbottom-source-tl-celeb-cacheleft-target", "xy-edge__tl-fanout-workerleft-source-tl-graph-dbright-target", "xy-edge__tl-fanout-workerright-source-tl-timeline-cacheleft-target", "e-n1", "e-n2", "xy-edge__no-notif-svcright-source-no-notif-dbleft-target", "xy-edge__no-notif-workertop-source-no-notif-dbbottom-target", "xy-edge__no-notif-workerleft-source-no-pushright-target", "xy-edge__no-kafkaleft-source-no-trend-workerright-target", "xy-edge__no-pushtop-source-no-clientbottom-target", "xy-edge__no-trend-workerleft-source-no-trend-cacheright-target", "xy-edge__no-notif-svcbottom-source-no-trend-cacheright-target", "xy-edge__no-kafkaright-source-no-notif-workertop-target"]
+    },
+    {
+      "id": "search",
+      "title": "Add typeahead search and full-text search",
+      "trigger": "At hundreds of millions of users, users expect instant, ranked suggestions with every keystroke and full-text search across tweets and accounts — browsing timelines is no longer enough",
+      "narrative": "A Typeahead Service serves prefix suggestions by checking Redis first (hot prefix cache), then falling back to a sharded cluster of in-memory ranked tries where every node stores its top-K completions pre-sorted by popularity — **a keystroke is a lookup, not a computation**.\n\nOffline, a Query Log in Kafka feeds an Aggregation Job that tallies query frequencies. The Trie Builder periodically reads fresh frequencies and atomically swaps a newly built trie onto the serving shards, so the hot read path never pays a rebuild cost. Separately, the Search Service handles full-text queries over the Elasticsearch index for submitted searches — a heavier path than typeahead's per-keystroke lookups.\n\nThis is the finished architecture: four semi-independent sub-systems — write path, timeline, notifications, search — each decoupled by Kafka, each scaling on its own signal.",
+      "nodeIds": ["write-client", "write-gateway", "write-tweet-svc", "write-id-gen", "write-media-s3", "write-tweet-db", "write-graph-db", "write-kafka", "write-fanout-dispatcher", "tl-client", "tl-gateway", "tl-timeline-svc", "tl-fanout-worker", "tl-timeline-db", "tl-timeline-cache", "tl-graph-db", "tl-tweet-db", "tl-celeb-cache", "no-client", "no-gateway", "no-notif-svc", "no-kafka", "no-notif-worker", "no-notif-db", "no-push", "no-trend-worker", "no-trend-cache", "se-client", "se-gateway", "se-typeahead-svc", "se-search-svc", "se-suggest-cache", "se-trie-shards", "se-es", "se-query-log", "se-aggregator", "se-freq-db", "se-trie-builder"],
+      "edgeIds": ["e-w1", "e-w2", "e-w3", "e-w4", "e-w5", "e-w6", "e-w7", "e-w8", "e-w9", "e-t1", "e-t2", "e-t3", "e-t4", "e-t6", "xy-edge__tl-timeline-svcbottom-source-tl-celeb-cacheleft-target", "xy-edge__tl-fanout-workerleft-source-tl-graph-dbright-target", "xy-edge__tl-fanout-workerright-source-tl-timeline-cacheleft-target", "e-n1", "e-n2", "xy-edge__no-notif-svcright-source-no-notif-dbleft-target", "xy-edge__no-notif-workertop-source-no-notif-dbbottom-target", "xy-edge__no-notif-workerleft-source-no-pushright-target", "xy-edge__no-kafkaleft-source-no-trend-workerright-target", "xy-edge__no-pushtop-source-no-clientbottom-target", "xy-edge__no-trend-workerleft-source-no-trend-cacheright-target", "xy-edge__no-notif-svcbottom-source-no-trend-cacheright-target", "xy-edge__no-kafkaright-source-no-notif-workertop-target", "e-s1", "e-s2", "e-s5", "e-s7", "e-s8", "e-s9", "e-s10", "e-s11", "e-s12", "xy-edge__se-typeahead-svcright-source-se-suggest-cacheleft-target", "xy-edge__se-trie-shardstop-source-se-suggest-cachebottom-target", "xy-edge__se-gatewayright-source-se-search-svcleft-target"]
+    }
+  ],
   "flows": [
     {
       "id": "post-tweet",
       "title": "Post a tweet",
       "description": "The write path — from compose to a durable, event-published tweet. Scoped entirely to frame 1.",
       "steps": [
-        { "text": "The client sends the tweet through the API Gateway to the Tweet Service, which requests a globally unique, time-sortable ID from the ID Generation Service before persisting anything.", "nodeIds": ["write-client", "write-gateway", "write-tweet-svc", "write-id-gen"], "edgeIds": ["e-w1", "e-w2", "e-w3"] },
-        { "text": "If the tweet has an attached image or video, the client uploads the media directly to blob storage using a pre-signed URL issued by the Tweet Service — the media bytes never pass through the API tier.", "nodeIds": ["write-tweet-svc", "write-media-s3", "write-client"], "edgeIds": ["e-w4", "e-w5"] },
-        { "text": "The Tweet Service writes the tweet to the sharded Cassandra store, then publishes a 'tweet_created' event to Kafka so downstream systems can react without blocking the write.", "nodeIds": ["write-tweet-svc", "write-tweet-db", "write-kafka"], "edgeIds": ["e-w6", "e-w7"] },
-        { "text": "The Fan-out Dispatcher consumes the event and reads the author's follower list from the Social Graph Store to decide, based on follower count, whether to push or leave the tweet for pull-based fan-in.", "nodeIds": ["write-kafka", "write-fanout-dispatcher", "write-graph-db"], "edgeIds": ["e-w8", "e-w9"] }
+        {
+          "text": "The client sends the tweet through the API Gateway to the Tweet Service, which requests a globally unique, time-sortable ID from the ID Generation Service before persisting anything.",
+          "nodeIds": ["write-client", "write-gateway", "write-tweet-svc", "write-id-gen"],
+          "edgeIds": ["e-w1", "e-w2", "e-w3"],
+          "latencyMs": 30,
+          "payload": {
+            "title": "POST /api/tweet",
+            "body": "{\n  \"userId\": \"@elonmusk\",\n  \"text\": \"The future of social is decentralized\",\n  \"mediaIds\": []\n}\n\n→ 200 { tweetId: \"187298473629184000\" }"
+          },
+          "stateChanges": [
+            { "nodeId": "write-id-gen", "note": "Snowflake ID minted — timestamp + worker + sequence" }
+          ]
+        },
+        {
+          "text": "If the tweet has an attached image or video, the client uploads the media directly to blob storage using a pre-signed URL issued by the Tweet Service — the media bytes never pass through the API tier.",
+          "nodeIds": ["write-tweet-svc", "write-media-s3", "write-client"],
+          "edgeIds": ["e-w4", "e-w5"],
+          "latencyMs": 200,
+          "payload": {
+            "title": "PUT {presigned-url}",
+            "body": "Content-Length: 2097152\nContent-Type: image/jpeg\n\n‹ 2 MB of image bytes ›"
+          },
+          "stateChanges": [
+            { "nodeId": "write-media-s3", "note": "media object stored; referenced by tweet metadata" }
+          ]
+        },
+        {
+          "text": "The Tweet Service writes the tweet to the sharded Cassandra store, then publishes a 'tweet_created' event to Kafka so downstream systems can react without blocking the write.",
+          "nodeIds": ["write-tweet-svc", "write-tweet-db", "write-kafka"],
+          "edgeIds": ["e-w6", "e-w7"],
+          "latencyMs": 15,
+          "payload": {
+            "title": "INSERT tweet (partition = tweetId)",
+            "body": "{\n  \"tweetId\": \"187298473629184000\",\n  \"userId\": \"@elonmusk\",\n  \"text\": \"The future of social is decentralized\",\n  \"createdAt\": \"2026-07-10T12:00:00Z\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "write-tweet-db", "note": "row written; tweet is durable" },
+            { "nodeId": "write-kafka", "note": "'tweet_created' event published" }
+          ]
+        },
+        {
+          "text": "The Fan-out Dispatcher consumes the event and reads the author's follower list from the Social Graph Store to decide, based on follower count, whether to push or leave the tweet for pull-based fan-in.",
+          "nodeIds": ["write-kafka", "write-fanout-dispatcher", "write-graph-db"],
+          "edgeIds": ["e-w8", "e-w9"],
+          "latencyMs": 25,
+          "payload": {
+            "title": "Fan-out decision",
+            "body": "{\n  \"authorId\": \"@elonmusk\",\n  \"followerCount\": 180000000,\n  \"strategy\": \"pull\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "write-graph-db", "note": "follower count read; celebrity threshold exceeded → pull strategy" }
+          ]
+        }
       ]
     },
     {
@@ -841,10 +1156,58 @@
       "title": "Load the home timeline",
       "description": "The read path — how a user's feed is assembled with sub-second latency. Scoped entirely to frame 2.",
       "steps": [
-        { "text": "The client requests the home timeline through the API Gateway; the Timeline Service reads the precomputed list of tweet IDs from the Redis cache — the fast path built ahead of time by fan-out-on-write.", "nodeIds": ["tl-client", "tl-gateway", "tl-timeline-svc", "tl-timeline-cache"], "edgeIds": ["e-t1", "e-t2", "e-t3"] },
-        { "text": "Full tweet content is hydrated from the Tweet Store, and tweets from celebrity accounts — which use pull-based fan-out to avoid a write explosion — are merged in from a dedicated cache at read time.", "nodeIds": ["tl-timeline-svc", "tl-tweet-db", "tl-celeb-cache"], "edgeIds": ["e-t4", "e-t5"] },
-        { "text": "Independently of any single read, the Fan-out Worker is continuously draining the tweet-created event stream: for each new tweet it reads the author's follower list and pushes the tweet ID onto every follower's durable timeline.", "nodeIds": ["tl-fanout-worker", "tl-graph-db", "tl-timeline-db"], "edgeIds": ["e-t8", "e-t6"] },
-        { "text": "The worker also writes the same tweet ID into the Redis timeline cache, so the next time any of those followers opens the app, their feed is already sitting in memory.", "nodeIds": ["tl-fanout-worker", "tl-timeline-cache"], "edgeIds": ["e-t7"] }
+        {
+          "text": "The client requests the home timeline through the API Gateway; the Timeline Service reads the precomputed list of tweet IDs from the Redis cache — the fast path built ahead of time by fan-out-on-write.",
+          "nodeIds": ["tl-client", "tl-gateway", "tl-timeline-svc", "tl-timeline-cache"],
+          "edgeIds": ["e-t1", "e-t2", "e-t3"],
+          "latencyMs": 3,
+          "payload": {
+            "title": "GET /api/home_timeline",
+            "body": "→ Redis LRANGE user:12345:tweets 0 200\n→ 200 tweet IDs served from memory in ~3ms"
+          },
+          "stateChanges": [
+            { "nodeId": "tl-timeline-cache", "note": "cache hit — 200 precomputed tweet IDs returned in ~3ms" }
+          ]
+        },
+        {
+          "text": "Full tweet content is hydrated from the Tweet Store, and tweets from celebrity accounts — which use pull-based fan-out to avoid a write explosion — are merged in from a dedicated cache at read time.",
+          "nodeIds": ["tl-timeline-svc", "tl-tweet-db", "tl-celeb-cache"],
+          "edgeIds": ["e-t4", "xy-edge__tl-timeline-svcbottom-source-tl-celeb-cacheleft-target"],
+          "latencyMs": 12,
+          "payload": {
+            "title": "Hydrate + merge celebrity tweets",
+            "body": "→ SELECT * FROM tweets WHERE tweetId IN (...)\n→ Redis ZREVRANGE celeb:user:12345:tweets 0 20"
+          },
+          "stateChanges": [
+            { "nodeId": "tl-celeb-cache", "note": "celebrity tweets merged into feed at read time" }
+          ]
+        },
+        {
+          "text": "Independently of any single read, the Fan-out Worker is continuously draining the tweet-created event stream: for each new tweet it reads the author's follower list and pushes the tweet ID onto every follower's durable timeline.",
+          "nodeIds": ["tl-fanout-worker", "tl-graph-db", "tl-timeline-db"],
+          "edgeIds": ["xy-edge__tl-fanout-workerleft-source-tl-graph-dbright-target", "e-t6"],
+          "latencyMs": 50,
+          "payload": {
+            "title": "Fan-out push (async)",
+            "body": "{\n  \"tweetId\": \"187298473629184000\",\n  \"followerBatch\": [\"user:1001\", \"user:1002\", …, \"user:5000\"]\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "tl-timeline-db", "note": "tweet ID appended to each follower's timeline row" }
+          ]
+        },
+        {
+          "text": "The worker also writes the same tweet ID into the Redis timeline cache, so the next time any of those followers opens the app, their feed is already sitting in memory.",
+          "nodeIds": ["tl-fanout-worker", "tl-timeline-cache"],
+          "edgeIds": ["xy-edge__tl-fanout-workerright-source-tl-timeline-cacheleft-target"],
+          "latencyMs": 2,
+          "payload": {
+            "title": "Redis RPUSH user:1001:tweets",
+            "body": "→ RPUSH user:1001:tweets \"187298473629184000\"\n→ LTRIM user:1001:tweets 0 800"
+          },
+          "stateChanges": [
+            { "nodeId": "tl-timeline-cache", "note": "tweet ID pushed onto each follower's hot timeline cache" }
+          ]
+        }
       ]
     },
     {
@@ -852,10 +1215,55 @@
       "title": "Type-ahead search suggestions",
       "description": "How a keystroke becomes an instant, ranked suggestion. Scoped entirely to frame 3.",
       "steps": [
-        { "text": "As the user types each character, the client — after debouncing keystrokes to cut request volume by roughly two-thirds — sends the current prefix through the API Gateway to the Typeahead Service.", "nodeIds": ["se-client", "se-gateway", "se-typeahead-svc"], "edgeIds": ["e-s1", "e-s2"] },
-        { "text": "The Typeahead Service checks the Redis suggestion cache first. On a hit it returns instantly; on a miss, it queries the sharded trie cluster, where suggestions for that prefix were already ranked and sorted ahead of time.", "nodeIds": ["se-typeahead-svc", "se-suggest-cache", "se-trie-shards"], "edgeIds": ["e-s4", "e-s5"] },
-        { "text": "The trie shard's answer is written back into the Redis cache, so the next request for the same prefix — extremely likely given how skewed real query traffic is — never has to touch the trie at all.", "nodeIds": ["se-trie-shards", "se-suggest-cache"], "edgeIds": ["e-s6"] },
-        { "text": "Every prefix query is also logged asynchronously onto a Kafka topic, feeding the offline pipeline that keeps the trie's popularity rankings current.", "nodeIds": ["se-typeahead-svc", "se-query-log"], "edgeIds": ["e-s8"] }
+        {
+          "text": "As the user types each character, the client — after debouncing keystrokes to cut request volume by roughly two-thirds — sends the current prefix through the API Gateway to the Typeahead Service.",
+          "nodeIds": ["se-client", "se-gateway", "se-typeahead-svc"],
+          "edgeIds": ["e-s1", "e-s2"],
+          "latencyMs": 20,
+          "payload": {
+            "title": "GET /api/suggest?q=dece",
+            "body": "→ 200 OK\n[\"decentralized\", \"december\", \"decency\"]"
+          }
+        },
+        {
+          "text": "The Typeahead Service checks the Redis suggestion cache first. On a hit it returns instantly; on a miss, it queries the sharded trie cluster, where suggestions for that prefix were already ranked and sorted ahead of time.",
+          "nodeIds": ["se-typeahead-svc", "se-suggest-cache", "se-trie-shards"],
+          "edgeIds": ["xy-edge__se-typeahead-svcright-source-se-suggest-cacheleft-target", "e-s5"],
+          "latencyMs": 2,
+          "payload": {
+            "title": "Redis GET prefix:dece",
+            "body": "→ MISS (or HIT: [\"decentralized\", \"december\", \"decency\"])\n→ Trie shard lookup: prefix='dece' → O(k) trie traversal"
+          },
+          "stateChanges": [
+            { "nodeId": "se-suggest-cache", "note": "cache miss; falling back to trie shard cluster" }
+          ]
+        },
+        {
+          "text": "The trie shard's answer is written back into the Redis cache, so the next request for the same prefix — extremely likely given how skewed real query traffic is — never has to touch the trie at all.",
+          "nodeIds": ["se-trie-shards", "se-suggest-cache"],
+          "edgeIds": ["xy-edge__se-trie-shardstop-source-se-suggest-cachebottom-target"],
+          "latencyMs": 1,
+          "payload": {
+            "title": "Redis SET prefix:dece (TTL 300s)",
+            "body": "→ SET prefix:dece '[\"decentralized\",\"december\",\"decency\"]' EX 300"
+          },
+          "stateChanges": [
+            { "nodeId": "se-suggest-cache", "note": "trie result cached — next identical prefix is a Redis hit" }
+          ]
+        },
+        {
+          "text": "Every prefix query is also logged asynchronously onto a Kafka topic, feeding the offline pipeline that keeps the trie's popularity rankings current.",
+          "nodeIds": ["se-typeahead-svc", "se-query-log"],
+          "edgeIds": ["e-s8"],
+          "latencyMs": 5,
+          "payload": {
+            "title": "Kafka → query_log topic",
+            "body": "{\n  \"prefix\": \"dece\",\n  \"timestamp\": \"2026-07-10T12:00:01Z\",\n  \"sessionId\": \"sess_abc123\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "se-query-log", "note": "query logged asynchronously for offline aggregation" }
+          ]
+        }
       ]
     },
     {
@@ -863,10 +1271,52 @@
       "title": "Rebuild the suggestion trie offline",
       "description": "The offline pipeline that keeps typeahead rankings fresh without ever blocking a live query. Scoped entirely to frame 3.",
       "steps": [
-        { "text": "An Aggregation Job continuously consumes the raw query log from Kafka and tallies how often each search phrase was typed and clicked.", "nodeIds": ["se-query-log", "se-aggregator"], "edgeIds": ["e-s9"] },
-        { "text": "Counts are rolled up into the Query Frequency Store, with low-frequency phrases filtered out and entries past the retention window discarded to bound the trie's size.", "nodeIds": ["se-aggregator", "se-freq-db"], "edgeIds": ["e-s10"] },
-        { "text": "On a fixed cadence — minutes to hours, not real time — the Trie Builder reads the latest frequencies and constructs an entirely fresh, ranked trie in the background.", "nodeIds": ["se-freq-db", "se-trie-builder"], "edgeIds": ["e-s11"] },
-        { "text": "The new trie is atomically swapped onto the serving shards, so live query latency never pays a rebuild cost — the system trades a little staleness for a lookup that's always fast.", "nodeIds": ["se-trie-builder", "se-trie-shards"], "edgeIds": ["e-s12"] }
+        {
+          "text": "An Aggregation Job continuously consumes the raw query log from Kafka and tallies how often each search phrase was typed and clicked.",
+          "nodeIds": ["se-query-log", "se-aggregator"],
+          "edgeIds": ["e-s9"],
+          "latencyMs": 5000,
+          "payload": {
+            "title": "Consume query_log → aggregate",
+            "body": "{\n  \"prefix\": \"dece\",\n  \"count\": 142857,\n  \"topCompletions\": {\"decentralized\": 85000, \"december\": 32000, \"decency\": 11000}\n}"
+          }
+        },
+        {
+          "text": "Counts are rolled up into the Query Frequency Store, with low-frequency phrases filtered out and entries past the retention window discarded to bound the trie's size.",
+          "nodeIds": ["se-aggregator", "se-freq-db"],
+          "edgeIds": ["e-s10"],
+          "latencyMs": 200,
+          "payload": {
+            "title": "INSERT INTO query_frequencies",
+            "body": "{\n  \"prefix\": \"dece\",\n  \"count\": 142857,\n  \"ttl\": 2592000\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "se-freq-db", "note": "aggregated counts stored with 30-day TTL" }
+          ]
+        },
+        {
+          "text": "On a fixed cadence — minutes to hours, not real time — the Trie Builder reads the latest frequencies and constructs an entirely fresh, ranked trie in the background.",
+          "nodeIds": ["se-freq-db", "se-trie-builder"],
+          "edgeIds": ["e-s11"],
+          "latencyMs": 60000,
+          "payload": {
+            "title": "Build trie from frequencies",
+            "body": "Read 10M prefix counts\n→ Build radix tree\n→ Sort top-K completions per node"
+          }
+        },
+        {
+          "text": "The new trie is atomically swapped onto the serving shards, so live query latency never pays a rebuild cost — the system trades a little staleness for a lookup that's always fast.",
+          "nodeIds": ["se-trie-builder", "se-trie-shards"],
+          "edgeIds": ["e-s12"],
+          "latencyMs": 100,
+          "payload": {
+            "title": "Atomic swap → new trie live",
+            "body": "shard-1: swap(/data/trie/v2 → /data/trie/current)\nshard-2: swap(/data/trie/v2 → /data/trie/current)\nshard-N: swap(/data/trie/v2 → /data/trie/current)"
+          },
+          "stateChanges": [
+            { "nodeId": "se-trie-shards", "note": "fresh ranked trie swapped in — lookups now reflect latest query frequencies" }
+          ]
+        }
       ]
     },
     {
@@ -874,10 +1324,58 @@
       "title": "Deliver a notification",
       "description": "From an engagement action to a push notification and a readable feed. Scoped entirely to frame 4.",
       "steps": [
-        { "text": "A like, retweet, reply, or mention is published as an event onto the shared Engagement Events topic, decoupling the action from however many notifications it fans out into.", "nodeIds": ["no-kafka", "no-notif-worker"], "edgeIds": ["e-n5"] },
-        { "text": "The Notification Worker consumes the event, builds the notification payload, and appends it to the recipient's entry in the Notification Store, sharded by user ID.", "nodeIds": ["no-notif-worker", "no-notif-db"], "edgeIds": ["e-n6"] },
-        { "text": "The same event is forwarded to a Push Gateway (APNs/FCM), which delivers it straight to the recipient's device even if the app is closed.", "nodeIds": ["no-notif-worker", "no-push", "no-client"], "edgeIds": ["e-n7", "e-n8"] },
-        { "text": "When the user later opens the app, the Notification & Trends Service reads their notification feed and the current trending topics directly from storage and cache — no recomputation needed.", "nodeIds": ["no-client", "no-gateway", "no-notif-svc", "no-notif-db", "no-trend-cache"], "edgeIds": ["e-n1", "e-n2", "e-n3", "e-n4"] }
+        {
+          "text": "A like, retweet, reply, or mention is published as an event onto the shared Engagement Events topic, decoupling the action from however many notifications it fans out into.",
+          "nodeIds": ["no-kafka", "no-notif-worker"],
+          "edgeIds": ["xy-edge__no-kafkaright-source-no-notif-workertop-target"],
+          "latencyMs": 10,
+          "payload": {
+            "title": "Kafka → engagement_events topic",
+            "body": "{\n  \"type\": \"like\",\n  \"actor\": \"@jack\",\n  \"target\": \"@elonmusk\",\n  \"tweetId\": \"187298473629184000\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "no-kafka", "note": "engagement event published — Notification Worker consumes asynchronously" }
+          ]
+        },
+        {
+          "text": "The Notification Worker consumes the event, builds the notification payload, and appends it to the recipient's entry in the Notification Store, sharded by user ID.",
+          "nodeIds": ["no-notif-worker", "no-notif-db"],
+          "edgeIds": ["xy-edge__no-notif-workertop-source-no-notif-dbbottom-target"],
+          "latencyMs": 15,
+          "payload": {
+            "title": "DynamoDB PutItem (notifications)",
+            "body": "{\n  \"userId\": \"@elonmusk\",\n  \"notificationId\": \"notif_abc…\",\n  \"type\": \"like\",\n  \"from\": \"@jack\",\n  \"timestamp\": \"2026-07-10T12:00:05Z\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "no-notif-db", "note": "notification appended to recipient's feed; sharded by userId" }
+          ]
+        },
+        {
+          "text": "The same event is forwarded to a Push Gateway (APNs/FCM), which delivers it straight to the recipient's device even if the app is closed.",
+          "nodeIds": ["no-notif-worker", "no-push", "no-client"],
+          "edgeIds": ["xy-edge__no-notif-workerleft-source-no-pushright-target", "xy-edge__no-pushtop-source-no-clientbottom-target"],
+          "latencyMs": 150,
+          "payload": {
+            "title": "APNs push payload",
+            "body": "{\n  \"aps\": {\n    \"alert\": \"@jack liked your tweet\",\n    \"sound\": \"default\"\n  },\n  \"tweetId\": \"187298473629184000\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "no-push", "note": "push notification delivered to device via APNs/FCM" }
+          ]
+        },
+        {
+          "text": "When the user later opens the app, the Notification & Trends Service reads their notification feed and the current trending topics directly from storage and cache — no recomputation needed.",
+          "nodeIds": ["no-client", "no-gateway", "no-notif-svc", "no-notif-db", "no-trend-cache"],
+          "edgeIds": ["e-n1", "e-n2", "xy-edge__no-notif-svcright-source-no-notif-dbleft-target", "xy-edge__no-notif-svcbottom-source-no-trend-cacheright-target"],
+          "latencyMs": 5,
+          "payload": {
+            "title": "GET /api/notifications + GET /api/trending",
+            "body": "→ DynamoDB Query(userId = @elonmusk, limit 50)\n→ Redis ZREVRANGE trending:global 0 10"
+          },
+          "stateChanges": [
+            { "nodeId": "no-trend-cache", "note": "trending topics served from Redis — no recomputation at read time" }
+          ]
+        }
       ]
     }
   ],

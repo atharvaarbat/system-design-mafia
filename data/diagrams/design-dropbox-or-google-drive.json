@@ -45,6 +45,39 @@
       "note": "WebSocket push for active clients, polling fallback every few minutes"
     }
   ],
+  "stages": [
+    {
+      "id": "mvp",
+      "title": "The MVP — direct uploads to object storage",
+      "narrative": "The simplest version: a client discovers the service via DNS, authenticates through an API Gateway and Auth Service, and uploads/downloads files through the File Service — which generates presigned URLs so file bytes flow directly to and from object storage.\n\nMetadata (file name, size, fingerprint) is persisted in a DynamoDB table keyed by userId. This works for thousands of users, but every download comes from a single regional bucket — latency is high for global users and origin egress costs grow linearly.",
+      "nodeIds": ["client-web", "client-mobile", "client-desktop", "dns", "api-gateway", "auth-service", "file-service", "metadata-db", "object-storage"],
+      "edgeIds": ["e-client-dns", "e-client2-dns", "e-client3-dns", "e-dns-gw", "e-gw-auth", "e-gw-file", "e-file-db", "e-file-storage", "xy-edge__auth-serviceright-source-metadata-dbleft-target"]
+    },
+    {
+      "id": "cdn",
+      "title": "Add the CDN for global downloads",
+      "trigger": "Users far from the origin region wait 200ms+ for every download, and origin egress costs dominate the infrastructure budget",
+      "narrative": "A **CDN** now fronts object storage for downloads: DNS geo-routes to the nearest edge, and cache hits serve in <20ms. Signed URLs with short expiration (5 minutes) enforce access control at the edge.\n\nThe CDN also supports **Range requests** so interrupted downloads resume without restarting — critical for mobile networks. Popular files are cached globally; the long tail still streams from origin.",
+      "nodeIds": ["client-web", "client-mobile", "client-desktop", "dns", "cdn", "api-gateway", "auth-service", "file-service", "metadata-db", "object-storage"],
+      "edgeIds": ["e-client-dns", "e-client2-dns", "e-client3-dns", "e-dns-cdn", "e-dns-gw", "e-cdn-storage", "e-gw-auth", "e-gw-file", "e-file-db", "e-file-storage", "xy-edge__auth-serviceright-source-metadata-dbleft-target"]
+    },
+    {
+      "id": "sync",
+      "title": "Add real-time sync across devices",
+      "trigger": "Users with multiple devices expect file edits on their laptop to appear on their phone within seconds — polling is too slow and too expensive at 100M DAU",
+      "narrative": "A **Sync Service** maintains WebSocket connections per device for near-real-time push. When a file changes, the File Service publishes a **file.changes** event to a Kafka event bus. The **Notification Worker** consumes the event and pushes a sync notification through the **WebSocket Manager** to all of the user's online devices.\n\nA **Shared Files Cache** (Redis) sits in front of the metadata DB to accelerate ACL lookups for frequently shared files. Offline devices get changes via periodic polling (GET /files/changes?since=...) when they reconnect.",
+      "nodeIds": ["client-web", "client-mobile", "client-desktop", "dns", "cdn", "api-gateway", "auth-service", "file-service", "sync-service", "shared-cache", "metadata-db", "object-storage", "message-queue", "notification-worker", "sync-websocket"],
+      "edgeIds": ["e-client-dns", "e-client2-dns", "e-client3-dns", "e-dns-cdn", "e-dns-gw", "e-cdn-storage", "e-gw-auth", "e-gw-file", "e-gw-sync", "e-file-db", "e-file-cache", "e-file-storage", "e-file-kafka", "xy-edge__auth-serviceright-source-metadata-dbleft-target", "xy-edge__sync-serviceright-source-message-queueleft-target", "xy-edge__sync-servicebottom-source-sync-websocketleft-target", "xy-edge__message-queueright-source-notification-workerleft-target", "xy-edge__notification-workerbottom-source-sync-websockettop-target"]
+    },
+    {
+      "id": "full",
+      "title": "Add sharing and email notifications",
+      "trigger": "File sharing is the primary growth vector — users need to share files and invite collaborators via email",
+      "narrative": "The system reaches its full shape. An **Email Provider** sends share-invite notifications when a user shares a file with someone who doesn't yet have an account.\n\nThe Notification Worker also forwards events to the Email Provider asynchronously, keeping the sharing path decoupled from the notification delivery. This is the finished architecture: every tier — upload, download, sync, share — is decoupled by the event bus, and each scales independently.",
+      "nodeIds": ["client-web", "client-mobile", "client-desktop", "dns", "cdn", "api-gateway", "auth-service", "file-service", "sync-service", "shared-cache", "metadata-db", "object-storage", "message-queue", "notification-worker", "sync-websocket", "email-provider"],
+      "edgeIds": ["e-client-dns", "e-client2-dns", "e-client3-dns", "e-dns-cdn", "e-dns-gw", "e-cdn-storage", "e-gw-auth", "e-gw-file", "e-gw-sync", "e-file-db", "e-file-cache", "e-file-storage", "e-file-kafka", "xy-edge__auth-serviceright-source-metadata-dbleft-target", "xy-edge__sync-serviceright-source-message-queueleft-target", "xy-edge__sync-servicebottom-source-sync-websocketleft-target", "xy-edge__message-queueright-source-notification-workerleft-target", "xy-edge__notification-workerbottom-source-sync-websockettop-target", "xy-edge__notification-workerright-source-email-providerleft-target"]
+    }
+  ],
  "nodes": [
     {
       "id": "client-web",
@@ -89,7 +122,16 @@
       "y": 120,
       "name": "CDN (CloudFront)",
       "description": "Global edge cache for downloads",
-      "details": "### Responsibilities\n\n- Cache frequently accessed files at 400+ edge locations worldwide\n- Validate CDN-signed URLs (signature + expiration + optional IP binding)\n- Serve cache hits directly; forward misses to object storage with request coalescing\n- Support Range requests for partial/resumable downloads"
+      "details": "### Responsibilities\n\n- Cache frequently accessed files at 400+ edge locations worldwide\n- Validate CDN-signed URLs (signature + expiration + optional IP binding)\n- Serve cache hits directly; forward misses to object storage with request coalescing\n- Support Range requests for partial/resumable downloads",
+      "failure": {
+        "userImpact": "Download latency jumps from ~20ms to 200ms+ as every request misses the cache and hits the origin S3 bucket directly. Origin egress costs explode.",
+        "blastRadius": [
+          { "nodeId": "object-storage", "effect": "degraded", "note": "absorbs the entire read load the edge used to soak" },
+          { "nodeId": "client-web", "effect": "degraded", "note": "slow downloads, Range requests served from origin" },
+          { "nodeId": "client-mobile", "effect": "degraded", "note": "slow downloads on mobile networks — resumable but painful" }
+        ],
+        "mitigation": "Files are plain HTTPS objects, so clients can fall back to direct S3 presigned URLs — degraded but alive. Real platforms run **multiple CDNs** with DNS-level failover. Request coalescing at the origin blunts the initial miss storm."
+      }
     },
     {
       "id": "api-gateway",
@@ -116,7 +158,16 @@
       "y": 408,
       "name": "File Service",
       "description": "Metadata & presigned URL generation",
-      "details": "### Responsibilities\n\n- CRUD operations on file metadata (name, size, MIME type, fingerprint, chunk status)\n- Generate S3 presigned URLs for multipart upload parts (purely local crypto operation)\n- Generate CDN-signed URLs for downloads with short expiration (e.g., 5 min)\n- Verify chunk uploads via S3 ListParts API before marking chunks as uploaded\n- Call S3 CompleteMultipartUpload once all chunks are verified\n- Enforce ACLs via SharedFiles table lookups"
+      "details": "### Responsibilities\n\n- CRUD operations on file metadata (name, size, MIME type, fingerprint, chunk status)\n- Generate S3 presigned URLs for multipart upload parts (purely local crypto operation)\n- Generate CDN-signed URLs for downloads with short expiration (e.g., 5 min)\n- Verify chunk uploads via S3 ListParts API before marking chunks as uploaded\n- Call S3 CompleteMultipartUpload once all chunks are verified\n- Enforce ACLs via SharedFiles table lookups",
+      "failure": {
+        "userImpact": "Uploads and downloads fail — users cannot list, upload, or download files. Any files already cached at the CDN edge remain accessible via their signed URLs until they expire.",
+        "blastRadius": [
+          { "nodeId": "api-gateway", "effect": "degraded", "note": "file routes return errors; auth and sync routes still work" },
+          { "nodeId": "metadata-db", "effect": "degraded", "note": "no reads or writes reaching it from the file path" },
+          { "nodeId": "message-queue", "effect": "degraded", "note": "no new file.change events published" }
+        ],
+        "mitigation": "The File Service is **stateless** — health checks eject bad instances and autoscaling replaces them. The CDN continues serving cached files; only metadata operations are affected."
+      }
     },
     {
       "id": "sync-service",
@@ -125,7 +176,15 @@
       "y": 600,
       "name": "Sync Service",
       "description": "Change notifications & sync state",
-      "details": "### Responsibilities\n\n- Maintain WebSocket connections per device for real-time push\n- Publish change events (create/update/delete) to connected clients\n- Handle GET /files/changes?since={timestamp} for polling fallback\n- Coordinate delta sync by comparing client and server chunk fingerprints"
+      "details": "### Responsibilities\n\n- Maintain WebSocket connections per device for real-time push\n- Publish change events (create/update/delete) to connected clients\n- Handle GET /files/changes?since={timestamp} for polling fallback\n- Coordinate delta sync by comparing client and server chunk fingerprints",
+      "failure": {
+        "userImpact": "Real-time sync stops working — file changes no longer propagate instantly. The polling fallback (every few minutes) still catches changes, so no data is lost, only delayed.",
+        "blastRadius": [
+          { "nodeId": "sync-websocket", "effect": "degraded", "note": "no subscriptions to manage or push through" },
+          { "nodeId": "message-queue", "effect": "degraded", "note": "sync events still published by File Service but no consumer from sync path" }
+        ],
+        "mitigation": "The Sync Service is **stateless** — it restarts and re-establishes WebSocket connections. During the outage, the polling fallback (GET /files/changes?since=...) guarantees eventual consistency."
+      }
     },
     {
       "id": "notification-worker",
@@ -134,7 +193,16 @@
       "y": 608,
       "name": "Notification Worker",
       "description": "Async event processor",
-      "details": "### Responsibilities\n\n- Consume file change events from Kafka\n- Push WebSocket notifications to relevant user devices\n- Update search index and shared file caches asynchronously"
+      "details": "### Responsibilities\n\n- Consume file change events from Kafka\n- Push WebSocket notifications to relevant user devices\n- Update search index and shared file caches asynchronously",
+      "failure": {
+        "userImpact": "Real-time push notifications stop — newly uploaded files or edits on one device do not appear on others until they manually refresh or the polling interval fires.",
+        "blastRadius": [
+          { "nodeId": "message-queue", "effect": "degraded", "note": "events accumulate; consumer offset lag grows" },
+          { "nodeId": "sync-websocket", "effect": "degraded", "note": "no events forwarded; no push notifications sent" },
+          { "nodeId": "email-provider", "effect": "degraded", "note": "share-invite emails not sent until worker recovers" }
+        ],
+        "mitigation": "The worker is **stateless** and resumes from its last Kafka offset. Events buffer in Kafka during the outage — nothing is lost, only delayed until the worker drains the backlog."
+      }
     },
     {
       "id": "metadata-db",
@@ -144,6 +212,15 @@
       "name": "File Metadata DB",
       "description": "DynamoDB / Cassandra for file records",
       "details": "### Schema\n\n**FileMetadata table:**\n- Partition Key: `userId`\n- Sort Key: `fileId`\n- Attributes: name, size, mimeType, fingerprint, status (uploading/uploaded), chunks[], createdAt, updatedAt\n\n**SharedFiles table:**\n- Partition Key: `userId` (who the file is shared with)\n- Sort Key: `fileId`\n- Enables fast lookup of all files shared with a given user without full table scans",
+      "failure": {
+        "userImpact": "File listing, upload status checks, and share verification all fail. Files already cached at the CDN edge remain downloadable via existing signed URLs until they expire.",
+        "blastRadius": [
+          { "nodeId": "file-service", "effect": "degraded", "note": "cannot read or write metadata — all file operations fail" },
+          { "nodeId": "auth-service", "effect": "degraded", "note": "session and user lookups depend on this store" },
+          { "nodeId": "shared-cache", "effect": "degraded", "note": "entries expire with nowhere to refill from" }
+        ],
+        "mitigation": "DynamoDB is a **managed, replicated store** — individual partition failures are rare. The shared-cache (Redis) continues serving cached ACLs for its TTL window, softening the blow for read-heavy share lookups."
+      },
       "group": "data-tier"
     },
     {
@@ -162,7 +239,15 @@
       "y": 784,
       "name": "WebSocket Manager",
       "description": "Connection state & pub/sub",
-      "details": "### Responsibilities\n\n- Maintain persistent WebSocket connections per active device\n- Subscribe to per-user Kafka topics for real-time change push\n- Handle connection drops with exponential backoff reconnection"
+      "details": "### Responsibilities\n\n- Maintain persistent WebSocket connections per active device\n- Subscribe to per-user Kafka topics for real-time change push\n- Handle connection drops with exponential backoff reconnection",
+      "failure": {
+        "userImpact": "Real-time push notifications stop reaching active devices. The app appears to be in sync but silently misses updates until the user manually refreshes or the polling interval fires.",
+        "blastRadius": [
+          { "nodeId": "sync-service", "effect": "degraded", "note": "WebSocket subscriptions are lost; no push path available" },
+          { "nodeId": "notification-worker", "effect": "degraded", "note": "events still processed but cannot reach connected clients" }
+        ],
+        "mitigation": "Clients detect the WebSocket drop and reconnect with exponential backoff. The polling fallback (GET /files/changes) guarantees eventual consistency during the gap, and a fresh WebSocket connection resumes real-time delivery on reconnect."
+      }
     },
     {
       "id": "object-storage",
@@ -171,7 +256,15 @@
       "y": 64,
       "name": "Object Storage (S3)",
       "description": "Blob storage for file chunks & objects",
-      "details": "### Responsibilities\n\n- Store file chunks and assembled objects with 3x cross-zone replication\n- Support multipart upload API (CreateMultipartUpload, UploadPart, CompleteMultipartUpload, ListParts, AbortMultipartUpload)\n- Server-side encryption (SSE-S3 or SSE-KMS) for data at rest\n- Lifecycle policies to transition old versions to cheaper storage classes\n- Event notifications on CompleteMultipartUpload to trigger metadata updates"
+      "details": "### Responsibilities\n\n- Store file chunks and assembled objects with 3x cross-zone replication\n- Support multipart upload API (CreateMultipartUpload, UploadPart, CompleteMultipartUpload, ListParts, AbortMultipartUpload)\n- Server-side encryption (SSE-S3 or SSE-KMS) for data at rest\n- Lifecycle policies to transition old versions to cheaper storage classes\n- Event notifications on CompleteMultipartUpload to trigger metadata updates",
+      "failure": {
+        "userImpact": "Uploads and downloads break entirely — new files cannot be stored and existing files cannot be served. The CDN edge cache continues serving files that were already cached, but any miss is fatal.",
+        "blastRadius": [
+          { "nodeId": "cdn", "effect": "degraded", "note": "cache misses cannot fetch from origin; only cached files remain available" },
+          { "nodeId": "file-service", "effect": "degraded", "note": "cannot issue presigned URLs or verify uploads" }
+        ],
+        "mitigation": "S3 stores data across **multiple Availability Zones** with 11 9s of durability. A regional outage is the only realistic failure mode, mitigated by cross-region replication for critical user data."
+      }
     },
     {
       "id": "message-queue",
@@ -180,7 +273,15 @@
       "y": 608,
       "name": "Event Bus (Kafka)",
       "description": "Async events for sync & indexing",
-      "details": "### Topics\n\n- `file.changes` — file create/update/delete events\n- `sync.notifications` — per-user device notification events\n- `search.index` — search index update events\n- `analytics.events` — usage metrics and billing events"
+      "details": "### Topics\n\n- `file.changes` — file create/update/delete events\n- `sync.notifications` — per-user device notification events\n- `search.index` — search index update events\n- `analytics.events` — usage metrics and billing events",
+      "failure": {
+        "userImpact": "Real-time sync and notifications stop — file changes still happen but are not propagated to other devices until the queue recovers. Uploads and downloads continue unaffected.",
+        "blastRadius": [
+          { "nodeId": "notification-worker", "effect": "down", "note": "no events to consume — push pipeline stalls" },
+          { "nodeId": "sync-service", "effect": "degraded", "note": "sync events buffer at the producer; reconnect drains the backlog" }
+        ],
+        "mitigation": "Kafka is **replicated across brokers** and survives individual node failures. Producers buffer events in-memory during brief outages; a reconciliation job can re-enqueue missed events by scanning recent file modifications."
+      }
     },
     {
       "id": "email-provider",
@@ -199,7 +300,11 @@
       "target": "dns",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~10K/s",
+      "p99": "20ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-client2-dns",
@@ -207,7 +312,11 @@
       "target": "dns",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~10K/s",
+      "p99": "20ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-client3-dns",
@@ -215,7 +324,11 @@
       "target": "dns",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~10K/s",
+      "p99": "20ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-dns-cdn",
@@ -223,7 +336,11 @@
       "target": "cdn",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~100K/s peak",
+      "p99": "15ms",
+      "payloadSize": "~2–6MB"
     },
     {
       "id": "e-dns-gw",
@@ -231,7 +348,11 @@
       "target": "api-gateway",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~10K/s",
+      "p99": "20ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-cdn-storage",
@@ -241,7 +362,11 @@
       "targetHandle": "left-target",
       "protocol": "https",
       "style": "dashed",
-      "animated": true
+      "animated": true,
+      "sync": true,
+      "qps": "~2K/s (cache misses)",
+      "p99": "80ms",
+      "payloadSize": "~2–6MB"
     },
     {
       "id": "e-gw-auth",
@@ -249,7 +374,11 @@
       "target": "auth-service",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~5K/s",
+      "p99": "25ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-gw-file",
@@ -257,7 +386,11 @@
       "target": "file-service",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~10K/s",
+      "p99": "15ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-gw-sync",
@@ -265,7 +398,11 @@
       "target": "sync-service",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "qps": "~5K/s",
+      "p99": "15ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-file-db",
@@ -273,7 +410,11 @@
       "target": "metadata-db",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "database"
+      "protocol": "database",
+      "sync": true,
+      "qps": "~10K/s",
+      "p99": "12ms",
+      "payloadSize": "~2KB"
     },
     {
       "id": "e-file-cache",
@@ -281,7 +422,11 @@
       "target": "shared-cache",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "tcp"
+      "protocol": "tcp",
+      "sync": true,
+      "qps": "~5K/s",
+      "p99": "2ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-file-storage",
@@ -290,7 +435,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "https",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "qps": "~10K/s",
+      "p99": "30ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "e-file-kafka",
@@ -298,7 +447,11 @@
       "target": "message-queue",
       "sourceHandle": "bottom-source",
       "targetHandle": "top-target",
-      "protocol": "event"
+      "protocol": "event",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~10K/s",
+      "payloadSize": "~1KB"
     },
     {
       "id": "xy-edge__auth-serviceright-source-metadata-dbleft-target",
@@ -307,7 +460,11 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "qps": "~5K/s",
+      "p99": "12ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "xy-edge__message-queueright-source-notification-workerleft-target",
@@ -315,7 +472,11 @@
       "target": "notification-worker",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "message"
+      "protocol": "message",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~10K/s",
+      "payloadSize": "~1KB"
     },
     {
       "id": "xy-edge__notification-workerright-source-email-providerleft-target",
@@ -323,7 +484,10 @@
       "target": "email-provider",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": false,
+      "qps": "~100/s",
+      "payloadSize": "~2KB"
     },
     {
       "id": "xy-edge__sync-serviceright-source-message-queueleft-target",
@@ -331,7 +495,10 @@
       "target": "message-queue",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "event"
+      "protocol": "event",
+      "sync": false,
+      "qps": "~100/s",
+      "payloadSize": "~500B"
     },
     {
       "id": "xy-edge__sync-servicebottom-source-sync-websocketleft-target",
@@ -339,7 +506,11 @@
       "target": "sync-websocket",
       "sourceHandle": "bottom-source",
       "targetHandle": "left-target",
-      "protocol": "tcp"
+      "protocol": "tcp",
+      "sync": true,
+      "qps": "~5K/s",
+      "p99": "5ms",
+      "payloadSize": "~500B"
     },
     {
       "id": "xy-edge__notification-workerbottom-source-sync-websockettop-target",
@@ -347,7 +518,11 @@
       "target": "sync-websocket",
       "sourceHandle": "bottom-source",
       "targetHandle": "top-target",
-      "protocol": "tcp"
+      "protocol": "tcp",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~10K/s",
+      "payloadSize": "~1KB"
     }
   ],
   "groups": [
@@ -370,69 +545,77 @@
       "steps": [
         {
           "text": "The desktop client detects a new file via FileSystemWatcher, chunks it using Content-Defined Chunking (CDC), and computes SHA-256 fingerprints for deduplication.",
-          "nodeIds": [
-            "client-desktop"
+          "nodeIds": ["client-desktop"],
+          "latencyMs": 200,
+          "payload": {
+            "title": "Client-side prep",
+            "body": "file: \"report.pdf\" (size: 1.2GB)\ncdc-chunks: 240 (5MB avg)\nfingerprint: sha256:a1b2c3d4e5..."
+          },
+          "stateChanges": [
+            { "nodeId": "client-desktop", "note": "file chunked into 240 CDC parts; fingerprints computed" }
           ]
         },
         {
           "text": "The client requests a presigned multipart upload URL from the File Service via the API Gateway. The File Service creates a multipart upload in S3 and returns presigned URLs for each chunk.",
-          "nodeIds": [
-            "client-desktop",
-            "api-gateway",
-            "file-service"
-          ],
-          "edgeIds": [
-            "e-client3-dns",
-            "e-dns-gw",
-            "e-gw-file"
-          ]
+          "nodeIds": ["client-desktop", "api-gateway", "file-service"],
+          "edgeIds": ["e-client3-dns", "e-dns-gw", "e-gw-file"],
+          "latencyMs": 35,
+          "payload": {
+            "title": "POST /api/files:initiateUpload",
+            "body": "{\n  \"filename\": \"report.pdf\",\n  \"sizeBytes\": 1200000000,\n  \"fingerprint\": \"sha256:a1b2c3d4e5…\",\n  \"partCount\": 240\n}\n\n→ 200 { uploadId, presignedUrls[] }"
+          }
         },
         {
           "text": "The client uploads chunks directly to S3 using the presigned URLs, bypassing our backend entirely. Multiple chunks are uploaded in parallel to maximize bandwidth.",
-          "nodeIds": [
-            "client-desktop",
-            "object-storage"
+          "nodeIds": ["client-desktop", "object-storage"],
+          "latencyMs": 4000,
+          "payload": {
+            "title": "PUT {presigned-url} · part 42 / 240",
+            "body": "Content-Length: 5242880\nx-amz-part-number: 42\n\n‹ 5 MB chunk of CDC-partitioned file ›"
+          },
+          "stateChanges": [
+            { "nodeId": "object-storage", "note": "41/240 parts landed; failed chunks retry alone, never the whole file" }
           ]
         },
         {
           "text": "After each chunk upload, the client sends chunk status + ETag to the File Service. The service verifies via S3 ListParts API before updating the metadata DB.",
-          "nodeIds": [
-            "client-desktop",
-            "api-gateway",
-            "file-service",
-            "metadata-db"
-          ],
-          "edgeIds": [
-            "e-client3-dns",
-            "e-dns-gw",
-            "e-gw-file",
-            "e-file-db"
+          "nodeIds": ["client-desktop", "api-gateway", "file-service", "metadata-db"],
+          "edgeIds": ["e-client3-dns", "e-dns-gw", "e-gw-file", "e-file-db"],
+          "latencyMs": 25,
+          "payload": {
+            "title": "POST /api/files:partStatus",
+            "body": "{\n  \"uploadId\": \"upl_abc…\",\n  \"partNumber\": 42,\n  \"etag\": \"\\\"etag_42…\\\"\"\n}\n\n→ S3 ListParts → verified"
+          },
+          "stateChanges": [
+            { "nodeId": "metadata-db", "note": "chunk 42/240 marked as uploaded; status = uploading" }
           ]
         },
         {
           "text": "Once all chunks are verified, the File Service calls S3 CompleteMultipartUpload to assemble the object, then marks the file as 'uploaded' in the metadata DB.",
-          "nodeIds": [
-            "file-service",
-            "object-storage",
-            "metadata-db"
-          ],
-          "edgeIds": [
-            "e-file-storage",
-            "e-file-db"
+          "nodeIds": ["file-service", "object-storage", "metadata-db"],
+          "edgeIds": ["e-file-storage", "e-file-db"],
+          "latencyMs": 100,
+          "payload": {
+            "title": "CompleteMultipartUpload",
+            "body": "POST /report.pdf?uploadId=upl_abc…\n{\n  \"parts\": [{\"ETag\": \"etag_1…\", \"PartNumber\": 1}, …]\n}\n\n→ 200 OK (object assembled)"
+          },
+          "stateChanges": [
+            { "nodeId": "object-storage", "note": "object assembled from 240 parts in S3" },
+            { "nodeId": "metadata-db", "note": "status = uploaded; file is now readable" }
           ]
         },
         {
           "text": "The File Service publishes a 'file.changes' event to Kafka. The Notification Worker consumes it and pushes a sync notification via WebSocket to all of the user's other devices.",
-          "nodeIds": [
-            "file-service",
-            "message-queue",
-            "notification-worker",
-            "sync-websocket"
-          ],
-          "edgeIds": [
-            "e-file-kafka",
-            "e-kafka-worker",
-            "e-worker-ws"
+          "nodeIds": ["file-service", "message-queue", "notification-worker", "sync-websocket"],
+          "edgeIds": ["e-file-kafka", "xy-edge__message-queueright-source-notification-workerleft-target", "xy-edge__notification-workerbottom-source-sync-websockettop-target"],
+          "latencyMs": 30,
+          "payload": {
+            "title": "Kafka → file.changes topic",
+            "body": "{\n  \"event\": \"file.created\",\n  \"userId\": \"user:xyz\",\n  \"fileId\": \"file:report.pdf\",\n  \"fingerprint\": \"sha256:a1b2c3d4e5…\"\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "message-queue", "note": "event published — Notification Worker drains asynchronously" },
+            { "nodeId": "sync-websocket", "note": "WebSocket push sent to all active devices" }
           ]
         }
       ]
@@ -444,40 +627,38 @@
       "steps": [
         {
           "text": "The mobile app requests to download a file. The request goes through DNS geo-routing to the API Gateway, which authenticates the user.",
-          "nodeIds": [
-            "client-mobile",
-            "dns",
-            "api-gateway"
-          ],
-          "edgeIds": [
-            "e-client2-dns",
-            "e-dns-gw"
-          ]
+          "nodeIds": ["client-mobile", "dns", "api-gateway"],
+          "edgeIds": ["e-client2-dns", "e-dns-gw"],
+          "latencyMs": 30,
+          "payload": {
+            "title": "GET /api/files/report.pdf?action=download",
+            "body": "→ Auth: JWT validated\n→ Route to File Service"
+          }
         },
         {
           "text": "The File Service checks the SharedFiles table and cache to verify the user has access, then generates a CDN-signed URL with a 5-minute expiration.",
-          "nodeIds": [
-            "api-gateway",
-            "file-service",
-            "metadata-db",
-            "shared-cache"
-          ],
-          "edgeIds": [
-            "e-gw-file",
-            "e-file-db",
-            "e-file-cache"
+          "nodeIds": ["api-gateway", "file-service", "metadata-db", "shared-cache"],
+          "edgeIds": ["e-gw-file", "e-file-db", "e-file-cache"],
+          "latencyMs": 10,
+          "payload": {
+            "title": "ACL check + sign URL",
+            "body": "→ DynamoDB Query(SharedFiles, userId = mobile_user)\n→ HIT: user has access\n→ Sign: CloudFront URL (expires in 300s)"
+          },
+          "stateChanges": [
+            { "nodeId": "shared-cache", "note": "ACL cache hit — permission verified in <2ms" }
           ]
         },
         {
           "text": "The client downloads the file directly from the nearest CDN edge. On a cache hit, the CDN serves immediately. On a miss, it fetches from S3 with request coalescing.",
-          "nodeIds": [
-            "client-mobile",
-            "cdn",
-            "object-storage"
-          ],
-          "edgeIds": [
-            "e-dns-cdn",
-            "e-cdn-storage"
+          "nodeIds": ["client-mobile", "cdn", "object-storage"],
+          "edgeIds": ["e-dns-cdn", "e-cdn-storage"],
+          "latencyMs": 15,
+          "payload": {
+            "title": "GET https://cdn.example.com/report.pdf?...",
+            "body": "→ x-cache: HIT (edge)\nContent-Length: 1.2GB\nRange: bytes=0-5242879"
+          },
+          "stateChanges": [
+            { "nodeId": "cdn", "note": "cache miss → fetch from S3 → cache → serve; subsequent requests are edge hits" }
           ]
         }
       ]
@@ -489,48 +670,54 @@
       "steps": [
         {
           "text": "The desktop client detects a local file change via FSEvents. It re-chunks using CDC, identifies only the changed chunks, and uploads those delta chunks to S3.",
-          "nodeIds": [
-            "client-desktop"
+          "nodeIds": ["client-desktop"],
+          "latencyMs": 500,
+          "payload": {
+            "title": "Detect change → CDC delta",
+            "body": "file: \"report.pdf\"\nchanged regions: 2 chunks (9MB total)\nuploading delta to S3"
+          },
+          "stateChanges": [
+            { "nodeId": "client-desktop", "note": "2 of 240 chunks changed; only delta chunks re-uploaded" }
           ]
         },
         {
           "text": "The File Service updates the metadata DB with new chunk fingerprints and publishes a change event to Kafka.",
-          "nodeIds": [
-            "file-service",
-            "metadata-db",
-            "message-queue"
-          ],
-          "edgeIds": [
-            "e-file-db",
-            "e-file-kafka"
+          "nodeIds": ["file-service", "metadata-db", "message-queue"],
+          "edgeIds": ["e-file-db", "e-file-kafka"],
+          "latencyMs": 20,
+          "payload": {
+            "title": "Update metadata + publish event",
+            "body": "UPDATE file:report.pdf SET chunks[42].fingerprint = 'sha256:f6e5d4c3b2a1…'\n→ Kafka file.changes: { event: 'file.updated', userId: 'user:xyz' }"
+          },
+          "stateChanges": [
+            { "nodeId": "metadata-db", "note": "chunk fingerprints updated for delta sync" },
+            { "nodeId": "message-queue", "note": "'file.updated' event published for downstream consumers" }
           ]
         },
         {
-          "text": "The Sync Service consumes the event and pushes a real-time notification through the WebSocket Manager to the user's mobile app.",
-          "nodeIds": [
-            "message-queue",
-            "sync-service",
-            "sync-websocket",
-            "client-mobile"
-          ],
-          "edgeIds": [
-            "e-sync-kafka",
-            "e-sync-ws"
+          "text": "The Notification Worker consumes the event from Kafka and pushes a real-time notification through the WebSocket Manager to the user's mobile device.",
+          "nodeIds": ["message-queue", "notification-worker", "sync-websocket", "client-mobile"],
+          "edgeIds": ["xy-edge__message-queueright-source-notification-workerleft-target", "xy-edge__notification-workerbottom-source-sync-websockettop-target"],
+          "latencyMs": 15,
+          "payload": {
+            "title": "WebSocket push → file.updated",
+            "body": "{\n  \"type\": \"file.updated\",\n  \"fileId\": \"file:report.pdf\",\n  \"version\": 2\n}"
+          },
+          "stateChanges": [
+            { "nodeId": "sync-websocket", "note": "real-time push delivered to mobile device via WebSocket" }
           ]
         },
         {
           "text": "The mobile app receives the push, queries GET /files/changes?since={lastSync}, and downloads only the changed chunks via CDN-signed URLs.",
-          "nodeIds": [
-            "client-mobile",
-            "api-gateway",
-            "file-service",
-            "cdn"
-          ],
-          "edgeIds": [
-            "e-client2-dns",
-            "e-dns-gw",
-            "e-gw-file",
-            "e-dns-cdn"
+          "nodeIds": ["client-mobile", "api-gateway", "file-service", "cdn"],
+          "edgeIds": ["e-client2-dns", "e-dns-gw", "e-gw-file", "e-dns-cdn"],
+          "latencyMs": 50,
+          "payload": {
+            "title": "GET /api/files/changes?since=2026-07-10T11:59:00Z",
+            "body": "→ [file:report.pdf (version 2)]\n→ CDN-signed URL for delta chunk download"
+          },
+          "stateChanges": [
+            { "nodeId": "client-mobile", "note": "delta chunks downloaded — local file updated via CDC reassembly" }
           ]
         }
       ]
