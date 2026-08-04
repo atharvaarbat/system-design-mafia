@@ -1,24 +1,6 @@
 {
   "diagrams": [
     {
-      "slug": "causal-backend",
-      "title": "Causal Backend — System Architecture",
-      "description": "A single Hono/Node process on Fly.io that fronts a streaming chat orchestrator and six Postgres-backed background workers — no message broker, no Redis, one shared database.",
-      "tags": [
-        "modular-monolith",
-        "hono",
-        "postgres",
-        "background-workers",
-        "llm",
-        "real-system"
-      ],
-      "difficulty": "advanced",
-      "nodeCount": 17,
-      "edgeCount": 31,
-      "image": "",
-      "featured": false
-    },
-    {
       "slug": "design-api-rate-limiter",
       "title": "Design an API Rate Limiter",
       "description": "A server-side rate limiting system that protects APIs from abuse using sliding window counters and Redis-backed distributed state.",
@@ -176,7 +158,7 @@
       ],
       "difficulty": "intermediate",
       "nodeCount": 21,
-      "edgeCount": 24,
+      "edgeCount": 25,
       "image": "",
       "featured": false
     },
