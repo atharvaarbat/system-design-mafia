@@ -2,27 +2,330 @@
   "version": "1.0",
   "title": "E-Commerce Microservices",
   "description": "Cloud-native e-commerce platform on AWS",
+  "difficulty": "intermediate",
+
+  "requirements": {
+    "functional": [
+      "A shopper can browse the catalog, search for products, and add items to a cart across web and mobile clients",
+      "A shopper can check out, and the order is created, charged, and confirmed without re-entering payment details mid-flow",
+      "A logged-in user's profile and session persist across devices without re-authenticating on every page",
+      "The order moves through a visible lifecycle — pending, paid, or payment_failed — and the shopper is notified of the outcome by email",
+      "Product availability shown during checkout reflects real stock, so two shoppers can't both buy the last unit"
+    ],
+    "nonFunctional": [
+      "Checkout is revenue-critical — a payment-processor slowdown must degrade gracefully (orders stay pending), never take the whole platform down",
+      "The read path (browsing, search) must scale independently of the write path (checkout), since browsing outnumbers checkout roughly 500:1",
+      "Elastic capacity for flash-sale traffic spikes — checkout QPS can jump far past baseline within minutes",
+      "Defense-in-depth at the network edge, since payment and personal data flow through every layer between the client and Payment Service",
+      "Confirmation emails and event processing must never add latency to the checkout response"
+    ]
+  },
+
+  "estimates": [
+    { "label": "Daily active shoppers", "value": "5M", "note": "drives read/browse traffic across the storefront" },
+    { "label": "Catalog size", "value": "50M SKUs", "note": "too large and too textual for relational LIKE queries" },
+    { "label": "Browse : checkout ratio", "value": "500 : 1", "note": "browsing dwarfs writes — the read path is what must scale" },
+    { "label": "Orders per day", "value": "1M/day", "note": "~12 orders/sec average, spiking far higher on sale days" },
+    { "label": "Peak checkout QPS", "value": "~2K/s", "note": "flash-sale peak — justifies rate limiting and idempotent charges" },
+    { "label": "Product search p95", "value": "<150ms", "note": "slow search pages measurably hurt conversion" }
+  ],
+
+  "stages": [
+    {
+      "id": "core-services",
+      "title": "Core services — one gateway, four services, one database each",
+      "narrative": "Every request already passes through **DNS → CloudFront → WAF → ALB** before reaching the API Gateway — even a new storefront assumes this baseline network posture. From there the gateway routes to whichever business service owns the request: User, Product, or Order. Order Service calls Payment Service directly to charge the card and gets a synchronous answer back, which is what lets checkout resolve immediately instead of guessing.\n\nThis is a real, working store — but every read, popular or not, round-trips to Postgres, and there's no way to search the catalog beyond exact lookups.",
+      "nodeIds": ["mobile-app", "web-browser", "dns", "cdn", "waf", "alb", "api-gateway", "user-svc", "product-svc", "order-svc", "payment-svc", "user-db", "product-db", "order-db"],
+      "edgeIds": ["xy-edge__mobile-appbottom-source-dnstop-target", "xy-edge__web-browsertop-source-dnsbottom-target", "e-dns-cdn", "e-cdn-waf", "e-waf-alb", "e-alb-gw", "e-gw-user", "e-gw-product", "e-gw-order", "e-user-db", "e-product-db", "e-order-db", "e-order-payment", "xy-edge__payment-svctop-source-order-svcleft-target"]
+    },
+    {
+      "id": "cache-and-replica",
+      "title": "Cache the hot reads and split off a read replica",
+      "trigger": "Session lookups and order-status checks were hammering Postgres on every request, and profile reads competed with registration/profile-edit writes on the same primary.",
+      "narrative": "A **Redis Cluster** goes in front of User, Product, and Order Service for their hottest reads, and User DB gets a **read replica** dedicated to profile lookups. Neither change touches correctness — a cache miss or a replica-lag read both still fall back to the authoritative database.\n\nBrowsing is fast again, but the catalog still can't do full-text search, and product images are proxied through the app tier instead of a dedicated store.",
+      "nodeIds": ["mobile-app", "web-browser", "dns", "cdn", "waf", "alb", "api-gateway", "user-svc", "product-svc", "order-svc", "payment-svc", "user-db", "product-db", "order-db", "redis", "user-db-ro"],
+      "edgeIds": ["xy-edge__mobile-appbottom-source-dnstop-target", "xy-edge__web-browsertop-source-dnsbottom-target", "e-dns-cdn", "e-cdn-waf", "e-waf-alb", "e-alb-gw", "e-gw-user", "e-gw-product", "e-gw-order", "e-user-db", "e-product-db", "e-order-db", "e-order-payment", "xy-edge__payment-svctop-source-order-svcleft-target", "e-user-cache", "e-order-cache", "e-user-ro", "xy-edge__product-svctop-source-redisleft-target"]
+    },
+    {
+      "id": "search-and-content-delivery",
+      "title": "Add full-text search and offload static assets",
+      "trigger": "50M SKUs of free-text, typo-tolerant search was straining Postgres LIKE queries, and CloudFront was fetching product images through Product Service instead of a dedicated object store.",
+      "narrative": "**Elasticsearch** joins as a read-only, rebuildable index of Product DB, built for ranking and full-text queries — never the source of truth for price or stock. Product images move to **S3**, with CloudFront caching them at the edge and falling back to S3 on a miss.\n\nBrowsing and search are both fast now, but every order confirmation email still blocks on Notification logic living inline, and nothing decouples order-state changes from downstream consumers.",
+      "nodeIds": ["mobile-app", "web-browser", "dns", "cdn", "waf", "alb", "api-gateway", "user-svc", "product-svc", "order-svc", "payment-svc", "user-db", "product-db", "order-db", "redis", "user-db-ro", "search", "s3"],
+      "edgeIds": ["xy-edge__mobile-appbottom-source-dnstop-target", "xy-edge__web-browsertop-source-dnsbottom-target", "e-dns-cdn", "e-cdn-waf", "e-waf-alb", "e-alb-gw", "e-gw-user", "e-gw-product", "e-gw-order", "e-user-db", "e-product-db", "e-order-db", "e-order-payment", "xy-edge__payment-svctop-source-order-svcleft-target", "e-user-cache", "e-order-cache", "e-user-ro", "xy-edge__product-svctop-source-redisleft-target", "e-cdn-s3", "xy-edge__product-svcbottom-source-s3left-target", "xy-edge__product-svcright-source-searchleft-target"]
+    },
+    {
+      "id": "event-driven-fulfillment",
+      "title": "Decouple notifications with an event bus",
+      "trigger": "Order and payment state changes had no way to reach downstream consumers without those consumers slowing down checkout itself.",
+      "narrative": "Order Service and Payment Service now publish `Order Events` and `Payment Events` onto an **Event Bus (Kafka)** without waiting for a response, and a standalone **Notification Service** consumes them to send confirmation, failure, and shipping emails through **SendGrid**.\n\nThis is the complete system: the checkout request only ever waits on the hops that must block, and everything else — search, email, analytics-adjacent work — happens off to the side.",
+      "nodeIds": ["mobile-app", "web-browser", "dns", "cdn", "waf", "alb", "api-gateway", "user-svc", "product-svc", "order-svc", "payment-svc", "user-db", "product-db", "order-db", "redis", "user-db-ro", "search", "s3", "queue", "notification-svc", "sendgrid"],
+      "edgeIds": ["xy-edge__mobile-appbottom-source-dnstop-target", "xy-edge__web-browsertop-source-dnsbottom-target", "e-dns-cdn", "e-cdn-waf", "e-waf-alb", "e-alb-gw", "e-gw-user", "e-gw-product", "e-gw-order", "e-user-db", "e-product-db", "e-order-db", "e-order-payment", "xy-edge__payment-svctop-source-order-svcleft-target", "e-user-cache", "e-order-cache", "e-user-ro", "xy-edge__product-svctop-source-redisleft-target", "e-cdn-s3", "xy-edge__product-svcbottom-source-s3left-target", "xy-edge__product-svcright-source-searchleft-target", "e-order-queue", "e-payment-queue", "e-queue-notif", "e-notif-sendgrid"]
+    }
+  ],
+
+  "flows": [
+    {
+      "id": "browse-and-search-catalog",
+      "title": "Browse and search the catalog",
+      "description": "From a client request to ranked search results and rendered product images.",
+      "steps": [
+        {
+          "text": "The client resolves the storefront domain via DNS and lands on the nearest CloudFront edge, which checks its cache before doing anything else.",
+          "nodeIds": ["web-browser", "dns", "cdn"],
+          "edgeIds": ["xy-edge__web-browsertop-source-dnsbottom-target", "e-dns-cdn"],
+          "payload": { "title": "GET /search?q=wireless+headphones", "body": "GET /search?q=wireless+headphones HTTP/1.1\nHost: shop.example.com" },
+          "latencyMs": 8
+        },
+        {
+          "text": "The search request isn't cacheable, so CloudFront forwards it through the WAF and ALB before it reaches the API Gateway.",
+          "nodeIds": ["cdn", "waf", "alb"],
+          "edgeIds": ["e-cdn-waf", "e-waf-alb"],
+          "latencyMs": 5
+        },
+        {
+          "text": "The API Gateway authenticates the caller and routes the request to Product Service over gRPC.",
+          "nodeIds": ["alb", "api-gateway", "product-svc"],
+          "edgeIds": ["e-alb-gw", "e-gw-product"],
+          "payload": { "title": "gRPC SearchProducts", "body": "{\n  \"query\": \"wireless headphones\",\n  \"page\": 1\n}" },
+          "latencyMs": 12
+        },
+        {
+          "text": "Product Service checks Redis first — a hit returns cached results for this exact query in about a millisecond.",
+          "nodeIds": ["product-svc", "redis"],
+          "edgeIds": ["xy-edge__product-svctop-source-redisleft-target"],
+          "latencyMs": 1
+        },
+        {
+          "text": "On a cache miss, the query falls through to Elasticsearch, which ranks results across the 50M-SKU catalog and repopulates Redis for the next identical query.",
+          "nodeIds": ["product-svc", "search"],
+          "edgeIds": ["xy-edge__product-svcright-source-searchleft-target"],
+          "stateChanges": [{ "nodeId": "redis", "note": "search result cached for this query" }],
+          "latencyMs": 45
+        },
+        {
+          "text": "Product thumbnails load straight from CloudFront's edge cache, falling back to S3 on a miss — Product Service never proxies image bytes.",
+          "nodeIds": ["cdn", "s3"],
+          "edgeIds": ["e-cdn-s3"],
+          "latencyMs": 30
+        }
+      ]
+    },
+    {
+      "id": "create-order-and-charge-payment",
+      "title": "Create an order and charge payment",
+      "description": "From tapping \"Place Order\" to a confirmed, paid order and a confirmation email.",
+      "steps": [
+        {
+          "text": "The order request reaches the API Gateway through the same edge chain as any request, and routes to Order Service over gRPC.",
+          "nodeIds": ["api-gateway", "order-svc"],
+          "edgeIds": ["e-gw-order"],
+          "payload": { "title": "gRPC CreateOrder", "body": "{\n  \"userId\": \"u_9231\",\n  \"items\": [{ \"sku\": \"sku_4471\", \"qty\": 1 }]\n}" },
+          "latencyMs": 40
+        },
+        {
+          "text": "Order Service writes a new order into the sharded Order DB in a pending state before touching payment at all.",
+          "nodeIds": ["order-svc", "order-db"],
+          "edgeIds": ["e-order-db"],
+          "stateChanges": [{ "nodeId": "order-db", "note": "row inserted — status: pending" }],
+          "latencyMs": 25
+        },
+        {
+          "text": "Order Service calls Payment Service synchronously to charge the card, using the order id as an idempotency key so a retried call can never double-charge.",
+          "nodeIds": ["order-svc", "payment-svc"],
+          "edgeIds": ["e-order-payment"],
+          "payload": { "title": "POST /charge", "body": "{\n  \"orderId\": \"ord_88213\",\n  \"amount\": 4999,\n  \"idempotencyKey\": \"ord_88213\"\n}" },
+          "latencyMs": 120
+        },
+        {
+          "text": "Payment Service confirms the successful charge back to Order Service, and separately publishes a Payment Event onto the Event Bus without waiting for a consumer.",
+          "nodeIds": ["payment-svc", "order-svc", "queue"],
+          "edgeIds": ["xy-edge__payment-svctop-source-order-svcleft-target", "e-payment-queue"],
+          "latencyMs": 15
+        },
+        {
+          "text": "Order Service flips the order to paid in the Order DB and publishes its own Order Event onto the bus.",
+          "nodeIds": ["order-svc", "order-db", "queue"],
+          "edgeIds": ["e-order-db", "e-order-queue"],
+          "stateChanges": [{ "nodeId": "order-db", "note": "status updated -> paid" }],
+          "latencyMs": 20
+        },
+        {
+          "text": "Notification Service consumes both events off the bus and emails the confirmation through SendGrid — entirely off the checkout critical path.",
+          "nodeIds": ["queue", "notification-svc", "sendgrid"],
+          "edgeIds": ["e-queue-notif", "e-notif-sendgrid"],
+          "latencyMs": 200
+        }
+      ]
+    },
+    {
+      "id": "handle-a-declined-payment",
+      "title": "Handle a declined payment",
+      "description": "The failure path when the card issuer says no.",
+      "steps": [
+        {
+          "text": "Order Service calls Payment Service to charge the card, exactly as in any checkout.",
+          "nodeIds": ["order-svc", "payment-svc"],
+          "edgeIds": ["e-order-payment"],
+          "payload": { "title": "POST /charge", "body": "{\n  \"orderId\": \"ord_88214\",\n  \"amount\": 12999,\n  \"idempotencyKey\": \"ord_88214\"\n}" },
+          "latencyMs": 120
+        },
+        {
+          "text": "The card issuer declines the charge. Payment Service still publishes a Payment Event (status: declined) for observability, and calls Order Service back with the failure.",
+          "nodeIds": ["payment-svc", "queue", "order-svc"],
+          "edgeIds": ["e-payment-queue", "xy-edge__payment-svctop-source-order-svcleft-target"],
+          "latencyMs": 15
+        },
+        {
+          "text": "Order Service marks the order payment_failed in the Order DB — no compensating inventory rollback is needed, since nothing downstream of payment had reserved stock yet.",
+          "nodeIds": ["order-svc", "order-db"],
+          "edgeIds": ["e-order-db"],
+          "stateChanges": [{ "nodeId": "order-db", "note": "status updated -> payment_failed" }],
+          "latencyMs": 20
+        },
+        {
+          "text": "Notification Service still picks up the failure event and emails the shopper that checkout didn't go through.",
+          "nodeIds": ["queue", "notification-svc", "sendgrid"],
+          "edgeIds": ["e-queue-notif", "e-notif-sendgrid"],
+          "latencyMs": 200
+        }
+      ]
+    }
+  ],
+
+  "decisions": [
+    {
+      "title": "Inter-service communication protocol",
+      "choice": "gRPC between API Gateway and services",
+      "alternatives": ["REST/JSON over HTTP", "GraphQL federation layer"],
+      "rationale": "At a **500:1 browse-to-checkout** ratio, the gateway forwards a huge volume of internal calls on every page load. gRPC's binary framing and generated stubs cut serialization overhead and catch schema drift at compile time — a REST/JSON hop would add latency exactly where the search p95 budget is tightest. GraphQL federation solves a different problem (client-driven queries), not internal service-to-service fan-out."
+    },
+    {
+      "title": "Order database",
+      "choice": "Sharded DynamoDB, partitioned by orderId",
+      "alternatives": ["Single PostgreSQL instance", "Manually sharded PostgreSQL"],
+      "rationale": "At **1M orders/day**, the access pattern is almost entirely single-key writes and point lookups by `orderId` — the same access-pattern-first modeling DynamoDB's single-table design is built around. A single Postgres instance would need hand-rolled sharding to hit the same write throughput, without gaining any relational feature the order service actually uses."
+    },
+    {
+      "title": "Payment coordination",
+      "choice": "Synchronous charge call, then async event publication (hybrid orchestration + choreography)",
+      "alternatives": ["Pure choreography — Order Service only reacts to payment events", "A dedicated saga-orchestrator service"],
+      "rationale": "Order Service calls Payment Service directly so the shopper gets a definitive success/decline before checkout resolves — waiting on an event round-trip would leave the UI guessing. The **Payment Event** published afterward still lets Notification Service and future consumers react without coupling to the checkout request. A full saga orchestrator earns its keep once a third service (e.g. inventory reservation) needs compensating actions; with two services, the direct call is simpler and just as correct."
+    },
+    {
+      "title": "Catalog search",
+      "choice": "Dedicated Elasticsearch index alongside Product DB",
+      "alternatives": ["PostgreSQL full-text search (tsvector)", "A hosted search SaaS"],
+      "rationale": "**50M SKUs** with free-text queries, typo tolerance, and faceted filtering is exactly what Postgres `tsvector` starts to strain under past a few million rows. Elasticsearch is read-only and eventually consistent from Product DB's point of view — a stale index degrades relevance, never correctness, since the checkout stock check still hits Product DB directly."
+    },
+    {
+      "title": "Edge security",
+      "choice": "WAF applied between CloudFront and the ALB, in front of API Gateway",
+      "alternatives": ["WAF only at the load balancer", "No dedicated WAF — rely on API Gateway auth alone"],
+      "rationale": "Placing WAF behind the CDN but in front of the ALB filters payload-level attacks — SQL injection, catalog-scraping bots — before they reach any compute tier, while CloudFront still absorbs and caches the legitimate traffic. API Gateway auth alone only catches identity problems, not attacks against `product-svc` or `order-svc` themselves."
+    },
+    {
+      "title": "User read scaling",
+      "choice": "PostgreSQL read replica for profile/session lookups",
+      "alternatives": ["Cache-only (Redis) with no replica", "Route all reads to the primary"],
+      "rationale": "Profile lookups happen on nearly every authenticated request, competing with the small but latency-sensitive stream of writes (registration, profile edits) on the same primary. A read replica absorbs that read volume without adding cache-invalidation complexity for data that changes rarely — Redis stays reserved for genuinely hot, short-lived session state."
+    }
+  ],
+
+  "bottlenecks": [
+    {
+      "title": "Flash-sale checkout stampede",
+      "problem": "A promotional event can spike checkout QPS far past the ~2K/s peak baseline in minutes, and every checkout makes a synchronous call into Payment Service — a downstream processor with its own rate limits.",
+      "mitigation": "API Gateway rate-limits checkout requests per user/IP, Order Service treats the charge call as **idempotent** via a per-order key so retries are safe, and DynamoDB's hash-partitioned writes spread the order-write burst evenly instead of hammering one shard."
+    },
+    {
+      "title": "Viral product page thundering herd",
+      "problem": "A single product going viral sends a disproportionate share of the 500:1 browse traffic at one SKU's cache key and search query, risking a stampede on Redis and Elasticsearch simultaneously on a cold cache.",
+      "mitigation": "Redis absorbs steady-state hot-key traffic, CloudFront caches category and product pages at the edge before they reach the gateway, and request coalescing at Product Service collapses concurrent cache misses into a single Elasticsearch query."
+    },
+    {
+      "title": "Payment Service on the critical path",
+      "problem": "Because Order Service calls Payment Service synchronously, a slow or unavailable payment processor stalls every checkout in flight, not just the ones actively charging.",
+      "mitigation": "Order Service wraps the charge call in a timeout and circuit breaker; orders that time out stay `pending` rather than failing outright, and a reconciliation job resolves them once Payment Service recovers instead of losing the order."
+    },
+    {
+      "title": "Event bus backlog during order surges",
+      "problem": "A sale-driven burst of Order and Payment events can outpace Notification Service's consumption rate, growing an unbounded backlog on the Event Bus.",
+      "mitigation": "Publishing is fire-and-forget and off the checkout path by design — a growing backlog delays confirmation emails, never checkout itself. Notification Service scales its consumer group horizontally, and Kafka's retention window buys time to drain it."
+    },
+    {
+      "title": "Overselling the last unit",
+      "problem": "Elasticsearch's view of stock levels can lag Product DB by seconds, and two concurrent checkouts can both see \"in stock\" for the last unit of a SKU.",
+      "mitigation": "Elasticsearch is used for search ranking only — the authoritative stock check happens as a conditional write against Product DB at charge time, so the second concurrent checkout fails the write and is told the item just sold out, rather than both succeeding."
+    }
+  ],
+
+  "quiz": [
+    {
+      "question": "Why does Order Service call Payment Service directly instead of only communicating through the Event Bus?",
+      "answer": "The shopper needs a definitive success/decline before the checkout screen can resolve, and waiting for an event round-trip would leave the UI in limbo. The direct call gets that answer synchronously; the **Payment Event** published afterward is for downstream consumers like Notification Service, not for the checkout response itself."
+    },
+    {
+      "question": "Why is the Order DB DynamoDB instead of a relational database?",
+      "answer": "The access pattern is almost entirely single-key writes and lookups by `orderId` at **1M orders/day** — a classic access-pattern-first NoSQL fit. A relational database would need hand-rolled sharding to hit the same write throughput without using any relational feature (joins, multi-row transactions) the order service actually needs."
+    },
+    {
+      "question": "What happens to checkout if Elasticsearch goes down entirely?",
+      "answer": "Product search degrades or fails, but checkout keeps working — the authoritative stock and price check happens against Product DB directly, not the search index. Elasticsearch is a read-only, eventually-consistent view built for ranking, never the source of truth."
+    },
+    {
+      "question": "Why does the diagram put a WAF between CloudFront and the ALB instead of relying on API Gateway's auth alone?",
+      "answer": "API Gateway auth only catches identity problems — an invalid token, a missing key. A WAF filters payload-level attacks (SQL injection, scraping bots) before they reach any compute tier at all, and sitting behind CloudFront means it only inspects traffic that wasn't already served from the edge cache."
+    },
+    {
+      "question": "If Payment Service becomes slow, why doesn't the whole platform go down?",
+      "answer": "Order Service wraps the charge call in a timeout and circuit breaker. Orders that time out are left `pending` instead of failing outright, and a reconciliation job resolves them once Payment Service recovers — so a slow payment processor degrades checkout latency, not correctness."
+    },
+    {
+      "question": "Why is Notification Service decoupled from Order and Payment Service via the Event Bus instead of being called directly?",
+      "answer": "Confirmation emails are not on the critical path of checkout — the shopper doesn't need to wait for SendGrid to respond before seeing their order confirmation. Publishing events lets Order and Payment Service respond immediately, while Notification Service consumes and retries independently, so a slow email provider can never add latency to checkout."
+    }
+  ],
+
+  "references": [
+    { "title": "Online Boutique — Google Cloud Platform's microservices-demo", "url": "https://github.com/GoogleCloudPlatform/microservices-demo", "source": "github.com" },
+    { "title": "microservices.io — Pattern Catalog (Chris Richardson)", "url": "https://microservices.io/patterns/microservices.html", "source": "microservices.io" },
+    { "title": "The What, Why, and When of Single-Table Design", "url": "https://www.alexdebrie.com/posts/dynamodb-single-table/", "source": "alexdebrie.com" },
+    { "title": "Optimized Serverless E-Commerce Architecture on AWS", "url": "https://medium.com/@muralindiablog/optimized-serverless-e-commerce-architecture-on-aws-implementation-guide-86873df67418", "source": "medium.com" },
+    { "title": "How to Implement the Saga Architectural Pattern in Microservices", "url": "https://thenewstack.io/implement-saga-patterns-in-microservices-with-nestjs-and-kafka/", "source": "thenewstack.io" }
+  ],
+
+  "relatedPatterns": ["event-driven-architecture", "design-api-rate-limiter"],
+
+  "summary": "### Overview\n\nThis diagram represents a **cloud-native e-commerce platform** built on AWS using a *microservices architecture*. Each business capability — users, products, orders, payments, notifications — is deployed as an **independent service** with its own dedicated data store. This design enables teams to develop, deploy, and scale services independently.\n\n### Request Flow\n\nTraffic flows through a layered network stack before reaching the application services:\n\n1. **DNS (Route 53)** resolves the domain and routes requests to **CloudFront (CDN)** for edge caching.\n2. CloudFront forwards to **WAF** (Web Application Firewall) for security filtering.\n3. Clean traffic reaches **ALB** (Application Load Balancer) which distributes across targets.\n4. **API Gateway** receives all requests and routes them to the appropriate internal service via **gRPC**.\n\nThis multilayered approach provides *defence in depth* — each layer adds caching, security, or routing capabilities without coupling to business logic.\n\n### Service Decomposition\n\n#### User Service\nHandles **authentication**, **authorization**, and **user profiles**. It owns a primary PostgreSQL database with a **read replica** for scaling read-heavy workloads like profile lookups. This is a common pattern — separate read replicas absorb query traffic without competing with write capacity.\n\n#### Product Service\nManages the **catalog** and **inventory**. It stores product data in PostgreSQL, caches frequently accessed data in **Redis**, writes static assets (images) to **S3**, and indexes product data in **Elasticsearch** for full-text search. This showcases the *database-per-service* pattern where a single service may own multiple storage types for different concerns.\n\n#### Order Service\nOrchestrates the **order lifecycle** — creation, payment, and fulfilment. It writes to a **sharded DynamoDB** table for horizontal scalability and emits `Order Events` to the **Event Bus (Kafka)** whenever an order changes state. This decouples order processing from downstream consumers.\n\n#### Payment Service\nProcesses **payments** by integrating with an external payment processor. **Order Service calls it synchronously** to charge the card — the shopper needs a definitive answer before checkout resolves — and it calls back to confirm the order's new status, while also publishing `Payment Events` to the event bus for downstream consumers like Notification Service.\n\n#### Notification Service\nConsumes events from the **Event Bus** and sends **emails** via SendGrid. By subscribing to events rather than being called directly, it can be scaled independently and doesn't block the critical checkout path.\n\n### Data Tier\n\nAll data services are grouped under a `data-tier` boundary:\n\n- **PostgreSQL**: User DB (with read replica), Product DB — relational data with ACID guarantees\n- **DynamoDB**: Order DB (sharded) — NoSQL for horizontal scaling\n- **Redis**: Session cache and shared state across services\n- **Elasticsearch**: Full-text search indexing\n- **S3**: Static asset storage for product images and content\n- **Kafka**: Event bus for asynchronous communication between services\n\n### Key Architectural Decisions\n\n- **gRPC over REST** for inter-service communication — *binary protocol* with better performance and strong typing via protocol buffers\n- **Event-driven** for order and payment fan-out — services don't wait for responses from downstream consumers\n- **Read replicas** for read-heavy workloads — keeps the primary database focused on writes\n- **Sharded DynamoDB** for the order service — anticipates high write throughput as the platform scales\n\n### Trade-offs\n\nThis architecture prioritizes *scalability* and *team autonomy* over simplicity. The trade-offs are:\n\n- **Operational complexity** — running many services requires mature DevOps practices (monitoring, deployment pipelines, incident response)\n- **Data consistency** — eventual consistency across services means the platform must handle scenarios like \"order confirmed but payment still processing\"\n- **Network latency** — inter-service calls add overhead compared to in-process calls in a monolith\n\nFor most early-stage products, a **modular monolith** is a better starting point. Migrate to microservices when you have clear evidence that team velocity or scalability demands it. This architecture is what a mature, high-traffic e-commerce platform looks like — it's a *target state*, not a starting point.",
+
   "nodes": [
     {
       "id": "mobile-app",
       "kind": "mobile-app",
       "x": 576,
       "y": 224,
-      "name": "Mobile App"
+      "name": "Mobile App",
+      "description": "iOS / Android client",
+      "details": "### Role\n\n- Native iOS/Android storefront — browse, cart, and checkout\n- Deep-links into the same order/payment flow triggered elsewhere (e.g. a push notification)\n\nHits the same API Gateway contract as the web client — no mobile-only backend."
     },
     {
       "id": "web-browser",
       "kind": "browser",
       "x": 576,
       "y": 560,
-      "name": "Web Browser"
+      "name": "Web Browser",
+      "description": "Desktop / mobile web client",
+      "details": "### Role\n\n- Primary storefront client for desktop and mobile web\n- Renders product pages, cart, and checkout using the same API contract as the mobile app\n\nStatic assets (images, JS bundles) are served from CloudFront; only dynamic API calls reach the backend."
     },
     {
       "id": "dns",
       "kind": "dns",
       "x": 584,
       "y": 384,
-      "name": "Route 53"
+      "name": "Route 53",
+      "description": "DNS resolution",
+      "details": "### Role\n\nResolves the storefront domain to the nearest CloudFront edge location — the first hop for every request, before any application logic runs."
     },
     {
       "id": "cdn",
@@ -30,7 +333,8 @@
       "x": 744,
       "y": 432,
       "name": "CloudFront",
-      "description": "CDN & Edge Caching"
+      "description": "CDN & Edge Caching",
+      "details": "### Responsibilities\n\n- Caches static pages and product images at edge locations close to shoppers\n- Forwards dynamic, uncacheable requests (search, checkout) toward WAF\n- Falls back to **S3** on a cache miss for product images\n\nAbsorbs the bulk of read traffic before it ever reaches a compute tier."
     },
     {
       "id": "waf",
@@ -38,7 +342,8 @@
       "x": 952,
       "y": 352,
       "name": "WAF",
-      "description": "Web Application Firewall"
+      "description": "Web Application Firewall",
+      "details": "### Responsibilities\n\n- Filters malicious requests — SQL injection attempts, scraping bots — before they reach the ALB\n- Sits behind CloudFront so it only inspects traffic that wasn't already served from cache\n\nAdds a security layer independent of API Gateway's identity-focused auth."
     },
     {
       "id": "alb",
@@ -46,7 +351,8 @@
       "x": 1136,
       "y": 360,
       "name": "ALB",
-      "description": "Application LB"
+      "description": "Application LB",
+      "details": "### Responsibilities\n\n- Distributes traffic across healthy API Gateway instances\n- Runs health checks and stops routing to instances that fail them\n\nDeployed redundantly across availability zones, since every request depends on it."
     },
     {
       "id": "api-gateway",
@@ -55,7 +361,17 @@
       "y": 360,
       "name": "API Gateway",
       "description": "REST / GraphQL",
-      "group": "aws-cloud"
+      "details": "### Responsibilities\n\n- Terminates the public request and authenticates the caller\n- Routes to User, Product, or Order Service over gRPC based on the request path\n- Applies coarse rate limiting to blunt obvious abuse before it reaches a service\n\nStateless — any instance can handle any request, which is what makes horizontal scaling behind the ALB straightforward.",
+      "group": "aws-cloud",
+      "failure": {
+        "userImpact": "The entire storefront goes dark — no requests reach any backend service, since every request funnels through this single front door.",
+        "blastRadius": [
+          { "nodeId": "user-svc", "effect": "down", "note": "receives no traffic at all" },
+          { "nodeId": "product-svc", "effect": "down", "note": "receives no traffic at all" },
+          { "nodeId": "order-svc", "effect": "down", "note": "receives no traffic at all" }
+        ],
+        "mitigation": "API Gateway runs as a **horizontally scaled, stateless fleet** behind the ALB, with health checks ejecting unhealthy instances within seconds. Deploying the fleet across multiple availability zones means a single-AZ failure never takes down the front door entirely."
+      }
     },
     {
       "id": "user-svc",
@@ -74,6 +390,7 @@
       "y": 360,
       "name": "Product Service",
       "description": "Catalog & Inventory",
+      "details": "### Responsibilities\n\n- Owns the product catalog and current inventory counts\n- Serves search via **Elasticsearch**, hot reads via **Redis**, and product images via **S3**\n- Performs the authoritative stock check as a conditional write at checkout time — never trusts the search index for availability\n\nThis is the clearest example of *database-per-service*: one service, four different storage technologies, each for a different concern.",
       "group": "aws-cloud"
     },
     {
@@ -83,6 +400,7 @@
       "y": 664,
       "name": "Order Service",
       "description": "Order Management",
+      "details": "### Responsibilities\n\n- Owns the order lifecycle: created → pending → paid / payment_failed\n- Calls Payment Service synchronously to charge the card, then persists the outcome\n- Publishes `Order Events` to the Event Bus on every state change, without waiting for consumers\n\nWrites go to a **sharded DynamoDB** table, chosen for single-key write throughput at order volume.",
       "group": "aws-cloud"
     },
     {
@@ -92,7 +410,15 @@
       "y": 824,
       "name": "Payment Service",
       "description": "Payment Processing",
-      "group": "aws-cloud"
+      "details": "### Responsibilities\n\n- Charges the shopper's card via the (external) payment processor\n- Confirms the outcome back to Order Service synchronously\n- Publishes `Payment Events` to the Event Bus for downstream consumers\n\nCharge requests are idempotent by `orderId`, so a retried call after a timeout never double-charges.",
+      "group": "aws-cloud",
+      "failure": {
+        "userImpact": "Shoppers can still browse and add items to their cart, but checkout stalls — new orders stay stuck in pending instead of confirming.",
+        "blastRadius": [
+          { "nodeId": "order-svc", "effect": "degraded", "note": "charge calls time out; orders accumulate in pending state" }
+        ],
+        "mitigation": "Order Service wraps the charge call in a **timeout and circuit breaker**, so a dead Payment Service fails fast instead of hanging requests indefinitely. A reconciliation job resolves stuck pending orders once the service recovers, so no charge is silently lost or duplicated."
+      }
     },
     {
       "id": "notification-svc",
@@ -101,6 +427,7 @@
       "y": 832,
       "name": "Notification Svc",
       "description": "Email & Push",
+      "details": "### Responsibilities\n\n- Consumes `Order Events` and `Payment Events` from the Event Bus\n- Sends confirmation, failure, and shipping emails via SendGrid\n\nCompletely decoupled from the checkout request — a slow or failing email provider can't add latency to checkout.",
       "group": "aws-cloud"
     },
     {
@@ -109,6 +436,7 @@
       "x": 2080,
       "y": 192,
       "name": "User DB",
+      "details": "### Schema\n\n- **users** — id, email, password hash, created_at\n- **profiles** — user_id, name, address, preferences\n\nPrimary for all writes; reads are split off to a **read replica** for profile-heavy traffic.",
       "group": "data-tier"
     },
     {
@@ -117,6 +445,7 @@
       "x": 2056,
       "y": 80,
       "name": "User DB Read Replica",
+      "details": "### Role\n\nAsynchronously replicated **read replica** of User DB. Absorbs profile and session-lookup reads so they never compete with registration/profile-edit writes on the primary.",
       "group": "data-tier"
     },
     {
@@ -125,6 +454,7 @@
       "x": 2072,
       "y": 328,
       "name": "Product DB",
+      "details": "### Schema\n\n- **products** — sku, title, description, price, stock_count\n- **categories** — id, name, parent_id\n\nThe **source of truth for stock** — checkout always reads/writes here directly, never through the search index or cache.",
       "group": "data-tier"
     },
     {
@@ -133,7 +463,16 @@
       "x": 2048,
       "y": 664,
       "name": "Order DB (Sharded)",
-      "group": "data-tier"
+      "details": "### Schema\n\n- **orderId** — partition key\n- **userId**, **items**, **status** (`pending` / `paid` / `payment_failed`), **createdAt**\n\n### Partitioning\n\nHash-partitioned on `orderId`, so the ~1M orders/day write volume spreads evenly across shards instead of concentrating on a single partition.",
+      "group": "data-tier",
+      "failure": {
+        "userImpact": "No new orders can be created or updated at all — checkout fails outright. Browsing is unaffected since it doesn't touch this database.",
+        "blastRadius": [
+          { "nodeId": "order-svc", "effect": "down", "note": "every write and read against orders fails" },
+          { "nodeId": "payment-svc", "effect": "degraded", "note": "charges may still succeed with the processor but can't be recorded against an order" }
+        ],
+        "mitigation": "DynamoDB replicates data across multiple availability zones automatically, so a single-node or single-AZ failure fails over transparently. A full regional outage is mitigated with DynamoDB Global Tables for cross-region replication if the business requires that level of availability."
+      }
     },
     {
       "id": "redis",
@@ -142,7 +481,17 @@
       "y": 256,
       "name": "Redis Cluster",
       "description": "Session & Cache",
-      "group": "data-tier"
+      "details": "### Caching Strategy\n\n- Session tokens for User Service\n- Hot product-query results for Product Service\n- Recent order-status lookups for Order Service\n\nAll three are cache-aside: a miss falls through to the owning service's database and repopulates the entry.",
+      "group": "data-tier",
+      "failure": {
+        "userImpact": "Browsing and checkout both keep working, but every session lookup and product-cache read falls through to the database — page loads noticeably slow down under load.",
+        "blastRadius": [
+          { "nodeId": "user-svc", "effect": "degraded", "note": "session lookups fall back to User DB" },
+          { "nodeId": "order-svc", "effect": "degraded", "note": "order-status reads fall back to Order DB" },
+          { "nodeId": "product-svc", "effect": "degraded", "note": "absorbs the read load Redis used to soak" }
+        ],
+        "mitigation": "Redis runs as a **replicated cluster** with automatic failover, so a full cache loss only degrades latency — every service still has a database to fall back to, and correctness never depends on the cache being warm."
+      }
     },
     {
       "id": "queue",
@@ -151,7 +500,15 @@
       "y": 832,
       "name": "Event Bus",
       "description": "Message Broker",
-      "group": "aws-cloud"
+      "details": "### Role\n\nDecouples `Order Events` and `Payment Events` from the checkout request/response cycle. Order and Payment Service publish and move on immediately — Notification Service (and any future consumer) processes on its own schedule.\n\nRetention window buys time for consumers to catch up after a spike or brief outage.",
+      "group": "aws-cloud",
+      "failure": {
+        "userImpact": "Checkout and browsing are completely unaffected — shoppers can still create and pay for orders. Confirmation emails and any other event-driven consumer simply stop until the bus recovers.",
+        "blastRadius": [
+          { "nodeId": "notification-svc", "effect": "down", "note": "has no events left to consume" }
+        ],
+        "mitigation": "Publishing to the Event Bus is **fire-and-forget and off the checkout critical path** by design — Order and Payment Service never wait on it. Kafka itself runs replicated across brokers, and its retention window means queued events aren't lost, just delayed, once it recovers."
+      }
     },
     {
       "id": "search",
@@ -160,7 +517,15 @@
       "y": 424,
       "name": "Elasticsearch",
       "description": "Full-Text Search",
-      "group": "data-tier"
+      "details": "### Role\n\nA **read-only, eventually-consistent projection** of Product DB, built for full-text search and ranking across ~50M SKUs — never the source of truth for price or stock.\n\nRebuildable from Product DB at any time, which is what makes it safe to treat as disposable.",
+      "group": "data-tier",
+      "failure": {
+        "userImpact": "Full-text product search stops returning results, but checkout is completely unaffected — the authoritative stock and price check never depended on the search index.",
+        "blastRadius": [
+          { "nodeId": "product-svc", "effect": "degraded", "note": "search queries fail; direct SKU/category lookups against Product DB still work" }
+        ],
+        "mitigation": "Elasticsearch is deliberately kept as a **read-only, rebuildable projection** of Product DB — never the source of truth. A degraded or offline index is reindexed from Product DB, and in the meantime Product Service can fall back to basic filtering directly against Product DB."
+      }
     },
     {
       "id": "s3",
@@ -169,6 +534,7 @@
       "y": 544,
       "name": "S3 Buckets",
       "description": "Static Assets",
+      "details": "### Role\n\nStores product images and other static assets. CloudFront serves from its edge cache first and falls back here on a miss — Product Service never proxies image bytes itself.",
       "group": "data-tier"
     },
     {
@@ -176,9 +542,12 @@
       "kind": "email-provider",
       "x": 2296,
       "y": 840,
-      "name": "SendGrid"
+      "name": "SendGrid",
+      "description": "Transactional Email",
+      "details": "### Role\n\nExternal transactional email provider. Notification Service calls it to send order-confirmation, payment-failure, and shipping emails — entirely outside the checkout request path."
     }
   ],
+
   "edges": [
     {
       "id": "e-dns-cdn",
@@ -186,7 +555,9 @@
       "target": "cdn",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "p99": "10ms"
     },
     {
       "id": "e-cdn-waf",
@@ -194,7 +565,9 @@
       "target": "waf",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "p99": "5ms"
     },
     {
       "id": "e-waf-alb",
@@ -202,7 +575,9 @@
       "target": "alb",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "p99": "3ms"
     },
     {
       "id": "e-alb-gw",
@@ -210,7 +585,9 @@
       "target": "api-gateway",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "p99": "3ms"
     },
     {
       "id": "e-gw-user",
@@ -220,7 +597,10 @@
       "targetHandle": "left-target",
       "label": "gRPC",
       "protocol": "grpc",
-      "animated": true
+      "animated": true,
+      "sync": true,
+      "qps": "~1K/s peak",
+      "p99": "40ms"
     },
     {
       "id": "e-gw-product",
@@ -230,7 +610,10 @@
       "targetHandle": "left-target",
       "label": "gRPC",
       "protocol": "grpc",
-      "animated": true
+      "animated": true,
+      "sync": true,
+      "qps": "~8K/s peak",
+      "p99": "60ms"
     },
     {
       "id": "e-gw-order",
@@ -240,7 +623,10 @@
       "targetHandle": "left-target",
       "label": "gRPC",
       "protocol": "grpc",
-      "animated": true
+      "animated": true,
+      "sync": true,
+      "qps": "~2K/s peak",
+      "p99": "80ms"
     },
     {
       "id": "e-user-db",
@@ -250,7 +636,10 @@
       "targetHandle": "left-target",
       "label": "SQL",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "p99": "15ms",
+      "payloadSize": "~1KB"
     },
     {
       "id": "e-user-ro",
@@ -260,7 +649,9 @@
       "targetHandle": "left-target",
       "label": "Read",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "p99": "8ms"
     },
     {
       "id": "e-product-db",
@@ -270,7 +661,9 @@
       "targetHandle": "left-target",
       "label": "SQL",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "p99": "20ms"
     },
     {
       "id": "e-order-db",
@@ -280,7 +673,10 @@
       "targetHandle": "left-target",
       "label": "SQL",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "guarantees": ["idempotent"],
+      "p99": "25ms"
     },
     {
       "id": "e-user-cache",
@@ -289,7 +685,9 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "internal",
-      "style": "dotted"
+      "style": "dotted",
+      "sync": true,
+      "p99": "1ms"
     },
     {
       "id": "e-order-cache",
@@ -298,7 +696,9 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "internal",
-      "style": "dotted"
+      "style": "dotted",
+      "sync": true,
+      "p99": "1ms"
     },
     {
       "id": "e-order-queue",
@@ -308,7 +708,10 @@
       "targetHandle": "left-target",
       "label": "Order Events",
       "protocol": "message",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~12/s peak"
     },
     {
       "id": "e-payment-queue",
@@ -318,7 +721,10 @@
       "targetHandle": "left-target",
       "label": "Payment Events",
       "protocol": "message",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~12/s peak"
     },
     {
       "id": "e-queue-notif",
@@ -327,7 +733,9 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "message",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "guarantees": ["at-least-once", "ordered"]
     },
     {
       "id": "e-cdn-s3",
@@ -336,7 +744,9 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "https",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "p99": "30ms"
     },
     {
       "id": "e-notif-sendgrid",
@@ -345,7 +755,9 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "https",
-      "style": "dotted"
+      "style": "dotted",
+      "sync": true,
+      "p99": "200ms"
     },
     {
       "id": "xy-edge__mobile-appbottom-source-dnstop-target",
@@ -354,7 +766,9 @@
       "sourceHandle": "bottom-source",
       "targetHandle": "top-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "p99": "5ms"
     },
     {
       "id": "xy-edge__web-browsertop-source-dnsbottom-target",
@@ -363,7 +777,9 @@
       "sourceHandle": "top-source",
       "targetHandle": "bottom-target",
       "label": "HTTPS",
-      "protocol": "https"
+      "protocol": "https",
+      "sync": true,
+      "p99": "5ms"
     },
     {
       "id": "xy-edge__payment-svctop-source-order-svcleft-target",
@@ -371,7 +787,10 @@
       "target": "order-svc",
       "sourceHandle": "top-source",
       "targetHandle": "left-target",
-      "protocol": "internal"
+      "label": "Confirm status",
+      "protocol": "internal",
+      "sync": true,
+      "p99": "10ms"
     },
     {
       "id": "xy-edge__product-svcbottom-source-s3left-target",
@@ -380,7 +799,9 @@
       "sourceHandle": "bottom-source",
       "targetHandle": "left-target",
       "protocol": "internal",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "p99": "25ms"
     },
     {
       "id": "xy-edge__product-svctop-source-redisleft-target",
@@ -389,7 +810,9 @@
       "sourceHandle": "top-source",
       "targetHandle": "left-target",
       "protocol": "internal",
-      "style": "dotted"
+      "style": "dotted",
+      "sync": true,
+      "p99": "1ms"
     },
     {
       "id": "xy-edge__product-svcright-source-searchleft-target",
@@ -398,9 +821,25 @@
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
       "protocol": "internal",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "p99": "50ms"
+    },
+    {
+      "id": "e-order-payment",
+      "source": "order-svc",
+      "target": "payment-svc",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "right-target",
+      "label": "Charge card",
+      "protocol": "internal",
+      "sync": true,
+      "guarantees": ["idempotent"],
+      "p99": "120ms",
+      "payloadSize": "~500B"
     }
   ],
+
   "groups": [
     {
       "id": "aws-cloud",
@@ -422,7 +861,5 @@
       "x": 1864,
       "y": 30
     }
-  ],
-  "summary": "### Overview\n\nThis diagram represents a **cloud-native e-commerce platform** built on AWS using a *microservices architecture*. Each business capability — users, products, orders, payments, notifications — is deployed as an **independent service** with its own dedicated data store. This design enables teams to develop, deploy, and scale services independently.\n\n### Request Flow\n\nTraffic flows through a layered network stack before reaching the application services:\n\n1. **DNS (Route 53)** resolves the domain and routes requests to **CloudFront (CDN)** for edge caching.\n2. CloudFront forwards to **WAF** (Web Application Firewall) for security filtering.\n3. Clean traffic reaches **ALB** (Application Load Balancer) which distributes across targets.\n4. **API Gateway** receives all requests and routes them to the appropriate internal service via **gRPC**.\n\nThis multilayered approach provides *defence in depth* — each layer adds caching, security, or routing capabilities without coupling to business logic.\n\n### Service Decomposition\n\n#### User Service\nHandles **authentication**, **authorization**, and **user profiles**. It owns a primary PostgreSQL database with a **read replica** for scaling read-heavy workloads like profile lookups. This is a common pattern — separate read replicas absorb query traffic without competing with write capacity.\n\n#### Product Service\nManages the **catalog** and **inventory**. It stores product data in PostgreSQL, caches frequently accessed data in **Redis**, writes static assets (images) to **S3**, and indexes product data in **Elasticsearch** for full-text search. This showcases the *database-per-service* pattern where a single service may own multiple storage types for different concerns.\n\n#### Order Service\nOrchestrates the **order lifecycle** — creation, validation, payment processing, and fulfilment. It writes to a **sharded DynamoDB** table for horizontal scalability and emits `Order Events` to the **Event Bus (Kafka)** whenever an order changes state. This decouples order processing from downstream consumers.\n\n#### Payment Service\nProcesses **payments** by integrating with external providers (via SendGrid for notifications). It also publishes `Payment Events` to the event bus. The payment service communicates with the order service over *internal protocol* for order status updates.\n\n#### Notification Service\nConsumes events from the **Event Bus** and sends **emails** and **push notifications** via SendGrid. By subscribing to events rather than being called directly, it can be scaled independently and doesn't block the critical checkout path.\n\n### Data Tier\n\nAll data services are grouped under a `data-tier` boundary:\n\n- **PostgreSQL**: User DB (with read replica), Product DB — relational data with ACID guarantees\n- **DynamoDB**: Order DB (sharded) — NoSQL for horizontal scaling\n- **Redis**: Session cache and shared state across services\n- **Elasticsearch**: Full-text search indexing\n- **S3**: Static asset storage for product images and content\n- **Kafka**: Event bus for asynchronous communication between services\n\n### Key Architectural Decisions\n\n- **gRPC over REST** for inter-service communication — *binary protocol* with better performance and strong typing via protocol buffers\n- **Event-driven** for order and payment flows — services don't wait for responses from downstream consumers\n- **Read replicas** for read-heavy workloads — keeps the primary database focused on writes\n- **Sharded DynamoDB** for the order service — anticipates high write throughput as the platform scales\n\n### Trade-offs\n\nThis architecture prioritizes *scalability* and *team autonomy* over simplicity. The trade-offs are:\n\n- **Operational complexity** — running many services requires mature DevOps practices (monitoring, deployment pipelines, incident response)\n- **Data consistency** — eventual consistency across services means the platform must handle scenarios like \"order confirmed but payment still processing\"\n- **Network latency** — inter-service calls add overhead compared to in-process calls in a monolith\n\nFor most early-stage products, a **modular monolith** is a better starting point. Migrate to microservices when you have clear evidence that team velocity or scalability demands it. This architecture is what a mature, high-traffic e-commerce platform looks like — it's a *target state*, not a starting point."
+  ]
 }
-
