@@ -1,10 +1,35 @@
 {
   "diagrams": [
     {
+      "slug": "causal-backend",
+      "title": "Causal Backend — System Architecture",
+      "description": "A single Hono/Node process on Fly.io that fronts a streaming chat orchestrator and six Postgres-backed background workers — no message broker, no Redis, one shared database.",
+      "tags": [
+        "modular-monolith",
+        "hono",
+        "postgres",
+        "background-workers",
+        "llm",
+        "real-system"
+      ],
+      "difficulty": "advanced",
+      "nodeCount": 17,
+      "edgeCount": 31,
+      "image": "",
+      "featured": false
+    },
+    {
       "slug": "design-api-rate-limiter",
       "title": "Design an API Rate Limiter",
       "description": "A server-side rate limiting system that protects APIs from abuse using sliding window counters and Redis-backed distributed state.",
-      "tags": ["rate-limiting", "api", "middleware", "scalability", "caching", "distributed-systems"],
+      "tags": [
+        "rate-limiting",
+        "api",
+        "middleware",
+        "scalability",
+        "caching",
+        "distributed-systems"
+      ],
       "difficulty": "intermediate",
       "nodeCount": 7,
       "edgeCount": 6,
@@ -15,7 +40,15 @@
       "slug": "design-typeahead-autocomplete",
       "title": "Design Typeahead Suggestion / Autocomplete",
       "description": "A ranked prefix-completion system that returns the top-K suggestions within the keystroke latency budget using an in-memory precomputed trie and an offline popularity build pipeline.",
-      "tags": ["typeahead", "autocomplete", "trie", "caching", "precomputation", "event-streaming", "search"],
+      "tags": [
+        "typeahead",
+        "autocomplete",
+        "trie",
+        "caching",
+        "precomputation",
+        "event-streaming",
+        "search"
+      ],
       "difficulty": "advanced",
       "nodeCount": 13,
       "edgeCount": 13,
@@ -26,7 +59,14 @@
       "slug": "design-web-crawler",
       "title": "Design a Web Crawler",
       "description": "A distributed crawler that discovers, fetches, and extracts text from 10 billion web pages within 5 days while respecting robots.txt.",
-      "tags": ["crawler", "distributed-systems", "queueing", "rate-limiting", "scalability", "fault-tolerance"],
+      "tags": [
+        "crawler",
+        "distributed-systems",
+        "queueing",
+        "rate-limiting",
+        "scalability",
+        "fault-tolerance"
+      ],
       "difficulty": "advanced",
       "nodeCount": 15,
       "edgeCount": 22,
@@ -37,7 +77,15 @@
       "slug": "design-whatsapp-or-messenger",
       "title": "Design WhatsApp / Facebook Messenger",
       "description": "A real-time messaging platform with 1:1 and group chat, offline delivery via push notifications, and end-to-end encryption.",
-      "tags": ["messaging", "real-time", "websocket", "chat", "encryption", "push-notifications", "p2p"],
+      "tags": [
+        "messaging",
+        "real-time",
+        "websocket",
+        "chat",
+        "encryption",
+        "push-notifications",
+        "p2p"
+      ],
       "difficulty": "advanced",
       "nodeCount": 18,
       "edgeCount": 24,
@@ -48,10 +96,17 @@
       "slug": "design-youtube-or-netflix",
       "title": "Design YouTube or Netflix",
       "description": "A video streaming platform supporting fast video upload and smooth, adaptive streaming.",
-      "tags": ["video", "streaming", "cdn", "transcoding", "adaptive-bitrate", "caching"],
+      "tags": [
+        "video",
+        "streaming",
+        "cdn",
+        "transcoding",
+        "adaptive-bitrate",
+        "caching"
+      ],
       "difficulty": "advanced",
-      "nodeCount": 13,
-      "edgeCount": 15,
+      "nodeCount": 14,
+      "edgeCount": 17,
       "image": "",
       "featured": true
     },
@@ -59,10 +114,17 @@
       "slug": "design-instagram",
       "title": "Design Instagram",
       "description": "A social media platform for short-form video content.",
-      "tags": ["social-media", "feed", "image-processing", "cdn", "caching", "real-time"],
+      "tags": [
+        "social-media",
+        "feed",
+        "image-processing",
+        "cdn",
+        "caching",
+        "real-time"
+      ],
       "difficulty": "advanced",
-      "nodeCount": 13,
-      "edgeCount": 15,
+      "nodeCount": 24,
+      "edgeCount": 23,
       "image": "",
       "featured": false
     },
@@ -70,7 +132,14 @@
       "slug": "design-twitter",
       "title": "Design Twitter for Millions of Users",
       "description": "A microblogging platform with tweet ingestion, hybrid fan-out timelines, typeahead search, and real-time notifications.",
-      "tags": ["social-media", "fan-out", "typeahead", "search", "real-time", "event-streaming"],
+      "tags": [
+        "social-media",
+        "fan-out",
+        "typeahead",
+        "search",
+        "real-time",
+        "event-streaming"
+      ],
       "difficulty": "advanced",
       "nodeCount": 38,
       "edgeCount": 39,
@@ -81,10 +150,16 @@
       "slug": "design-dropbox-or-google-drive",
       "title": "Design Dropbox or Google Drive",
       "description": "A scalable, highly available cloud file storage and synchronization service.",
-      "tags": ["cloud-storage", "distributed", "file-sync", "versioning", "conflict-resolution"],
+      "tags": [
+        "cloud-storage",
+        "distributed",
+        "file-sync",
+        "versioning",
+        "conflict-resolution"
+      ],
       "difficulty": "advanced",
-      "nodeCount": 13,
-      "edgeCount": 15,
+      "nodeCount": 16,
+      "edgeCount": 19,
       "image": "",
       "featured": true
     },
@@ -92,7 +167,13 @@
       "slug": "e-commerce-microservices",
       "title": "E-Commerce Microservices",
       "description": "Cloud-native e-commerce platform on AWS",
-      "tags": ["microservices", "cloud-native", "ecommerce", "payments", "inventory"],
+      "tags": [
+        "microservices",
+        "cloud-native",
+        "ecommerce",
+        "payments",
+        "inventory"
+      ],
       "difficulty": "intermediate",
       "nodeCount": 21,
       "edgeCount": 24,
@@ -103,10 +184,16 @@
       "slug": "URL-shortening-service-like-tinyURL",
       "title": "URL Shortening Service like TinyURL",
       "description": "Scalable system design for creating short URLs, redirecting users, and collecting analytics.",
-      "tags": ["url-shortening", "hashing", "databases", "caching", "redirect"],
+      "tags": [
+        "url-shortening",
+        "hashing",
+        "databases",
+        "caching",
+        "redirect"
+      ],
       "difficulty": "intermediate",
-      "nodeCount": 21,
-      "edgeCount": 24,
+      "nodeCount": 12,
+      "edgeCount": 17,
       "image": "",
       "featured": false
     },
@@ -114,7 +201,13 @@
       "slug": "event-driven-architecture",
       "title": "Event-Driven Architecture",
       "description": "Asynchronous event processing with message broker",
-      "tags": ["event-driven", "event-streaming", "async", "microservices", "message-broker"],
+      "tags": [
+        "event-driven",
+        "event-streaming",
+        "async",
+        "microservices",
+        "message-broker"
+      ],
       "difficulty": "advanced",
       "nodeCount": 8,
       "edgeCount": 8,
@@ -125,7 +218,12 @@
       "slug": "hexagonal-architecture",
       "title": "Hexagonal Architecture",
       "description": "Ports and adapters pattern for clean domain logic",
-      "tags": ["hexagonal", "ports-adapters", "design-pattern", "clean-architecture"],
+      "tags": [
+        "hexagonal",
+        "ports-adapters",
+        "design-pattern",
+        "clean-architecture"
+      ],
       "difficulty": "intermediate",
       "nodeCount": 7,
       "edgeCount": 7,
@@ -136,7 +234,12 @@
       "slug": "cqrs-pattern",
       "title": "CQRS Pattern",
       "description": "Command Query Responsibility Segregation",
-      "tags": ["cqrs", "design-pattern", "event-sourcing", "event-driven"],
+      "tags": [
+        "cqrs",
+        "design-pattern",
+        "event-sourcing",
+        "event-driven"
+      ],
       "difficulty": "advanced",
       "nodeCount": 7,
       "edgeCount": 7,
@@ -147,7 +250,12 @@
       "slug": "layered-architecture",
       "title": "Layered Architecture",
       "description": "Traditional n-tier architecture pattern",
-      "tags": ["layered", "n-tier", "design-pattern", "monolithic"],
+      "tags": [
+        "layered",
+        "n-tier",
+        "design-pattern",
+        "monolithic"
+      ],
       "difficulty": "beginner",
       "nodeCount": 5,
       "edgeCount": 4,
