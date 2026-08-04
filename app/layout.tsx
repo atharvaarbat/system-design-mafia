@@ -98,7 +98,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", 
+      suppressHydrationWarning
+      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans",
         inter.variable, poppins.variable, doto.variable, GeistPixelSquare.variable, GeistPixelCircle.variable, GeistPixelTriangle.variable, GeistPixelGrid.variable, GeistPixelLine.variable)}
     >
       <head>

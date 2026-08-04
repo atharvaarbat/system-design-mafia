@@ -2,117 +2,455 @@
   "version": "1.0",
   "title": "URL Shortening Service like TinyURL",
   "description": "Scalable system design for creating short URLs, redirecting users, and collecting analytics.",
+  "difficulty": "intermediate",
+
+  "requirements": {
+    "functional": [
+      "A user submits a long URL and receives a short, unique alias they can share",
+      "Visiting a short URL redirects the browser to the original long URL",
+      "A user can optionally choose a custom alias or set an expiration date for a link",
+      "The system records click analytics per short URL — count, referrer, and rough geography"
+    ],
+    "nonFunctional": [
+      "Redirects must feel instant — sub-50ms p99, since the user waits on this hop before anything else loads",
+      "Short codes must be globally unique with zero collisions at any write rate, with no retry-on-conflict loop",
+      "Read traffic vastly outweighs write traffic, so the read and write paths must scale independently",
+      "No single component failure (cache, key generator, or a database node) should take the whole service down"
+    ]
+  },
+
+  "estimates": [
+    { "label": "Short URLs created", "value": "1M/day", "note": "drives write throughput and key-generation rate" },
+    { "label": "Read : write ratio", "value": "100 : 1", "note": "redirects dwarf creations — the read path is what must scale" },
+    { "label": "Peak redirect QPS", "value": "~10K/s", "note": "justifies the Redis cache tier" },
+    { "label": "Short code space", "value": "7 chars", "note": "Base62^7 ≈ 3.5 trillion codes" },
+    { "label": "Storage growth", "value": "~150GB/yr", "note": "~500 bytes per mapping × 1M new links/day" },
+    { "label": "Cache hit rate", "value": ">80%", "note": "a small set of links absorbs most redirect traffic" }
+  ],
+
+  "stages": [
+    {
+      "id": "mvp",
+      "title": "The MVP — a single application server behind a gateway",
+      "narrative": "The simplest version of a URL shortener is barely more than a **hash map with an HTTP front door**: a client posts a long URL, one Application Server computes a code and writes the pair straight into the Database, and reading it back just reverses the lookup. A Load Balancer sits in front from day one — cheap to add now, expensive to retrofit later — even though at this stage it only ever has one target.\n\nThis survives a demo, but every redirect is a synchronous database round-trip, and a single Application Server caps how much traffic the whole system can take.",
+      "nodeIds": ["browser-user", "api-gateway", "load-balancer", "app-server-1", "database"],
+      "edgeIds": ["e-browser-gateway", "e-gateway-lb", "e-lb-server1", "e-server1-db"]
+    },
+    {
+      "id": "caching",
+      "title": "Cache the read path and scale the app tier",
+      "trigger": "Redirects outnumber creations roughly 100:1, and every single one was hitting the database directly — read latency and database load both climbed with traffic.",
+      "narrative": "A Redis **Cache** goes in front of the database on every read, so the hot fraction of links — the ones actually getting clicked — never touch the database at all. A second **Application Server** joins behind the Load Balancer, which finally has real work to distribute.\n\nRedirects get fast again, but URL creation still races the database for a free code under load, and nothing recycles the codes that fall out of use.",
+      "nodeIds": ["browser-user", "api-gateway", "load-balancer", "app-server-1", "database", "cache", "app-server-2"],
+      "edgeIds": ["e-browser-gateway", "e-gateway-lb", "e-lb-server1", "e-server1-db", "e-server1-cache", "e-server2-cache", "e-server2-db", "e-lb-server2", "e-cache-db"]
+    },
+    {
+      "id": "key-generation",
+      "title": "Take code generation off the write path",
+      "trigger": "Generating a collision-free code inline on every write means checking for conflicts under load — and at high write volume, retries start piling up.",
+      "narrative": "A standalone **Key Generation Service** pre-computes unique Base62 codes ahead of time and hands them out on request, so assigning a code becomes a cheap, guaranteed-unique lookup instead of a check-and-retry loop against the database.\n\nCreation is now fast and collision-free at any write rate — but every click and every new link still disappears without a trace, and expired links just sit in the database forever.",
+      "nodeIds": ["browser-user", "api-gateway", "load-balancer", "app-server-1", "database", "cache", "app-server-2", "key-generation-service"],
+      "edgeIds": ["e-browser-gateway", "e-gateway-lb", "e-lb-server1", "e-server1-db", "e-server1-cache", "e-server2-cache", "e-server2-db", "e-lb-server2", "e-cache-db", "e-server1-kgs", "e-server2-kgs"]
+    },
+    {
+      "id": "async-analytics-cleanup",
+      "title": "Add analytics and reclaim expired links",
+      "trigger": "Product wants click analytics, but nothing in the request path can afford to slow down for it — and the database is quietly filling up with links nobody will ever click again.",
+      "narrative": "Every creation and redirect now fires an event onto a **Message Queue** without waiting for a response, and an **Analytics Service** consumes those events on its own schedule. A **Cleanup Service** periodically sweeps the database for expired links, deletes them, and returns their codes to the Key Generation Service's pool instead of wasting the keyspace.\n\nThis is the complete system: every synchronous hop stays on the critical path only when it has to, and everything else happens off to the side.",
+      "nodeIds": ["browser-user", "mobile-app-user", "api-gateway", "load-balancer", "app-server-1", "database", "cache", "app-server-2", "key-generation-service", "message-queue", "analytics-service", "cleanup-service"],
+      "edgeIds": ["e-browser-gateway", "e-gateway-lb", "e-lb-server1", "e-server1-db", "e-server1-cache", "e-server2-cache", "e-server2-db", "e-lb-server2", "e-cache-db", "e-server1-kgs", "e-server2-kgs", "e-mobile-gateway", "e-server1-mq", "e-server2-mq", "e-mq-analytics", "e-db-cleanup", "e-cleanup-kgs"]
+    }
+  ],
+
+  "flows": [
+    {
+      "id": "create-short-url",
+      "title": "Create a short URL",
+      "description": "From submitting a long URL to receiving a shareable short link.",
+      "steps": [
+        {
+          "text": "The client submits a long URL to the API Gateway, which authenticates the caller over HTTPS before anything else happens.",
+          "nodeIds": ["browser-user", "api-gateway"],
+          "edgeIds": ["e-browser-gateway"],
+          "payload": { "title": "POST /api/shorten", "body": "{\n  \"longUrl\": \"https://example.com/a/very/long/path\"\n}" },
+          "latencyMs": 5
+        },
+        {
+          "text": "The gateway forwards the request through the Load Balancer to an available Application Server.",
+          "nodeIds": ["api-gateway", "load-balancer", "app-server-1"],
+          "edgeIds": ["e-gateway-lb", "e-lb-server1"],
+          "latencyMs": 2
+        },
+        {
+          "text": "The server asks the Key Generation Service for a pre-generated, collision-free short code instead of computing one on the spot.",
+          "nodeIds": ["app-server-1", "key-generation-service"],
+          "edgeIds": ["e-server1-kgs"],
+          "payload": { "title": "GET /keys/next", "body": "{\n  \"key\": \"aZ3xQ1p\"\n}" },
+          "latencyMs": 2
+        },
+        {
+          "text": "The server writes the new shortUrl → longUrl mapping into the Database. A conditional write makes this safe to retry.",
+          "nodeIds": ["app-server-1", "database"],
+          "edgeIds": ["e-server1-db"],
+          "stateChanges": [{ "nodeId": "database", "note": "row inserted — shortUrl: aZ3xQ1p" }],
+          "latencyMs": 15
+        },
+        {
+          "text": "The short URL is returned to the client immediately, and the creation event is pushed onto the Message Queue without the server waiting for it to be processed.",
+          "nodeIds": ["app-server-1", "message-queue"],
+          "edgeIds": ["e-server1-mq"],
+          "payload": { "title": "CreateEvent", "body": "{\n  \"shortUrl\": \"aZ3xQ1p\",\n  \"ts\": 1737020000\n}" },
+          "latencyMs": 1
+        }
+      ]
+    },
+    {
+      "id": "redirect-short-url",
+      "title": "Redirect a short URL",
+      "description": "From clicking a short link to landing on the original page.",
+      "steps": [
+        {
+          "text": "The client requests a short URL. The API Gateway authenticates the request over HTTPS the same way it does for creation.",
+          "nodeIds": ["mobile-app-user", "api-gateway"],
+          "edgeIds": ["e-mobile-gateway"],
+          "payload": { "title": "GET /aZ3xQ1p", "body": "GET /aZ3xQ1p HTTP/1.1\nHost: sho.rt" },
+          "latencyMs": 5
+        },
+        {
+          "text": "The gateway routes through the Load Balancer to an available Application Server — the same routing path as creation, just a different endpoint.",
+          "nodeIds": ["api-gateway", "load-balancer", "app-server-2"],
+          "edgeIds": ["e-gateway-lb", "e-lb-server2"],
+          "latencyMs": 2
+        },
+        {
+          "text": "The server checks Redis first. A hit returns the original URL in about a millisecond; on a miss it would fall back to the Database and repopulate the cache for next time.",
+          "nodeIds": ["app-server-2", "cache"],
+          "edgeIds": ["e-server2-cache"],
+          "payload": { "title": "GET short:aZ3xQ1p", "body": "redis> GET short:aZ3xQ1p\n\"https://example.com/a/very/long/path\"" },
+          "latencyMs": 1
+        },
+        {
+          "text": "The server responds with an HTTP 302 redirect and, without blocking that response, pushes a click event onto the Message Queue for analytics.",
+          "nodeIds": ["app-server-2", "message-queue"],
+          "edgeIds": ["e-server2-mq"],
+          "payload": { "title": "ClickEvent", "body": "{\n  \"shortUrl\": \"aZ3xQ1p\",\n  \"referrer\": \"twitter.com\"\n}" },
+          "latencyMs": 1
+        }
+      ]
+    },
+    {
+      "id": "expire-and-recycle",
+      "title": "Expire and recycle a link",
+      "description": "The background path that reclaims codes from links nobody uses anymore.",
+      "steps": [
+        {
+          "text": "During a low-traffic window, the Cleanup Service scans the Database for mappings past their expiration timestamp.",
+          "nodeIds": ["cleanup-service", "database"],
+          "edgeIds": ["e-db-cleanup"]
+        },
+        {
+          "text": "Expired mappings are deleted from the Database, freeing that row entirely.",
+          "nodeIds": ["cleanup-service", "database"],
+          "edgeIds": ["e-db-cleanup"],
+          "stateChanges": [{ "nodeId": "database", "note": "expired row deleted" }]
+        },
+        {
+          "text": "The freed short code is returned to the Key Generation Service's available pool instead of being wasted forever.",
+          "nodeIds": ["cleanup-service", "key-generation-service"],
+          "edgeIds": ["e-cleanup-kgs"],
+          "stateChanges": [{ "nodeId": "key-generation-service", "note": "code aZ3xQ1p returned to pool" }]
+        },
+        {
+          "text": "Redis needs no explicit cleanup step here — the entry either already expired via TTL or gets evicted naturally under LRU pressure.",
+          "nodeIds": ["cache"]
+        }
+      ]
+    }
+  ],
+
+  "decisions": [
+    {
+      "title": "Short code generation",
+      "choice": "Offline Key Generation Service (KGS) pre-computing Base62 codes",
+      "alternatives": ["Hash the long URL (MD5/SHA + truncate)", "Random string + collision check on write"],
+      "rationale": "Hashing a URL and truncating it reintroduces collisions, forcing a retry loop on every write. Random strings have the same problem at scale. A KGS pre-generates unique codes offline and hands them out on request, so assigning one is O(1) and collision-free by construction — the cost is one extra internal hop and a standby replica for availability."
+    },
+    {
+      "title": "Database choice",
+      "choice": "NoSQL key-value store (DynamoDB / Cassandra)",
+      "alternatives": ["Relational database (PostgreSQL / MySQL)"],
+      "rationale": "The access pattern is almost entirely single-key lookups and inserts — shortUrl in, longUrl out. A NoSQL store gives that pattern horizontal scale and predictable low-latency reads without needing joins or transactions the system never uses. A relational database would work at small scale but becomes the first thing to bottleneck as write volume grows."
+    },
+    {
+      "title": "Redirect status code",
+      "choice": "HTTP 302 (temporary) redirect",
+      "alternatives": ["HTTP 301 (permanent) redirect"],
+      "rationale": "A 301 tells browsers to cache the redirect permanently and skip the server on future visits, which would break click analytics — a core requirement. 302 forces every click back through the backend so it can be counted, at the cost of a marginally larger response on repeat visits."
+    },
+    {
+      "title": "Caching layer",
+      "choice": "Redis with LRU eviction, checked on every read before the database",
+      "alternatives": ["No cache — read straight from the database", "Client-side/browser caching only"],
+      "rationale": "With a 100:1 read:write ratio, letting every redirect hit the database directly would make it the bottleneck long before the app tier. A small hot set — roughly 20% of links — drives most traffic, so an LRU cache absorbs the vast majority of reads and keeps p99 redirect latency near a millisecond."
+    },
+    {
+      "title": "Expired link cleanup",
+      "choice": "Lazy, periodic batch cleanup by a background worker",
+      "alternatives": ["Eager deletion the instant a link expires", "Database-native TTL on every row"],
+      "rationale": "Actively hunting down every link the moment it lapses adds constant background write pressure for no user-facing benefit — storage is cheap, and a stale, unvisited mapping costs nothing sitting idle. A periodic Cleanup Service reclaims codes during low-traffic windows instead, keeping the write path free of cleanup overhead."
+    }
+  ],
+
+  "bottlenecks": [
+    {
+      "title": "Viral link redirect stampede",
+      "problem": "A single link going viral can drive thousands of redirects per second at one short code, all landing on the same cache key and, on a cold cache, the same database partition.",
+      "mitigation": "Redis absorbs the steady-state load since a hot key simply stays resident. For the cold-start case, request coalescing at the app-server layer collapses concurrent misses into a single database read instead of one per request."
+    },
+    {
+      "title": "Key Generation Service outage",
+      "problem": "The KGS is a single logical component. If it becomes unreachable, application servers can't mint new short codes, so URL creation grinds to a halt even though redirects keep working fine.",
+      "mitigation": "A standby KGS replica takes over via leader election, and each app server pre-fetches a small batch of unused keys locally, so a brief KGS blip is invisible to users creating links."
+    },
+    {
+      "title": "Database hot partitions from non-uniform keys",
+      "problem": "If short codes were assigned sequentially — an auto-increment counter, say — instead of pseudo-randomly, writes and the newest, most-clicked links would all concentrate on the same shard.",
+      "mitigation": "Base62 codes from the KGS are effectively randomly distributed, and the database uses hash-based partitioning on the short code itself, spreading both writes and hot reads evenly across shards."
+    },
+    {
+      "title": "Analytics backlog under traffic spikes",
+      "problem": "A sudden spike in redirects — a viral link, a bot crawl — can produce click events faster than the Analytics Service can consume them, growing an unbounded backlog on the Message Queue.",
+      "mitigation": "Logging is fire-and-forget and off the critical path by design — a growing queue delays dashboards, never redirects. The Analytics Service scales its consumer group horizontally to drain backlog, and Kafka's retention window buys time before any event is lost."
+    },
+    {
+      "title": "Malicious mass link creation",
+      "problem": "An attacker can script thousands of short-link creations per second to generate phishing URLs that borrow the service's domain reputation, or simply to burn through the key space faster than intended.",
+      "mitigation": "The API Gateway rate-limits creation requests per API key/IP, and newly created URLs are screened against a blacklist/safe-browsing check before the mapping is persisted."
+    }
+  ],
+
+  "quiz": [
+    {
+      "question": "Why does the system use a standalone Key Generation Service instead of just hashing the long URL?",
+      "answer": "Hashing (e.g. MD5) and truncating to a short code reintroduces collisions — two different URLs can truncate to the same prefix — which forces a retry-on-conflict loop on every write. The KGS pre-generates unique Base62 codes offline, so handing one out is O(1) and collision-free by construction, at the cost of one extra internal hop."
+    },
+    {
+      "question": "Why HTTP 302 instead of 301 for the redirect?",
+      "answer": "A 301 (permanent redirect) tells the browser to cache it and stop asking the server on future visits — which would make click analytics impossible to collect after the first click. 302 (temporary) forces every visit back through the backend so it can be logged, which is a core requirement here."
+    },
+    {
+      "question": "Why NoSQL instead of a relational database for the URL mapping table?",
+      "answer": "The access pattern is a simple key-value lookup — shortUrl in, longUrl out — with no joins or multi-row transactions. A NoSQL store gives that exact pattern horizontal scalability and low, predictable read latency, which is what a system dominated by point lookups actually needs."
+    },
+    {
+      "question": "What happens to redirects if Redis goes down entirely?",
+      "answer": "Redirects keep working — every request just falls through to the Database instead of the cache, so p99 latency rises from about 1ms to roughly 20ms and the database absorbs the full read load. The service degrades in speed, not in correctness."
+    },
+    {
+      "question": "Why is analytics logging asynchronous instead of writing directly to the analytics store on each request?",
+      "answer": "Analytics is not on the critical path of a redirect — the user doesn't need it to see their page. Pushing the event to a Message Queue lets the app server respond immediately, while the Analytics Service consumes and processes events independently, so a slow or backed-up analytics pipeline never adds latency to a redirect."
+    },
+    {
+      "question": "Why hash-based partitioning on the short code instead of range-based partitioning?",
+      "answer": "Range-based partitioning — splitting by alphabetical prefix, say — would create hot shards whenever a batch of new links happens to share a prefix or a few codes go viral together. Hash-based partitioning spreads keys, and therefore load, uniformly across shards regardless of which codes happen to be popular."
+    }
+  ],
+
+  "references": [
+    { "title": "System Design Interview — URL Shortening Service (Alex Xu)", "url": "https://bytebytego.com", "source": "bytebytego.com" },
+    { "title": "RFC 3986 — Uniform Resource Identifier (URI): Generic Syntax", "url": "https://datatracker.ietf.org/doc/html/rfc3986", "source": "RFC 3986" },
+    { "title": "Amazon DynamoDB — Developer Guide", "url": "https://aws.amazon.com/dynamodb/", "source": "aws.amazon.com" },
+    { "title": "Redis — In-Memory Data Store", "url": "https://redis.io/", "source": "redis.io" }
+  ],
+
+  "relatedPatterns": ["design-api-rate-limiter", "event-driven-architecture"],
+
+  "summary": "### Overview\n\nThis system turns long URLs into short, shareable codes and redirects visitors back to the original destination. Traffic is heavily read-skewed — redirects vastly outnumber creations — so the architecture optimizes the read path with caching while keeping the write path simple and collision-free.\n\n### Write Path — Creating a Short URL\n\nA client submits a long URL through the API Gateway, which authenticates the request and forwards it through a Load Balancer to an available Application Server. The server pulls a pre-generated, collision-free code from the Key Generation Service and writes the mapping to the Database. The new short URL is returned immediately, and the creation event is logged asynchronously for analytics.\n\n### Read Path — Redirecting a Short URL\n\nA redirect request follows the same Gateway → Load Balancer → App Server route. The server checks Redis first; a cache hit returns the original URL in about a millisecond. On a miss, it falls back to the Database, returns the result, and repopulates the cache so the next request for that code is fast.\n\n### Async Paths — Analytics and Cleanup\n\nEvery creation and redirect event is pushed onto a Message Queue without blocking the response, and an Analytics Service consumes those events for click counts, referrers, and geography. A separate Cleanup Service periodically scans the Database for expired links, deletes them, and recycles their short codes back into the Key Generation Service's pool instead of wasting the keyspace.\n\n### Key Trade-offs\n\n- Short codes are pre-generated offline by a dedicated service instead of hashed from the URL, trading a small operational component for guaranteed collision-freedom\n- The database is NoSQL, chosen for horizontal scale and simple key-value access over relational features the system never needs\n- Redirects use HTTP 302, not 301, so every click still reaches the backend and can be counted\n- Analytics and cleanup are both off the critical path — neither can slow down a redirect or a creation",
+
   "nodes": [
     {
       "id": "browser-user",
       "kind": "browser",
-      "x": 176,
-      "y": 168,
+      "x": 80,
+      "y": 200,
       "name": "User Browser",
-      "description": "Client"
+      "description": "Web client",
+      "details": "### Role\n\nThe primary client for both creating and following short links — a user pastes a long URL into a web form, or clicks a shortened link they received elsewhere.\n\nAll requests go over HTTPS; the browser holds no state about the mapping itself."
     },
     {
       "id": "mobile-app-user",
       "kind": "mobile-app",
-      "x": 168,
-      "y": 576,
+      "x": 80,
+      "y": 620,
       "name": "Mobile App",
-      "description": "Client"
+      "description": "iOS / Android client",
+      "details": "### Role\n\nA native iOS/Android client used for both creating links (e.g. sharing a photo album) and following them — tapping a short link elsewhere on the device deep-links back into this flow.\n\nBehaves identically to the browser client from the backend's point of view — same API, same HTTPS contract."
     },
     {
       "id": "api-gateway",
       "kind": "api-gateway",
-      "x": 272,
-      "y": 368,
+      "x": 420,
+      "y": 400,
       "name": "API Gateway",
-      "description": "Rate Limiting, Auth"
+      "description": "Auth, TLS, request routing",
+      "details": "### Responsibilities\n\n- Terminates TLS for every inbound request\n- Authenticates the caller and extracts an API key / user identity\n- Applies coarse request-level rate limiting to block obvious abuse before it reaches the app tier\n- Forwards everything else to the Load Balancer\n\nThe gateway is stateless — any instance can handle any request."
     },
     {
       "id": "load-balancer",
       "kind": "load-balancer",
-      "x": 440,
-      "y": 376,
+      "x": 760,
+      "y": 400,
       "name": "Load Balancer",
-      "description": "Round Robin"
+      "description": "Round-robin across app servers",
+      "group": "app-tier",
+      "details": "### Responsibilities\n\n- Distributes incoming requests across all healthy Application Servers using round-robin\n- Runs health checks and stops routing to instances that fail them\n- Is itself deployed redundantly, since every request depends on it\n\nAdding another Application Server is just a config change here — no other component needs to know."
     },
     {
       "id": "app-server-1",
       "kind": "rest-api",
-      "x": 672,
-      "y": 176,
+      "x": 1040,
+      "y": 200,
       "name": "App Server 1",
-      "description": "Create/Redirect"
+      "description": "Create & redirect",
+      "group": "app-tier",
+      "details": "### Responsibilities\n\n- Handles both URL creation (`POST /shorten`) and redirection (`GET /{code}`)\n- On creation: requests a code from the Key Generation Service and writes the mapping to the Database\n- On redirect: checks Redis first, falls back to the Database on a miss, and returns an HTTP 302\n- Publishes creation and click events to the Message Queue without waiting for a response\n\nStateless — any server can handle any request, which is what makes horizontal scaling behind the Load Balancer straightforward.",
+      "failure": {
+        "userImpact": "No visible impact — the Load Balancer stops routing to this instance and every request goes to the surviving server instead.",
+        "blastRadius": [{ "nodeId": "app-server-2", "effect": "degraded", "note": "absorbs 100% of traffic alone until this instance recovers" }],
+        "mitigation": "The app tier is **stateless behind the Load Balancer** — health checks eject the failed instance within seconds, and autoscaling can replace it. Losing one of two servers halves capacity, not availability."
+      }
     },
     {
       "id": "app-server-2",
       "kind": "rest-api",
-      "x": 672,
-      "y": 600,
+      "x": 1040,
+      "y": 620,
       "name": "App Server 2",
-      "description": "Create/Redirect"
+      "description": "Create & redirect",
+      "group": "app-tier",
+      "details": "### Responsibilities\n\n- Handles both URL creation (`POST /shorten`) and redirection (`GET /{code}`)\n- On creation: requests a code from the Key Generation Service and writes the mapping to the Database\n- On redirect: checks Redis first, falls back to the Database on a miss, and returns an HTTP 302\n- Publishes creation and click events to the Message Queue without waiting for a response\n\nStateless — any server can handle any request, which is what makes horizontal scaling behind the Load Balancer straightforward."
     },
     {
       "id": "key-generation-service",
       "kind": "generic-service",
-      "x": 672,
-      "y": 384,
+      "x": 1040,
+      "y": 410,
       "name": "Key Generation Service",
-      "description": "Generates unique keys",
-      "details": "### Responsibilities\n\n- Generate unique six-letter keys offline\n- Store keys in key-DB\n- Provide keys to app servers\n- Single point of failure, requires standby replica"
+      "description": "Pre-generates unique short codes",
+      "group": "app-tier",
+      "details": "### Responsibilities\n\n- Pre-generates unique, 7-character Base62 codes offline, ahead of demand\n- Hands out a batch of keys to each Application Server on request, so most creations never wait on the KGS directly\n- Stores its own pool of unused/used keys separately from the main URL mapping table\n\n### Why Not Hash the URL?\n\nHashing (MD5/SHA) and truncating to 7 characters reintroduces collisions — the KGS avoids that entirely by construction, at the cost of being an extra moving part with its own availability story.",
+      "failure": {
+        "userImpact": "Redirects are completely unaffected. Creating new short URLs keeps working too — for a while — until application servers exhaust the small batch of keys they pre-fetched locally.",
+        "blastRadius": [
+          { "nodeId": "app-server-1", "effect": "degraded", "note": "falls back to its local key buffer, then blocks on creation once it runs out" },
+          { "nodeId": "app-server-2", "effect": "degraded", "note": "same local-buffer fallback" }
+        ],
+        "mitigation": "A **standby KGS replica** takes over via leader election, and each app server keeps a small local pool of unused keys precisely so a brief KGS blip never reaches the user."
+      }
     },
     {
       "id": "cache",
       "kind": "redis",
-      "x": 808,
-      "y": 384,
-      "name": "Cache",
-      "description": "Redis/Memcached",
-      "details": "### Caching Strategy\n\n- Caches frequently accessed URLs\n- LRU eviction policy\n- Cache 20% of daily traffic (~70-170GB memory)"
+      "x": 1400,
+      "y": 260,
+      "name": "Redis Cache",
+      "description": "Hot short-code lookups",
+      "group": "data-tier",
+      "details": "### Caching Strategy\n\n- Sits in front of the database on every redirect — checked before any database read\n- Uses an **LRU eviction policy**: the roughly 20% of links driving 80% of traffic stay resident\n- Cache misses fall through to the database and repopulate the entry for next time\n\nA full cache loss degrades redirect latency but never breaks correctness — the database remains authoritative.",
+      "failure": {
+        "userImpact": "Redirects keep working, but every request now falls through to the database — p99 redirect latency jumps from about 1ms to roughly 20ms.",
+        "blastRadius": [{ "nodeId": "database", "effect": "degraded", "note": "absorbs 100% of read traffic the cache used to soak" }],
+        "mitigation": "Redis runs as a **replicated cluster** with automatic failover, so even a full cache loss only degrades latency — redirects don't stop, because the database remains the source of truth for every mapping."
+      }
     },
     {
       "id": "database",
       "kind": "dynamodb",
-      "x": 1048,
-      "y": 376,
+      "x": 1400,
+      "y": 560,
       "name": "Database",
-      "description": "NoSQL (DynamoDB/Cassandra)",
-      "details": "### Database Schema\n\n#### URL Mapping Table\n- **shortUrl**: string (primary key)\n- **originalUrl**: string\n- **userId**: string\n- **createdAt**: timestamp\n- **expiresAt**: timestamp\n\n#### User Table\n- **userId**: string (primary key)\n- **name**: string\n- **email**: string\n- **createdAt**: timestamp\n\n### Data Partitioning\n\n- Hash-based partitioning on shortUrl\n- Consistent hashing for even distribution"
-    },
-    {
-      "id": "analytics-service",
-      "kind": "monitoring-service",
-      "x": 1656,
-      "y": 376,
-      "name": "Analytics Service",
-      "description": "Metrics & Telemetry",
-      "details": "### Analytics\n\n- Tracks URL redirections\n- User locations, referrers\n- Platform and browser stats"
-    },
-    {
-      "id": "message-queue",
-      "kind": "kafka",
-      "x": 1424,
-      "y": 384,
-      "name": "Message Queue",
-      "description": "Kafka"
+      "description": "shortUrl → longUrl mappings (NoSQL)",
+      "group": "data-tier",
+      "details": "### Schema\n\n#### URL Mappings\n\n- **shortUrl** — string, partition key\n- **originalUrl** — string\n- **userId** — string, optional\n- **createdAt** / **expiresAt** — timestamps\n\n### Partitioning\n\nHash-based partitioning on `shortUrl` spreads both writes and hot reads evenly across shards — codes from the Key Generation Service are effectively random, so no partition runs hotter than another by construction.",
+      "failure": {
+        "userImpact": "New short URLs can't be created at all, and any redirect not already sitting in the cache fails outright — the service degrades to serving only its currently-hot links.",
+        "blastRadius": [
+          { "nodeId": "app-server-1", "effect": "degraded", "note": "writes and cache-miss reads both start failing" },
+          { "nodeId": "app-server-2", "effect": "degraded", "note": "writes and cache-miss reads both start failing" },
+          { "nodeId": "cleanup-service", "effect": "down", "note": "has nothing to scan" }
+        ],
+        "mitigation": "The database runs as a **multi-region replicated cluster**, so a single-region outage fails over automatically. Cached redirects keep serving from Redis throughout, which is exactly the traffic that matters most."
+      }
     },
     {
       "id": "cleanup-service",
       "kind": "worker-service",
-      "x": 1248,
-      "y": 384,
+      "x": 1720,
+      "y": 560,
       "name": "Cleanup Service",
-      "description": "Lazy cleanup",
-      "details": "### Cleanup Strategy\n\n- Runs periodically during low traffic\n- Removes expired links and puts keys back into key-DB"
+      "description": "Recycles expired links",
+      "details": "### Cleanup Strategy\n\n- Runs periodically, during low-traffic windows, scanning the database for links past their `expiresAt` timestamp\n- Deletes expired mappings and returns their short codes to the Key Generation Service's available pool\n- Deliberately lazy — expired links aren't hunted down the instant they lapse, since storage is cheap and there's no user-facing cost to a stale, unvisited row\n\nRecycling codes back to the KGS keeps the keyspace from filling up with links nobody will ever use again."
+    },
+    {
+      "id": "message-queue",
+      "kind": "kafka",
+      "x": 2040,
+      "y": 400,
+      "name": "Message Queue",
+      "description": "Async event bus (Kafka)",
+      "group": "analytics-pipeline",
+      "details": "### Role\n\nDecouples every creation and click event from the request/response cycle. Application Servers publish and move on immediately — nothing downstream can slow down a redirect or a creation.\n\nKafka's retention window also buys time for the Analytics Service to catch up after a traffic spike or a brief outage, instead of losing events outright.",
+      "failure": {
+        "userImpact": "Users notice nothing at all — creation and redirection both keep working exactly as before. Click analytics and dashboards just go stale until the queue recovers.",
+        "blastRadius": [{ "nodeId": "analytics-service", "effect": "down", "note": "has no events left to consume" }],
+        "mitigation": "Analytics logging is **fire-and-forget and off the critical path** by design — app servers never wait on the queue, so its failure can't propagate back into a slower or broken redirect."
+      }
+    },
+    {
+      "id": "analytics-service",
+      "kind": "monitoring-service",
+      "x": 2360,
+      "y": 400,
+      "name": "Analytics Service",
+      "description": "Click metrics & telemetry",
+      "group": "analytics-pipeline",
+      "details": "### Responsibilities\n\n- Consumes creation and click events from the Message Queue asynchronously\n- Powers dashboards for click counts, referrers, and rough geography per short URL\n- Scales its consumer group independently of the app tier — a traffic spike here delays dashboards, never redirects\n\nCompletely decoupled from the request path: if this service is down, users can't tell."
     }
   ],
+
   "edges": [
+    {
+      "id": "e-browser-gateway",
+      "source": "browser-user",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https",
+      "sync": true,
+      "p99": "5ms"
+    },
+    {
+      "id": "e-mobile-gateway",
+      "source": "mobile-app-user",
+      "target": "api-gateway",
+      "sourceHandle": "right-source",
+      "targetHandle": "left-target",
+      "label": "HTTPS",
+      "protocol": "https",
+      "sync": true,
+      "p99": "5ms"
+    },
     {
       "id": "e-gateway-lb",
       "source": "api-gateway",
       "target": "load-balancer",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "http"
+      "protocol": "http",
+      "sync": true,
+      "qps": "~10K/s peak",
+      "p99": "2ms"
     },
     {
       "id": "e-lb-server1",
@@ -120,7 +458,8 @@
       "target": "app-server-1",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "http"
+      "protocol": "http",
+      "sync": true
     },
     {
       "id": "e-lb-server2",
@@ -128,7 +467,56 @@
       "target": "app-server-2",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "protocol": "http"
+      "protocol": "http",
+      "sync": true
+    },
+    {
+      "id": "e-server1-kgs",
+      "source": "app-server-1",
+      "target": "key-generation-service",
+      "sourceHandle": "bottom-source",
+      "targetHandle": "top-target",
+      "label": "Get key",
+      "protocol": "internal",
+      "sync": true,
+      "qps": "~12/s peak",
+      "p99": "2ms"
+    },
+    {
+      "id": "e-server2-kgs",
+      "source": "app-server-2",
+      "target": "key-generation-service",
+      "sourceHandle": "top-source",
+      "targetHandle": "bottom-target",
+      "label": "Get key",
+      "protocol": "internal",
+      "sync": true,
+      "qps": "~12/s peak",
+      "p99": "2ms"
+    },
+    {
+      "id": "e-server1-cache",
+      "source": "app-server-1",
+      "target": "cache",
+      "sourceHandle": "right-source",
+      "targetHandle": "top-target",
+      "label": "Read/Write",
+      "protocol": "internal",
+      "sync": true,
+      "qps": "~5K/s peak",
+      "p99": "1ms"
+    },
+    {
+      "id": "e-server2-cache",
+      "source": "app-server-2",
+      "target": "cache",
+      "sourceHandle": "right-source",
+      "targetHandle": "bottom-target",
+      "label": "Read/Write",
+      "protocol": "internal",
+      "sync": true,
+      "qps": "~5K/s peak",
+      "p99": "1ms"
     },
     {
       "id": "e-server1-db",
@@ -136,18 +524,27 @@
       "target": "database",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "label": "Read/Write",
+      "label": "Write mapping",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "guarantees": ["idempotent"],
+      "qps": "~12/s peak",
+      "p99": "15ms",
+      "payloadSize": "~500B"
     },
     {
-      "id": "e-mq-analytics",
-      "source": "message-queue",
-      "target": "analytics-service",
+      "id": "e-server2-db",
+      "source": "app-server-2",
+      "target": "database",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "label": "Process",
-      "protocol": "message"
+      "label": "Read (cache miss)",
+      "protocol": "database",
+      "style": "dashed",
+      "sync": true,
+      "qps": "~2K/s peak",
+      "p99": "20ms"
     },
     {
       "id": "e-cache-db",
@@ -157,103 +554,77 @@
       "targetHandle": "left-target",
       "label": "Miss",
       "protocol": "database",
-      "style": "dashed"
+      "style": "dashed",
+      "sync": true,
+      "qps": "~2K/s peak",
+      "p99": "20ms"
     },
     {
-      "id": "xy-edge__app-server-1bottom-source-key-generation-servicetop-target",
+      "id": "e-server1-mq",
       "source": "app-server-1",
-      "target": "key-generation-service",
-      "sourceHandle": "bottom-source",
-      "targetHandle": "top-target",
-      "label": "Get Key",
-      "protocol": "internal"
-    },
-    {
-      "id": "xy-edge__app-server-2top-source-key-generation-servicebottom-target",
-      "source": "app-server-2",
-      "target": "key-generation-service",
+      "target": "message-queue",
       "sourceHandle": "top-source",
-      "targetHandle": "bottom-target",
-      "label": "Get Key",
-      "protocol": "internal"
+      "targetHandle": "top-target",
+      "label": "Log event",
+      "protocol": "message",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~10K/s peak"
     },
     {
-      "id": "xy-edge__app-server-2right-source-databaseleft-target",
+      "id": "e-server2-mq",
       "source": "app-server-2",
-      "target": "database",
+      "target": "message-queue",
+      "sourceHandle": "right-source",
+      "targetHandle": "bottom-target",
+      "label": "Log event",
+      "protocol": "message",
+      "sync": false,
+      "guarantees": ["at-least-once"],
+      "qps": "~10K/s peak"
+    },
+    {
+      "id": "e-mq-analytics",
+      "source": "message-queue",
+      "target": "analytics-service",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "label": "Read/Write",
-      "protocol": "database",
-      "style": "dashed"
-    },
-    {
-      "id": "xy-edge__app-server-2right-source-cachebottom-target",
-      "source": "app-server-2",
-      "target": "cache",
-      "sourceHandle": "right-source",
-      "targetHandle": "bottom-target",
-      "label": "Read/Write",
-      "protocol": "internal"
-    },
-    {
-      "id": "xy-edge__app-server-1right-source-cachetop-target",
-      "source": "app-server-1",
-      "target": "cache",
-      "sourceHandle": "right-source",
-      "targetHandle": "top-target",
-      "label": "Read/Write",
-      "protocol": "internal"
-    },
-    {
-      "id": "xy-edge__app-server-1top-source-message-queuetop-target",
-      "source": "app-server-1",
-      "target": "message-queue",
-      "sourceHandle": "top-source",
-      "targetHandle": "top-target",
-      "label": "Log Events",
+      "label": "Process",
       "protocol": "message",
-      "style": "dashed"
+      "sync": false,
+      "guarantees": ["at-least-once", "ordered"],
+      "qps": "~10K/s peak"
     },
     {
-      "id": "xy-edge__app-server-2right-source-message-queuebottom-target",
-      "source": "app-server-2",
-      "target": "message-queue",
-      "sourceHandle": "right-source",
-      "targetHandle": "bottom-target",
-      "label": "Log Events",
-      "protocol": "message",
-      "style": "dashed"
-    },
-    {
-      "id": "xy-edge__databaseright-source-cleanup-serviceleft-target",
+      "id": "e-db-cleanup",
       "source": "database",
       "target": "cleanup-service",
       "sourceHandle": "right-source",
       "targetHandle": "left-target",
-      "label": "Clean",
+      "label": "Scan expired",
       "protocol": "internal",
       "style": "dotted",
-      "animated": true
+      "animated": true,
+      "sync": false,
+      "guarantees": ["idempotent"]
     },
     {
-      "id": "xy-edge__browser-userbottom-source-api-gatewaytop-target",
-      "source": "browser-user",
-      "target": "api-gateway",
-      "sourceHandle": "bottom-source",
-      "targetHandle": "top-target",
-      "label": "HTTPS",
-      "protocol": "https"
-    },
-    {
-      "id": "xy-edge__mobile-app-usertop-source-api-gatewaybottom-target",
-      "source": "mobile-app-user",
-      "target": "api-gateway",
+      "id": "e-cleanup-kgs",
+      "source": "cleanup-service",
+      "target": "key-generation-service",
       "sourceHandle": "top-source",
       "targetHandle": "bottom-target",
-      "label": "HTTPS",
-      "protocol": "https"
+      "label": "Recycle key",
+      "protocol": "internal",
+      "style": "dashed",
+      "sync": false,
+      "guarantees": ["idempotent", "at-least-once"]
     }
   ],
-  "summary": "### Architecture Overview\n\nThis system designs a scalable, highly available URL shortening service, akin to TinyURL or Bitly. The architecture prioritizes low-latency redirects and high write throughput for creating new short links. It uses a read-heavy, async-first approach to handle massive traffic.\n\n### Core Data Flow\n\n1.  **Short URL Creation (Write Path):**\n    - A client (browser or mobile app) sends a `POST` request with a long URL to the **API Gateway**.\n    - The gateway handles authentication, rate limiting, and passes the request to the **Load Balancer**.\n    - The load balancer routes the request to an available **Application Server**.\n    - The application server requests a unique, pre-generated short code from the **Key Generation Service (KGS)**.\n    - The server then stores the mapping (`shortCode` -> `originalUrl`) in the **Database**. The database is a NoSQL store (like DynamoDB or Cassandra), chosen for its scalability and fast key-value lookups.\n    - The newly created short URL is returned to the client.\n\n2.  **URL Redirection (Read Path):**\n    - A client makes a `GET` request to a short URL (e.g., `GET /abc123`).\n    - The request passes through the API Gateway and Load Balancer to an Application Server.\n    - The application server first checks the **Cache** (Redis/Memcached) for the mapping.\n    - If the mapping is not in the cache (a cache miss), the server queries the Database.\n    - The retrieved original URL is returned as an `HTTP 302 Redirect` to the client.\n\n3.  **Analytics & Cleanup (Async Paths):**\n    - Every redirection event is asynchronously logged to a **Message Queue** (Kafka).\n    - An **Analytics Service** consumes these events to provide metrics like click counts, user locations, and referrers.\n    - A separate **Cleanup Service** periodically removes expired links from the Database and Cache, and recycles their short codes back to the KGS.\n\n### Key Design Decisions & Trade-offs\n\n- **Short Code Generation (Key Generation Service):**\n  - The system uses a standalone **Key Generation Service (KGS)** to pre-generate unique, 6-7 character keys offline using Base62 encoding (`[0-9][a-z][A-Z]`). This approach avoids the overhead and collisions of hashing algorithms (like MD5) and ensures fast, conflict-free key assignment at scale.\n  - **Trade-off:** The KGS introduces a single point of failure. This is mitigated by having a standby replica of the KGS and having application servers cache a small pool of keys locally.\n\n- **Database Choice (NoSQL):**\n  - **NoSQL** (e.g., DynamoDB, Cassandra) was chosen over a traditional RDBMS.\n  - **Rationale:** The system requires storing billions of small objects with a simple key-value access pattern, and NoSQL databases offer superior horizontal scaling, high availability, and low-latency performance for this use case.\n  - **Trade-off:** NoSQL systems are often eventually consistent, but the simple data model and use of `INSERT-IF-NOT-EXIST` (or similar) can be managed to ensure data integrity for new URL creations.\n\n- **Scaling the Database (Sharding):**\n  - The database is scaled out using **hash-based partitioning** on the `shortCode`. This distributes data evenly across shards and avoids hotspots that can occur with range-based partitioning.\n  - **Trade-off:** Hash-based partitioning makes range queries difficult, but the system's primary operations (point lookups and inserts) don't require them.\n\n- **Caching Strategy:**\n  - A distributed cache (Redis/Memcached) is employed to serve the 20% of 'hot' URLs that generate 80% of the traffic, significantly reducing database load and improving read latency.\n  - An **LRU (Least Recently Used)** eviction policy is used to manage cache size and keep the most relevant data in memory.\n\n- **Purging & Data Lifecycle:**\n  - A **lazy cleanup** strategy is used. Expired links are not actively sought out. Instead, they are deleted when a user tries to access them, and a background Cleanup Service handles bulk removals during off-peak hours. This minimizes pressure on the database.\n  - **Trade-off:** This approach means expired links may remain in storage for some time, but storage is cheap, and this strategy keeps the critical read/write paths fast.\n\n- **Analytics with 302 Redirect:**\n  - The system uses an `HTTP 302` (temporary) redirect instead of a `301` (permanent).\n  - **Rationale:** This ensures that every redirection request reaches the backend servers, allowing the system to log and count clicks for analytics, which is a key functional requirement.\n\n- **Security:**\n  - The system includes **rate limiting** via API keys to prevent abuse and ensure fair usage. It also plans for **blacklisting** of malicious URLs and **user authentication** for custom aliases.\n\nThis architecture is designed to handle the high throughput and storage requirements of a global URL shortening service, balancing performance, scalability, and cost."
+
+  "groups": [
+    { "id": "app-tier", "label": "Application Tier", "color": "#6366f1", "style": "dashed" },
+    { "id": "data-tier", "label": "Data Tier", "color": "#10b981", "style": "dashed" },
+    { "id": "analytics-pipeline", "label": "Analytics Pipeline", "color": "#f59e0b", "style": "dashed" }
+  ]
 }
